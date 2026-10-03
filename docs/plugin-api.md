@@ -94,10 +94,18 @@ or `tish:ffi` fails (tests in `packages/nimble-macos/src/vmplug.rs` check each o
 strings, arrays, objects and closures work (the converter plugin uses all of them). A Tier A plugin can compute and return data,
 nothing else. I/O will come only through host APIs gated by declared permissions (below).
 
+### Time budget
+
+Tier A code runs with the JIT off and under a deadline: 1000 ms for the top level (setup plus
+`register`), 250 ms for each call to an export. Past the budget the call aborts and throws
+`<id>: list() exceeded its 250 ms budget`. Module state stays as the aborted call left it, and the
+next call runs normally. `list` runs on every keystroke, so keep it well under the budget.
+
 ### Errors
 
-A throw from `run` or `list` shows "Plugin error: ..." in the status line. A plugin that fails to
-load is logged and skipped; the rest still load.
+A throw from `run` or `list`, including a blown budget, shows "Plugin error: ..." in the status
+line. A plugin that fails to load (including a top level that runs past its budget) is logged and
+skipped; the rest still load.
 
 ## Planned
 

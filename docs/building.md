@@ -48,8 +48,8 @@ other app receives the keypress. Set `NIMBLE_HOTKEY`.
 cd packages/nimble-macos && cargo test
 ```
 
-Covers the Tier A sandbox (capabilities denied, `register` required, state kept across calls) and
-frecency decay and persistence.
+Covers the Tier A sandbox (capabilities denied, `register` required, state kept across calls, time
+budgets for runaway loops and recursion) and frecency decay and persistence.
 
 The `scripts/drive-*.sh` scripts drive a running Nimble with System Events keystrokes and take
 screenshots into `/tmp`. They need Accessibility permission for the terminal running them, expect
@@ -64,3 +64,8 @@ panel has keyboard focus, and restore the clipboard on exit. Set
 | `drive-plugins.sh` | Tier B plugin: no-view and list commands |
 | `drive-convert.sh` | Tier A plugin: list command, VM state |
 | `drive-features.sh` | Status item, clipboard history, frecency |
+| `drive-runaway.sh` | Tier A time budget: a hanging plugin errors, other plugins keep working |
+
+`drive-runaway.sh` uses a plugin that hangs on purpose (`scripts/fixtures/runaway.tish`, not
+shipped in `plugins/`). `drive-runaway.sh build` compiles it into `/tmp/nimble-runaway/plugins`
+next to `convert.tishc`; start Nimble with `NIMBLE_PLUGINS=/tmp/nimble-runaway/plugins`.

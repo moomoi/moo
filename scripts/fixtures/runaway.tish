@@ -1,0 +1,29 @@
+// Test-only Tier A plugin: hangs on purpose so the shell's per-call budget can be observed.
+fn spin() {
+  let i = 0
+  while (true) {
+    i = i + 1
+  }
+  return i
+}
+
+register({
+  manifest: () => ({
+    id: "runaway",
+    title: "Runaway",
+    commands: [
+      { name: "echo", title: "Runaway Echo", subtitle: "Type spin to hang", mode: "list" },
+      { name: "hang", title: "Runaway Hang", subtitle: "Always hangs", mode: "no-view" }
+    ]
+  }),
+  run: (command) => {
+    spin()
+    return { hud: "unreachable" }
+  },
+  list: (command, query) => {
+    if (query === "spin") {
+      spin()
+    }
+    return [{ title: "echo: " + query, subtitle: "Runaway", action: { hud: query } }]
+  }
+})

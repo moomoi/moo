@@ -107,9 +107,18 @@ See [plugin-api.md](plugin-api.md) for the contract. In short:
 Both run on the main thread today. The plan is one worker thread per Tier A VM, with results
 posted back to the main thread.
 
-**Known isolation gap.** `tish_vm` has a process-global JIT whose callee registry is keyed by bare
-function name, and one global CPU deadline. Until the multi-VM hardening work in tish lands,
-untrusted Tier A plugins should not share a process with each other.
+**Sharing the process.** `tish_vm`'s JIT is process-global (content-keyed caches, a callee registry
+keyed by bare function name), and JIT-compiled loops never poll the execution deadline. So
+`vmplug.rs` turns the JIT off for each plugin VM (`Vm::set_jit_enabled(false)`, inherited by every
+closure the VM creates) and wraps each export in a native function that arms a per-thread deadline
+(`tishlang_core::set_thread_execution_deadline`) for the call. A runaway plugin throws after 250 ms
+(1000 ms for its top level) instead of freezing the launcher, and the other plugins keep working.
+The interpreter polls the deadline on loop back-edges and on function calls, so loop-free
+recursion is caught too. Both controls are in the `tish-nimble` checkout and are covered by
+`tish_vm/tests/multi_vm_isolation.rs` and `jit_off_leaves_jit_state.rs`.
+
+Not covered yet: memory (a plugin can allocate without limit), and time spent inside one builtin
+call that runs no plugin code (joining a huge array, say), which is not polled.
 
 ## Threading
 
