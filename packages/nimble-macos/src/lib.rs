@@ -2,7 +2,10 @@
 //! `import { reindex, search, launch, setup, ... } from "nimble-macos"`.
 
 #[cfg(target_os = "macos")]
+mod clip;
+#[cfg(target_os = "macos")]
 mod files;
+mod frecency;
 mod index;
 #[cfg(target_os = "macos")]
 mod mac;
@@ -98,6 +101,17 @@ fn native_bundle_resources(_args: &[Value]) -> Value {
     }
 }
 
+/// `recordUse(key)`: count one open of an app path or command key toward its frecency.
+fn native_record_use(args: &[Value]) -> Value {
+    frecency::record(&str_arg(args, 0));
+    Value::Null
+}
+
+/// `frecency(key)` -> score bonus to add to a fuzzy match score (0 when never used).
+fn native_frecency(args: &[Value]) -> Value {
+    Value::Number(frecency::boost(&str_arg(args, 0)) as f64)
+}
+
 fn native_app_count(_args: &[Value]) -> Value {
     Value::Number(index::app_count() as f64)
 }
@@ -184,6 +198,40 @@ mod natives {
     pub fn watch_apps(_a: &[Value]) -> Value {
         Value::Bool(mac::watch_apps())
     }
+
+    /// `statusItem(hotkey)`: menu bar icon with Show / Quit.
+    pub fn status_item(args: &[Value]) -> Value {
+        Value::Bool(mac::status_item(&str_arg(args, 0)))
+    }
+
+    /// `watchClipboard()`: start recording text clipboard history (in memory only).
+    pub fn watch_clipboard(_a: &[Value]) -> Value {
+        Value::Bool(clip::watch())
+    }
+
+    /// `clipboardHistory(query, limit)` -> `[{ text, preview, app, icon, ago }]`, newest first.
+    pub fn clipboard_history(args: &[Value]) -> Value {
+        let limit = num_arg(args, 1, 8.0).max(0.0) as usize;
+        let rows: Vec<Value> = clip::history(&str_arg(args, 0), limit)
+            .into_iter()
+            .map(|c| {
+                let icon = if c.app_path.is_empty() { String::new() } else { mac::icon_name(&c.app_path) };
+                obj(vec![
+                    ("text", Value::String(c.text.as_str().into())),
+                    ("preview", Value::String(clip::preview(&c.text, 80).as_str().into())),
+                    ("app", Value::String(c.app.as_str().into())),
+                    ("icon", Value::String(icon.as_str().into())),
+                    ("ago", Value::String(clip::ago(c.at).as_str().into())),
+                ])
+            })
+            .collect();
+        Value::Array(VmRef::new(rows))
+    }
+
+    pub fn clear_clipboard_history(_a: &[Value]) -> Value {
+        clip::clear();
+        Value::Null
+    }
 }
 
 #[cfg(not(target_os = "macos"))]
@@ -200,6 +248,10 @@ mod natives {
     pub fn quit(_a: &[Value]) -> Value { Value::Null }
     pub fn search_files(_a: &[Value]) -> Value { Value::Number(0.0) }
     pub fn watch_apps(_a: &[Value]) -> Value { Value::Bool(false) }
+    pub fn status_item(_a: &[Value]) -> Value { Value::Bool(false) }
+    pub fn watch_clipboard(_a: &[Value]) -> Value { Value::Bool(false) }
+    pub fn clipboard_history(_a: &[Value]) -> Value { Value::Array(VmRef::new(Vec::new())) }
+    pub fn clear_clipboard_history(_a: &[Value]) -> Value { Value::Null }
 }
 
 pub fn nimble_object() -> Value {
@@ -220,5 +272,11 @@ pub fn nimble_object() -> Value {
     m.insert(Arc::from("searchFiles"), Value::native(natives::search_files));
     m.insert(Arc::from("watchApps"), Value::native(natives::watch_apps));
     m.insert(Arc::from("bundleResources"), Value::native(native_bundle_resources));
+    m.insert(Arc::from("recordUse"), Value::native(native_record_use));
+    m.insert(Arc::from("frecency"), Value::native(native_frecency));
+    m.insert(Arc::from("statusItem"), Value::native(natives::status_item));
+    m.insert(Arc::from("watchClipboard"), Value::native(natives::watch_clipboard));
+    m.insert(Arc::from("clipboardHistory"), Value::native(natives::clipboard_history));
+    m.insert(Arc::from("clearClipboardHistory"), Value::native(natives::clear_clipboard_history));
     Value::object(m)
 }

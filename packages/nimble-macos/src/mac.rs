@@ -13,20 +13,20 @@ use block2::RcBlock;
 use dispatch2::DispatchQueue;
 use objc2::rc::Retained;
 use objc2::runtime::AnyObject;
-use objc2::{sel, MainThreadMarker, MainThreadOnly};
+use objc2::{define_class, msg_send, sel, MainThreadMarker, MainThreadOnly};
 use objc2_app_kit::{
     NSAppearanceCustomization, NSApplication, NSApplicationActivationPolicy, NSBackingStoreType, NSEvent, NSEventMask,
-    NSEventModifierFlags, NSPanel, NSScreen, NSTextField, NSView, NSWindow, NSWindowButton,
-    NSWindowCollectionBehavior,
+    NSEventModifierFlags, NSMenu, NSMenuItem, NSPanel, NSScreen, NSStatusBar, NSStatusItem, NSTextField, NSView,
+    NSWindow, NSWindowButton, NSWindowCollectionBehavior,
     NSWindowDidBecomeKeyNotification, NSWindowDidResignKeyNotification, NSWindowStyleMask,
     NSImage, NSPasteboard, NSPasteboardTypeString, NSWindowTitleVisibility, NSWorkspace,
 };
 use objc2_foundation::{
-    NSNotification, NSNotificationCenter, NSPoint, NSRect, NSSize, NSString, NSURL,
+    NSNotification, NSNotificationCenter, NSObject, NSPoint, NSRect, NSSize, NSString, NSURL,
 };
 use tishlang_core::{Value, VmRef};
 
-use crate::{files, index, watch};
+use crate::{clip, files, index, watch};
 
 const ICON_SLOTS: usize = 512;
 use tishlang_ui::runtime::{run_with_current_root, LEGACY_ROOT_ID};
@@ -43,6 +43,7 @@ thread_local! {
     static PANEL: RefCell<Option<Retained<NSWindow>>> = const { RefCell::new(None) };
     static ON_FILES: RefCell<Option<Value>> = const { RefCell::new(None) };
     static ICON_RING: RefCell<(usize, Vec<String>)> = const { RefCell::new((0, Vec::new())) };
+    static STATUS: RefCell<Option<(Retained<NSStatusItem>, Retained<MenuTarget>)>> = const { RefCell::new(None) };
 }
 
 pub fn set_callbacks(on_key: Option<Value>, on_show: Option<Value>) {
@@ -451,7 +452,83 @@ pub fn launch(target: &str) -> bool {
 pub fn copy_text(text: &str) -> bool {
     let pb = NSPasteboard::generalPasteboard();
     pb.clearContents();
-    pb.setString_forType(&NSString::from_str(text), unsafe { NSPasteboardTypeString })
+    let ok = pb.setString_forType(&NSString::from_str(text), unsafe { NSPasteboardTypeString });
+    clip::note_own_change();
+    ok
+}
+
+// ── Status bar item ─────────────────────────────────────────────────────────
+
+define_class!(
+    #[unsafe(super(NSObject))]
+    #[thread_kind = MainThreadOnly]
+    #[name = "NimbleMenuTarget"]
+    struct MenuTarget;
+
+    impl MenuTarget {
+        #[unsafe(method(showPanel:))]
+        fn show_panel(&self, _sender: Option<&AnyObject>) {
+            show();
+        }
+
+        #[unsafe(method(quitNimble:))]
+        fn quit_nimble(&self, _sender: Option<&AnyObject>) {
+            quit();
+        }
+    }
+);
+
+impl MenuTarget {
+    fn new(mtm: MainThreadMarker) -> Retained<Self> {
+        unsafe { msg_send![Self::alloc(mtm), init] }
+    }
+}
+
+/// Menu bar icon with Show / Quit, installed once the run loop is live. `hotkey` is shown next
+/// to Show as a reminder.
+pub fn status_item(hotkey: &str) -> bool {
+    if STATUS.with(|s| s.borrow().is_some()) {
+        return false;
+    }
+    let hotkey = hotkey.to_string();
+    DispatchQueue::main().exec_async(move || install_status_item(&hotkey));
+    true
+}
+
+fn install_status_item(hotkey: &str) {
+    let Some(mtm) = MainThreadMarker::new() else { return };
+    if STATUS.with(|s| s.borrow().is_some()) {
+        return;
+    }
+    // NSVariableStatusItemLength
+    let item = NSStatusBar::systemStatusBar().statusItemWithLength(-1.0);
+    if let Some(button) = item.button(mtm) {
+        let desc = NSString::from_str("Nimble");
+        match NSImage::imageWithSystemSymbolName_accessibilityDescription(&NSString::from_str("magnifyingglass"), Some(&desc)) {
+            Some(img) => {
+                img.setTemplate(true);
+                button.setImage(Some(&img));
+            }
+            None => button.setTitle(&desc),
+        }
+    }
+    let target = MenuTarget::new(mtm);
+    let menu = NSMenu::new(mtm);
+    let show_title = if hotkey.is_empty() { "Show Nimble".to_string() } else { format!("Show Nimble  ({hotkey})") };
+    for (title, action) in [(show_title.as_str(), sel!(showPanel:)), ("Quit Nimble", sel!(quitNimble:))] {
+        let mi = unsafe {
+            NSMenuItem::initWithTitle_action_keyEquivalent(
+                NSMenuItem::alloc(mtm),
+                &NSString::from_str(title),
+                Some(action),
+                &NSString::from_str(""),
+            )
+        };
+        unsafe { mi.setTarget(Some(&target)) };
+        menu.addItem(&mi);
+    }
+    item.setMenu(Some(&menu));
+    STATUS.with(|s| *s.borrow_mut() = Some((item, target)));
 }
 
 /// Icons are registered as named images so `<image src={name}>` can find them. Names live in a

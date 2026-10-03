@@ -20,7 +20,7 @@ tishlang_parser = { path = "../../../../tish/tish-nimble/crates/tish_parser" }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6"
-objc2-foundation = { version = "0.3", features = ["NSString", "NSURL", "NSArray", "NSGeometry", "NSNotification", "NSOperation", "block2"] }
+objc2-foundation = { version = "0.3", features = ["NSString", "NSURL", "NSArray", "NSGeometry", "NSNotification", "NSOperation", "NSTimer", "NSDate", "block2"] }
 objc2-app-kit = { version = "0.3", features = [
     "NSApplication",
     "NSRunningApplication",
@@ -39,6 +39,12 @@ objc2-app-kit = { version = "0.3", features = [
     "NSPasteboard",
     "NSImage",
     "NSGraphics",
+    "NSMenu",
+    "NSMenuItem",
+    "NSStatusBar",
+    "NSStatusBarButton",
+    "NSStatusItem",
+    "objc2-core-foundation",
     "block2",
 ] }
 block2 = "0.6"

@@ -8,6 +8,8 @@ use std::time::Instant;
 use nucleo_matcher::pattern::{CaseMatching, Normalization, Pattern};
 use nucleo_matcher::{Config, Matcher, Utf32Str};
 
+use crate::frecency;
+
 #[derive(Clone, Debug)]
 pub struct AppEntry {
     pub name: String,
@@ -117,13 +119,16 @@ pub fn plugin_paths(dir: &str) -> Vec<String> {
     out
 }
 
-/// Best `limit` matches for `query`; an empty query lists apps alphabetically.
+/// Best `limit` matches for `query`, match score plus frecency boost. An empty query lists
+/// recently used apps first (score = boost), then the rest alphabetically.
 pub fn search(query: &str, limit: usize) -> Vec<(AppEntry, u32)> {
     APPS.with(|apps| {
         let apps = apps.borrow();
         let q = query.trim();
         if q.is_empty() {
-            return apps.iter().take(limit).map(|a| (a.clone(), 0)).collect();
+            let mut all: Vec<(&AppEntry, u32)> = apps.iter().map(|a| (a, frecency::boost(&a.path))).collect();
+            all.sort_by(|x, y| y.1.cmp(&x.1));
+            return all.into_iter().take(limit).map(|(a, s)| (a.clone(), s)).collect();
         }
         let pattern = Pattern::parse(q, CaseMatching::Ignore, Normalization::Smart);
         let mut buf = Vec::new();
@@ -131,6 +136,7 @@ pub fn search(query: &str, limit: usize) -> Vec<(AppEntry, u32)> {
             let mut m = m.borrow_mut();
             apps.iter()
                 .filter_map(|a| pattern.score(Utf32Str::new(&a.name, &mut buf), &mut m).map(|s| (a, s)))
+                .map(|(a, s)| (a, s + frecency::boost(&a.path)))
                 .collect()
         });
         scored.sort_by(|x, y| y.1.cmp(&x.1).then(x.0.name.len().cmp(&y.0.name.len())));

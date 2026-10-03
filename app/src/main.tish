@@ -5,7 +5,7 @@
 
 import { loadModule } from "tish:ffi"
 import { macos, useState } from "tish:macos"
-import { reindex, search, launch, setup, registerHotkey, quit, hide, appCount, searchFiles, watchApps, fuzzy, pluginPaths, copyText, loadBytecodePlugin, bundleResources } from "tish:nimble"
+import { reindex, search, launch, setup, registerHotkey, quit, hide, appCount, searchFiles, watchApps, fuzzy, pluginPaths, copyText, loadBytecodePlugin, bundleResources, recordUse, frecency, statusItem, watchClipboard, clipboardHistory, clearClipboardHistory } from "tish:nimble"
 import { env } from "tish:process"
 
 const ROWS = 8
@@ -30,10 +30,17 @@ for (let i = 0; i < HOTKEYS.length && hotkey === ""; i = i + 1) {
     console.log("nimble: hotkey " + r.error)
   }
 }
+statusItem(hotkey)
+watchClipboard()
 
 // ── Plugins: every module in PLUGIN_DIR contributes its manifest's commands to root search ──
 
-let commands = [{ name: "Quit Nimble", path: "nimble:quit", icon: "NSStopProgressTemplate", kind: "Command", mode: "builtin" }]
+let commands = [
+  { name: "Clipboard History", path: "nimble:clipboard", icon: "NSMultipleDocuments", kind: "Command", mode: "clipboard", pluginTitle: "Nimble" },
+  { name: "Clear Clipboard History", path: "nimble:clipboard-clear", icon: "NSTrashEmpty", kind: "Command", mode: "builtin" },
+  { name: "Quit Nimble", path: "nimble:quit", icon: "NSStopProgressTemplate", kind: "Command", mode: "builtin" }
+]
+let BUILTIN_COUNT = commands.length
 let pluginCount = 0
 let pluginFiles = pluginPaths(PLUGIN_DIR)
 let pluginT0 = Date.now()
@@ -86,7 +93,7 @@ for (let i = 0; i < pluginFiles.length; i = i + 1) {
 }
 let commandTitles = commands.map((c) => c.name)
 console.log("nimble: indexed " + index.count + " apps in " + index.ms.toFixed(1) + " ms, watching " + watching
-  + ", " + pluginCount + " plugins / " + (commands.length - 1) + " commands in " + (Date.now() - pluginT0) + " ms, hotkey " + hotkey)
+  + ", " + pluginCount + " plugins / " + (commands.length - BUILTIN_COUNT) + " commands in " + (Date.now() - pluginT0) + " ms, hotkey " + hotkey)
 
 // ── Shell state ──
 // Native key and show callbacks are registered once, so state lives outside the component.
@@ -101,13 +108,31 @@ fn refresh() {
   }
 }
 
-// Apps and plugin commands share one nucleo scale, so merge them by score.
+// Commands scored like apps: nucleo match plus frecency boost. An empty query keeps only
+// commands that have been used, scored by boost alone.
+fn commandHits(text) {
+  let hits = []
+  if (text.trim() === "") {
+    for (let i = 0; i < commands.length; i = i + 1) {
+      let b = frecency(commands[i].path)
+      if (b > 0) {
+        hits.push({ index: i, score: b })
+      }
+    }
+  } else {
+    let raw = fuzzy(text, commandTitles, commands.length)
+    for (let i = 0; i < raw.length; i = i + 1) {
+      hits.push({ index: raw[i].index, score: raw[i].score + frecency(commands[raw[i].index].path) })
+    }
+  }
+  hits.sort((a, b) => b.score - a.score)
+  return hits
+}
+
+// Apps and commands share one scale (match + frecency), so merge them by score.
 fn rootResults(text) {
   let apps = search(text, ROWS)
-  if (text.trim() === "") {
-    return apps
-  }
-  let hits = fuzzy(text, commandTitles, ROWS)
+  let hits = commandHits(text)
   let out = []
   let i = 0
   let j = 0
@@ -123,8 +148,20 @@ fn rootResults(text) {
   return out
 }
 
+fn clipboardResults(text) {
+  return clipboardHistory(text, ROWS).map((c) => ({
+    name: c.preview,
+    kind: (c.app !== "" ? c.app + " · " : "") + c.ago,
+    icon: c.icon !== "" ? c.icon : "NSMultipleDocuments",
+    action: { copy: c.text, close: true }
+  }))
+}
+
 fn listResults(text) {
   let m = shell.mode
+  if (m.mode === "clipboard") {
+    return clipboardResults(text)
+  }
   try {
     let items = m.plugin.list(m.command, text)
     return items.slice(0, ROWS).map((it) => ({ name: it.title, kind: it.subtitle, icon: m.icon, action: it.action }))
@@ -179,7 +216,8 @@ fn leaveList() {
   setQuery("")
 }
 
-// Plugin actions: { copy } puts text on the clipboard, { open } opens a URL or path, { hud } is a message.
+// Actions: { copy } puts text on the clipboard, { open } opens a URL or path, { hud } is a message,
+// { close } hides Nimble afterwards.
 fn perform(action) {
   if (action === null) {
     return
@@ -195,7 +233,22 @@ fn perform(action) {
     leaveList()
     return
   }
+  if (action.close) {
+    hide()
+    leaveList()
+    return
+  }
   refresh()
+}
+
+fn runBuiltin(c) {
+  if (c.path === "nimble:quit") {
+    quit()
+  } else if (c.path === "nimble:clipboard-clear") {
+    clearClipboardHistory()
+    shell.hud = "Clipboard history cleared"
+    refresh()
+  }
 }
 
 fn runCommand(c) {
@@ -214,9 +267,14 @@ fn open(i) {
   let target = shell.results[i]
   if (shell.mode !== null) {
     perform(target.action)
-  } else if (target.mode === "builtin") {
-    quit()
-  } else if (target.mode === "list") {
+    return
+  }
+  if (target.kind !== "File" && target.kind !== "Folder") {
+    recordUse(target.path)
+  }
+  if (target.mode === "builtin") {
+    runBuiltin(target)
+  } else if (target.mode === "list" || target.mode === "clipboard") {
     enterList(target)
   } else if (target.mode === "no-view") {
     runCommand(target)
@@ -246,9 +304,9 @@ fn onKey(name) {
   }
 }
 
+// Recompute on show: frecency and clipboard history may have changed while hidden.
 fn onShow(_) {
-  shell.selected = 0
-  refresh()
+  setQuery(shell.query)
 }
 
 // ── View ──
@@ -286,7 +344,7 @@ fn statusText() {
     return where + " · No matches"
   }
   if (shell.mode === null && shell.query === "") {
-    return where + " · " + appCount() + " apps · " + (commands.length - 1) + " commands"
+    return where + " · " + appCount() + " apps · " + commands.length + " commands"
   }
   return where + " · " + shell.results.length + " matches"
 }
@@ -301,7 +359,10 @@ fn App() {
     let r = i < shell.results.length ? shell.results[i] : null
     rows.push(<ResultRow index={i} result={r} selected={r !== null && i === shell.selected} />)
   }
-  let hints = shell.mode !== null ? "↑↓ select   ↵ run   esc back" : "↑↓ select   ↵ open   esc hide   " + hotkey
+  let hints = "↑↓ select   ↵ open   esc hide   " + hotkey
+  if (shell.mode !== null) {
+    hints = shell.mode.mode === "clipboard" ? "↑↓ select   ↵ copy   esc back" : "↑↓ select   ↵ run   esc back"
+  }
   let footer = <row columnWidths={["flex", 280]} paddingTop={6}><text fontSize={11} color="secondaryLabel">{statusText()}</text><text fontSize={11} color="secondaryLabel" textAlign="right">{hints}</text></row>
   return (
     <div paddingTop={18} paddingLeft={16} paddingRight={16} paddingBottom={10}><textinput value={shell.query} onChange={setQuery} /><space height={10} />{rows}<space height={6} /><rule />{footer}</div>
