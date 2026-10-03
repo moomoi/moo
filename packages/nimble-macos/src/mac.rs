@@ -397,7 +397,7 @@ extern "C" fn on_hotkey(_next: *mut c_void, _event: *mut c_void, _user: *mut c_v
     0
 }
 
-/// `(key code, modifiers as printed on the keyboard, key name)`.
+/// `(key code, Carbon modifiers, key name)`.
 fn parse_hotkey(spec: &str) -> Result<(u32, u32, &'static str), String> {
     let mut mods = 0u32;
     let mut key = None;
@@ -419,22 +419,18 @@ fn parse_hotkey(spec: &str) -> Result<(u32, u32, &'static str), String> {
 }
 
 pub struct Hotkey {
-    /// What the user presses, as printed on the keys: `⌘Space`.
+    /// `⌘Space`.
     pub display: String,
-    /// What was registered after the keyboards' modifier mappings: `ctrl+space`.
+    /// `cmd+space`.
     pub registered: Vec<String>,
 }
 
-/// Register `spec` (keys as printed) for whatever the connected keyboards' modifier mappings make
-/// those keys produce. Combinations an enabled system shortcut owns are skipped: macOS would
-/// accept them and then never deliver the keypress.
+/// Register `spec` exactly as given. System Settings' modifier key mappings are applied by macOS
+/// before the event reaches any hotkey, so they need no handling here. A combination an enabled
+/// system shortcut owns is refused: macOS would accept it and then never deliver the keypress.
 pub fn register_hotkey(spec: &str) -> Result<Hotkey, String> {
-    let (code, physical, key) = parse_hotkey(spec)?;
-    let display = keymap::symbols(physical, key);
-    let combos = keymap::logical_combos(physical, &keymap::active_mappings());
-    if combos.is_empty() {
-        return Err(format!("{display}: a modifier is remapped to a non-modifier key on every keyboard"));
-    }
+    let (code, mods, key) = parse_hotkey(spec)?;
+    let display = keymap::symbols(mods, key);
     let mut registered = Vec::new();
     let mut taken = Vec::new();
     unsafe {
@@ -447,12 +443,10 @@ pub fn register_hotkey(spec: &str) -> Result<Hotkey, String> {
             }
             HOTKEY_HANDLER.with(|c| c.set(true));
         }
-        for mods in combos {
-            let name = keymap::spec_name(mods, key);
-            if let Some(owner) = keymap::system_shortcut(code, mods) {
-                taken.push(format!("{name} is macOS \"{owner}\""));
-                continue;
-            }
+        let name = keymap::spec_name(mods, key);
+        if let Some(owner) = keymap::system_shortcut(code, mods) {
+            taken.push(format!("{name} is macOS \"{owner}\""));
+        } else {
             let mut out = std::ptr::null_mut();
             let id = EventHotKeyID { signature: fourcc(b"nmbl"), id: HOTKEY_IDS.with(|n| n.replace(n.get() + 1)) };
             match RegisterEventHotKey(code, mods, id, target, 0, &mut out) {

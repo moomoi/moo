@@ -17,7 +17,6 @@ const AI_WRAP = 92
 const AI_INSTRUCTIONS = "You are the assistant inside Nimble, a macOS launcher. Answer briefly and plainly in a few short sentences. Do not use Markdown."
 const AI_TITLE = "Apple Intelligence"
 
-// Keys as printed on the keyboard; registerHotkey applies System Settings' modifier key mappings.
 let HOTKEYS = ["cmd+space", "alt+space", "ctrl+alt+space", "cmd+shift+space"]
 if (env.NIMBLE_HOTKEY) {
   HOTKEYS = [env.NIMBLE_HOTKEY].concat(HOTKEYS)

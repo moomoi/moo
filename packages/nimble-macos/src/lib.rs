@@ -169,9 +169,8 @@ mod natives {
         Value::Null
     }
 
-    /// `registerHotkey(spec)` -> `{ ok, display, registered }` or `{ ok: false, error }`. `spec` names
-    /// keys as printed ("cmd+space"); `registered` lists what was registered after the keyboards'
-    /// modifier mappings (["ctrl+space"] with Command and Control swapped); `display` is "⌘Space".
+    /// `registerHotkey(spec)` -> `{ ok, display, registered }` or `{ ok: false, error }`, e.g.
+    /// `registerHotkey("cmd+space")` -> `{ ok: true, display: "⌘Space", registered: ["cmd+space"] }`.
     pub fn register_hotkey(args: &[Value]) -> Value {
         match mac::register_hotkey(&str_arg(args, 0)) {
             Ok(h) => obj(vec![

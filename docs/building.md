@@ -41,14 +41,9 @@ open dist/Nimble.app             # the bundle
 | `NIMBLE_FRECENCY` | Frecency file (default `~/Library/Application Support/Nimble/frecency.tsv`) |
 | `NIMBLE_DEBUG` | Timestamped logs on stderr: focus changes, hotkey, key handling, file query timings |
 
-Hotkeys name keys as printed on the keyboard. System Settings › Keyboard › Modifier Keys remaps
-them per keyboard below the event system (with Command and Control swapped, the Command key sends
-Control), so `keymap.rs` reads each connected keyboard's mapping
-(`com.apple.keyboard.modifiermapping.<vendor>-<product>-0` in the current-host global domain) and
-registers what the keys actually produce: `cmd+space` becomes `ctrl+space` on a swapped keyboard,
-and keyboards or left/right keys that differ get one registration each. The debug log shows it:
-`hotkey ⌘Space registered as ctrl+space`. Mappings are read when the hotkey is registered, so
-restart Nimble after changing them.
+The hotkey is registered exactly as written (`cmd+space` registers Command+Space). System
+Settings › Keyboard › Modifier Keys swaps are applied by macOS before the keypress reaches Nimble,
+so Nimble does nothing about them.
 
 Combinations an enabled macOS shortcut owns (Spotlight ⌘Space, input sources ⌃Space and ⌃⌥Space,
 Finder search ⌘⌥Space, including their defaults when never changed) are skipped and the next
