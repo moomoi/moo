@@ -1,0 +1,4 @@
+# Matches LSMinimumSystemVersion in scripts/bundle-macos.sh. At 12.0 or later the Swift runtime
+# (used by packages/nimble-macos/swift/ai.swift) links against the copy in /usr/lib/swift.
+[env]
+MACOSX_DEPLOYMENT_TARGET = "14.0"

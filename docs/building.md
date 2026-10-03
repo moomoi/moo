@@ -4,6 +4,8 @@
 
 - macOS 14 or later, Apple Silicon (tested on macOS 26.6 arm64)
 - Rust (tested with 1.94)
+- Xcode or the Command Line Tools with the macOS 26 SDK: `build.rs` compiles
+  `packages/nimble-macos/swift/ai.swift` (Apple's on-device model) with `swiftc`. Tested with Swift 6.3.
 - A tish compiler built from the `tish-nimble` checkout, which carries the cdylib and runtime
   module-loading changes: `cargo build --release -p tishlang --features full` in
   `~/Projects/tish/tish-nimble`. The scripts default to
@@ -40,7 +42,9 @@ open dist/Nimble.app             # the bundle
 | `NIMBLE_DEBUG` | Timestamped logs on stderr: focus changes, hotkey, key handling, file query timings |
 
 If the default hotkey does nothing, another app probably owns it: registration succeeds, but the
-other app receives the keypress. Set `NIMBLE_HOTKEY`.
+other app receives the keypress. Set `NIMBLE_HOTKEY`. Chrome's "Ask Gemini" bar also uses
+option+space: Nimble's panel opens and then loses focus to Chrome at once (the debug log shows
+`panel key=true` followed by `panel key=false` within milliseconds).
 
 ## Test
 
@@ -65,6 +69,7 @@ panel has keyboard focus, and restore the clipboard on exit. Set
 | `drive-convert.sh` | Tier A plugin: list command, VM state |
 | `drive-features.sh` | Status item, clipboard history, frecency |
 | `drive-runaway.sh` | Tier A time budget: a hanging plugin errors, other plugins keep working |
+| `drive-ai.sh` | Ask AI: tab from root, follow-up, copy, scrolling, esc to stop (needs Apple Intelligence on) |
 
 `drive-runaway.sh` uses a plugin that hangs on purpose (`scripts/fixtures/runaway.tish`, not
 shipped in `plugins/`). `drive-runaway.sh build` compiles it into `/tmp/nimble-runaway/plugins`

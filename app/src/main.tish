@@ -1,16 +1,21 @@
 // Nimble launcher shell: Lattish-style JSX on tish-macos (`tish:macos`), launcher services from
 // packages/nimble-macos (`tish:nimble`), plugins loaded at runtime as native modules (`tish:ffi`).
 // Hotkey toggles the panel; type to search apps, plugin commands and files; up/down select;
-// enter (or click) opens; esc leaves a plugin list, otherwise hides.
+// enter (or click) opens; esc leaves a plugin list, otherwise hides. tab (or "Ask AI") asks Apple's
+// on-device model; the answer streams into the rows.
 
 import { loadModule } from "tish:ffi"
 import { macos, useState } from "tish:macos"
-import { reindex, search, launch, setup, registerHotkey, quit, hide, appCount, searchFiles, watchApps, fuzzy, pluginPaths, copyText, loadBytecodePlugin, bundleResources, recordUse, frecency, statusItem, watchClipboard, clipboardHistory, clearClipboardHistory } from "tish:nimble"
+import { reindex, search, launch, setup, registerHotkey, quit, hide, appCount, searchFiles, watchApps, fuzzy, pluginPaths, copyText, loadBytecodePlugin, bundleResources, recordUse, frecency, statusItem, watchClipboard, clipboardHistory, clearClipboardHistory, aiAvailability, aiSession, aiEndSession, aiPrewarm, aiAsk, aiCancel, symbolIcon } from "tish:nimble"
 import { env } from "tish:process"
 
 const ROWS = 8
 const FILE_MIN_CHARS = 2
 const FILE_ROWS_WITH_APPS = 3
+// Characters per answer row at 14 pt across the panel.
+const AI_WRAP = 92
+const AI_INSTRUCTIONS = "You are the assistant inside Nimble, a macOS launcher. Answer briefly and plainly in a few short sentences. Do not use Markdown."
+const AI_TITLE = "Apple Intelligence"
 
 let HOTKEYS = ["alt+space", "ctrl+alt+space", "cmd+shift+space"]
 if (env.NIMBLE_HOTKEY) {
@@ -35,11 +40,14 @@ watchClipboard()
 
 // ── Plugins: every module in PLUGIN_DIR contributes its manifest's commands to root search ──
 
+let aiIcon = symbolIcon("sparkles")
 let commands = [
+  { name: "Ask AI", path: "nimble:ai", icon: aiIcon, kind: AI_TITLE, mode: "ai", pluginTitle: AI_TITLE, question: "" },
   { name: "Clipboard History", path: "nimble:clipboard", icon: "NSMultipleDocuments", kind: "Command", mode: "clipboard", pluginTitle: "Nimble" },
   { name: "Clear Clipboard History", path: "nimble:clipboard-clear", icon: "NSTrashEmpty", kind: "Command", mode: "builtin" },
   { name: "Quit Nimble", path: "nimble:quit", icon: "NSStopProgressTemplate", kind: "Command", mode: "builtin" }
 ]
+let ASK_AI = commands[0]
 let BUILTIN_COUNT = commands.length
 let pluginCount = 0
 let pluginFiles = pluginPaths(PLUGIN_DIR)
@@ -145,6 +153,10 @@ fn rootResults(text) {
       j = j + 1
     }
   }
+  // Fallback when there is room, as in Raycast; tab asks from anywhere.
+  if (out.length < ROWS && text.trim() !== "") {
+    out.push({ name: "Ask AI “" + text.trim() + "”", path: ASK_AI.path, icon: ASK_AI.icon, kind: AI_TITLE, mode: "ai", pluginTitle: AI_TITLE, question: text })
+  }
   return out
 }
 
@@ -189,12 +201,134 @@ fn onFiles(r) {
   refresh()
 }
 
+// ── Ask AI: one session per visit, so follow-up questions keep context ──
+let ai = { session: 0, request: 0, question: "", answer: "", error: "", scroll: 0, t0: 0, ms: 0, stopped: false }
+
+fn wrapText(text, width) {
+  let out = []
+  let paras = text.split("\n")
+  for (let p = 0; p < paras.length; p = p + 1) {
+    let words = paras[p].split(" ")
+    let line = ""
+    for (let w = 0; w < words.length; w = w + 1) {
+      let word = words[w]
+      while (word.length > width) {
+        if (line !== "") {
+          out.push(line)
+          line = ""
+        }
+        out.push(word.slice(0, width))
+        word = word.slice(width)
+      }
+      if (line === "") {
+        line = word
+      } else if (line.length + 1 + word.length <= width) {
+        line = line + " " + word
+      } else {
+        out.push(line)
+        line = word
+      }
+    }
+    out.push(line)
+  }
+  return out
+}
+
+fn aiLines() {
+  return wrapText(ai.answer.split("**").join("").trim(), AI_WRAP)
+}
+
+fn aiRows() {
+  if (ai.answer === "") {
+    return []
+  }
+  let action = { copy: ai.answer, hud: "Copied answer" }
+  return aiLines().slice(ai.scroll, ai.scroll + ROWS).map((l) => ({ name: l, kind: "", icon: "", action: action }))
+}
+
+fn showAi() {
+  shell.apps = aiRows()
+  compose()
+  refresh()
+}
+
+fn aiErrorText(raw) {
+  if (raw.indexOf("guardrailViolation") >= 0) {
+    return "Apple's safety filter declined this request"
+  }
+  if (raw.indexOf("exceededContextWindowSize") >= 0) {
+    return "Conversation too long for the on-device model; press esc and start again"
+  }
+  return "AI error: " + (raw.length > 120 ? raw.slice(0, 120) + "…" : raw)
+}
+
+fn onAiEvent(e) {
+  if (e.request !== ai.request) {
+    return
+  }
+  if (e.kind === "error") {
+    ai.error = aiErrorText(e.text)
+  } else {
+    ai.answer = e.text
+  }
+  if (e.kind !== "partial") {
+    ai.request = 0
+    ai.ms = Date.now() - ai.t0
+    ai.stopped = e.kind === "cancelled"
+  }
+  showAi()
+}
+
+fn askAi(question) {
+  if (ai.request !== 0 || question.trim() === "") {
+    return
+  }
+  if (ai.session === 0) {
+    let why = aiAvailability()
+    if (why !== "available") {
+      ai.error = AI_TITLE + " is unavailable: " + why
+      showAi()
+      return
+    }
+    ai.session = aiSession(AI_INSTRUCTIONS)
+  }
+  ai.question = question.trim()
+  ai.answer = ""
+  ai.error = ""
+  ai.stopped = false
+  ai.scroll = 0
+  ai.t0 = Date.now()
+  ai.request = aiAsk(ai.session, ai.question, onAiEvent)
+  if (ai.request === 0) {
+    ai.error = "AI error: the model is busy"
+  }
+  shell.query = ""
+  shell.hud = ""
+  showAi()
+}
+
+fn resetAi() {
+  if (ai.request !== 0) {
+    aiCancel(ai.request)
+  }
+  if (ai.session !== 0) {
+    aiEndSession(ai.session)
+  }
+  ai = { session: 0, request: 0, question: "", answer: "", error: "", scroll: 0, t0: 0, ms: 0, stopped: false }
+}
+
+fn inAi() {
+  return shell.mode !== null && shell.mode.mode === "ai"
+}
+
 fn setQuery(text) {
   shell.query = text
   shell.selected = 0
   shell.hud = ""
   shell.files = []
-  if (shell.mode !== null) {
+  if (inAi()) {
+    shell.apps = aiRows()
+  } else if (shell.mode !== null) {
     shell.apps = listResults(text)
   } else {
     shell.apps = rootResults(text)
@@ -212,8 +346,29 @@ fn enterList(c) {
 }
 
 fn leaveList() {
+  if (inAi()) {
+    resetAi()
+  }
   shell.mode = null
   setQuery("")
+}
+
+// Ask AI with an optional first question (the root query when entered with tab).
+fn enterAi(c, question) {
+  shell.mode = c
+  setQuery("")
+  let why = aiAvailability()
+  if (why !== "available") {
+    ai.error = AI_TITLE + " is unavailable: " + why
+    refresh()
+    return
+  }
+  ai.session = aiSession(AI_INSTRUCTIONS)
+  if (question.trim() !== "") {
+    askAi(question)
+  } else {
+    aiPrewarm(ai.session)
+  }
 }
 
 // Actions: { copy } puts text on the clipboard, { open } opens a URL or path, { hud } is a message,
@@ -274,6 +429,8 @@ fn open(i) {
   }
   if (target.mode === "builtin") {
     runBuiltin(target)
+  } else if (target.mode === "ai") {
+    enterAi(target, target.question)
   } else if (target.mode === "list" || target.mode === "clipboard") {
     enterList(target)
   } else if (target.mode === "no-view") {
@@ -284,9 +441,43 @@ fn open(i) {
   }
 }
 
+fn onAiKey(name) {
+  let maxScroll = Math.max(0, aiLines().length - ROWS)
+  if (name === "down" && ai.scroll < maxScroll) {
+    ai.scroll = ai.scroll + 1
+    showAi()
+  } else if (name === "up" && ai.scroll > 0) {
+    ai.scroll = ai.scroll - 1
+    showAi()
+  } else if (name === "enter") {
+    if (shell.query.trim() !== "") {
+      askAi(shell.query)
+    } else if (ai.request === 0 && ai.answer !== "") {
+      copyText(ai.answer)
+      shell.hud = "Copied answer"
+      refresh()
+    }
+  } else if (name === "escape") {
+    if (ai.request !== 0) {
+      aiCancel(ai.request)
+    } else {
+      leaveList()
+    }
+  }
+}
+
 fn onKey(name) {
+  if (inAi()) {
+    onAiKey(name)
+    return
+  }
   let n = shell.results.length
-  if (name === "down" && n > 0) {
+  if (name === "tab") {
+    if (shell.mode === null && shell.query.trim() !== "") {
+      recordUse(ASK_AI.path)
+      enterAi(ASK_AI, shell.query)
+    }
+  } else if (name === "down" && n > 0) {
     shell.selected = (shell.selected + 1) % n
     refresh()
   } else if (name === "up" && n > 0) {
@@ -321,23 +512,45 @@ fn kindLabel(r) {
 fn ResultRow(props) {
   let r = props.result
   let selected = props.selected
+  // Answer rows use the full width; 0 would mean "flex", so the unused columns get 1 px.
+  let wide = props.wide
   return (
     <row
       onClick={() => open(props.index)}
       borderRadius={8}
       backgroundColor={selected ? "#0A84FF40" : "#00000000"}
-      columnWidths={[40, "flex", 250]}
+      columnWidths={wide ? [1, "flex", 1] : [40, "flex", 250]}
       paddingTop={5}
       paddingBottom={5}
       paddingLeft={8}
       paddingRight={10}
-    ><image src={r !== null ? r.icon : ""} height={26} /><text fontSize={15}>{r !== null ? r.name : ""}</text><text fontSize={12} color="secondaryLabel" textAlign="right">{kindLabel(r)}</text></row>
+    ><image src={r !== null ? r.icon : ""} height={26} /><text fontSize={wide ? 14 : 15}>{r !== null ? r.name : ""}</text><text fontSize={12} color="secondaryLabel" textAlign="right">{kindLabel(r)}</text></row>
   )
+}
+
+fn aiStatusText() {
+  if (ai.error !== "") {
+    return ai.error
+  }
+  let q = ai.question.length > 32 ? ai.question.slice(0, 32) + "…" : ai.question
+  let lines = aiLines().length
+  let more = lines > ROWS ? " · lines " + (ai.scroll + 1) + "–" + Math.min(lines, ai.scroll + ROWS) + " of " + lines : ""
+  if (ai.request !== 0) {
+    return AI_TITLE + " · " + (ai.answer === "" ? "thinking" : "answering") + more + " · “" + q + "”"
+  }
+  if (ai.answer !== "") {
+    let took = (ai.stopped ? "stopped after " : "") + (ai.ms / 1000).toFixed(1) + " s"
+    return AI_TITLE + " · " + took + more + " · “" + q + "”"
+  }
+  return AI_TITLE + " · on-device · type a question"
 }
 
 fn statusText() {
   if (shell.hud !== "") {
     return shell.hud
+  }
+  if (inAi()) {
+    return aiStatusText()
   }
   let where = shell.mode !== null ? shell.mode.pluginTitle + " › " + shell.mode.name : "Nimble"
   if (shell.results.length === 0) {
@@ -354,13 +567,22 @@ fn App() {
   shell.rerender = setVersion
 
   let rows = []
+  let wide = inAi()
   let rowCount = shell.rowCount
   for (let i = 0; i < rowCount; i = i + 1) {
     let r = i < shell.results.length ? shell.results[i] : null
-    rows.push(<ResultRow index={i} result={r} selected={r !== null && i === shell.selected} />)
+    rows.push(<ResultRow index={i} result={r} selected={!wide && r !== null && i === shell.selected} wide={wide} />)
   }
-  let hints = "↑↓ select   ↵ open   esc hide   " + hotkey
-  if (shell.mode !== null) {
+  let hints = "↑↓ select   ↵ open   ⇥ ask AI   esc hide"
+  if (wide) {
+    if (ai.request !== 0) {
+      hints = "esc stop"
+    } else if (ai.answer !== "" && shell.query === "") {
+      hints = "↵ copy   ↑↓ scroll   esc back"
+    } else {
+      hints = "↵ ask   esc back"
+    }
+  } else if (shell.mode !== null) {
     hints = shell.mode.mode === "clipboard" ? "↑↓ select   ↵ copy   esc back" : "↑↓ select   ↵ run   esc back"
   }
   let footer = <row columnWidths={["flex", 280]} paddingTop={6}><text fontSize={11} color="secondaryLabel">{statusText()}</text><text fontSize={11} color="secondaryLabel" textAlign="right">{hints}</text></row>

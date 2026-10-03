@@ -2,6 +2,8 @@
 //! `import { reindex, search, launch, setup, ... } from "nimble-macos"`.
 
 #[cfg(target_os = "macos")]
+mod ai;
+#[cfg(target_os = "macos")]
 mod clip;
 #[cfg(target_os = "macos")]
 mod files;
@@ -232,6 +234,47 @@ mod natives {
         clip::clear();
         Value::Null
     }
+
+    /// `aiAvailability()` -> `"available"`, or why Apple's on-device model cannot answer.
+    pub fn ai_availability(_a: &[Value]) -> Value {
+        match ai::availability() {
+            Ok(()) => Value::String("available".into()),
+            Err(reason) => Value::String(reason.as_str().into()),
+        }
+    }
+
+    /// `aiSession(instructions)` -> session id (0 when unavailable). Asks in a session share context.
+    pub fn ai_session(args: &[Value]) -> Value {
+        Value::Number(ai::session(&str_arg(args, 0)) as f64)
+    }
+
+    pub fn ai_end_session(args: &[Value]) -> Value {
+        ai::end_session(num_arg(args, 0, 0.0) as u64);
+        Value::Null
+    }
+
+    pub fn ai_prewarm(args: &[Value]) -> Value {
+        ai::prewarm(num_arg(args, 0, 0.0) as u64);
+        Value::Null
+    }
+
+    /// `aiAsk(session, prompt, onEvent)` -> request id (0 if the session is busy or unknown).
+    /// `onEvent({ request, kind, text })` runs on the main thread; kind is "partial" (whole reply so
+    /// far), then one of "done", "error" or "cancelled".
+    pub fn ai_ask(args: &[Value]) -> Value {
+        let cb = args.get(2).cloned().unwrap_or(Value::Null);
+        Value::Number(ai::ask(num_arg(args, 0, 0.0) as u64, &str_arg(args, 1), cb) as f64)
+    }
+
+    pub fn ai_cancel(args: &[Value]) -> Value {
+        ai::cancel(num_arg(args, 0, 0.0) as u64);
+        Value::Null
+    }
+
+    /// `symbolIcon(name)` -> an image name for `<image src>` showing SF Symbol `name`.
+    pub fn symbol_icon(args: &[Value]) -> Value {
+        Value::String(mac::symbol_icon(&str_arg(args, 0)).as_str().into())
+    }
 }
 
 #[cfg(not(target_os = "macos"))]
@@ -252,6 +295,13 @@ mod natives {
     pub fn watch_clipboard(_a: &[Value]) -> Value { Value::Bool(false) }
     pub fn clipboard_history(_a: &[Value]) -> Value { Value::Array(VmRef::new(Vec::new())) }
     pub fn clear_clipboard_history(_a: &[Value]) -> Value { Value::Null }
+    pub fn ai_availability(_a: &[Value]) -> Value { Value::String("macOS only".into()) }
+    pub fn ai_session(_a: &[Value]) -> Value { Value::Number(0.0) }
+    pub fn ai_end_session(_a: &[Value]) -> Value { Value::Null }
+    pub fn ai_prewarm(_a: &[Value]) -> Value { Value::Null }
+    pub fn ai_ask(_a: &[Value]) -> Value { Value::Number(0.0) }
+    pub fn ai_cancel(_a: &[Value]) -> Value { Value::Null }
+    pub fn symbol_icon(_a: &[Value]) -> Value { Value::String("".into()) }
 }
 
 pub fn nimble_object() -> Value {
@@ -278,5 +328,12 @@ pub fn nimble_object() -> Value {
     m.insert(Arc::from("watchClipboard"), Value::native(natives::watch_clipboard));
     m.insert(Arc::from("clipboardHistory"), Value::native(natives::clipboard_history));
     m.insert(Arc::from("clearClipboardHistory"), Value::native(natives::clear_clipboard_history));
+    m.insert(Arc::from("aiAvailability"), Value::native(natives::ai_availability));
+    m.insert(Arc::from("aiSession"), Value::native(natives::ai_session));
+    m.insert(Arc::from("aiEndSession"), Value::native(natives::ai_end_session));
+    m.insert(Arc::from("aiPrewarm"), Value::native(natives::ai_prewarm));
+    m.insert(Arc::from("aiAsk"), Value::native(natives::ai_ask));
+    m.insert(Arc::from("aiCancel"), Value::native(natives::ai_cancel));
+    m.insert(Arc::from("symbolIcon"), Value::native(natives::symbol_icon));
     Value::object(m)
 }

@@ -13,6 +13,8 @@ rm -f node_modules/nimble-macos
 ln -sfn ../../packages/nimble-macos node_modules/tish-nimble
 
 unset CARGO_TARGET_DIR
+# Matches LSMinimumSystemVersion; also makes the Swift runtime link from /usr/lib/swift (see .cargo/config.toml).
+export MACOSX_DEPLOYMENT_TARGET="${MACOSX_DEPLOYMENT_TARGET:-14.0}"
 export TISH_NATIVE_TARGET_DIR="${TISH_NATIVE_TARGET_DIR:-$(cd .. && pwd)/target/tish-native}"
 "$TISH" build src/main.tish --target native --native-backend rust -o dist/nimble
 ls -la dist/nimble

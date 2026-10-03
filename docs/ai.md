@@ -1,12 +1,42 @@
-# AI (design; not built yet)
+# AI
 
-Nimble's AI features route through one provider interface with three implementations: Hypery for
-remote models, Uzu for local inference on Apple Silicon, and any OpenAI-compatible server on
-localhost. Nothing on this page is implemented yet.
+Nimble's AI features route through one provider interface. Apple's on-device model is the default
+and is built (Quick AI, below). Hypery for remote models, Uzu, and OpenAI-compatible servers on
+localhost are designed but not built.
+
+## Built: Quick AI on Apple's on-device model
+
+Apple's `FoundationModels` framework (macOS 26+, Apple Intelligence on) runs a small model on the
+device: free, offline, nothing leaves the Mac. Measured on this Mac (macOS 26.6, Apple Silicon):
+about 2 s to the first word on a cold start, then 0.3–0.5 s for short answers.
+
+**Use.** Type a question at the root and press tab, or pick the "Ask AI “…”" row that appears
+when results leave room, or open the "Ask AI" command. The answer streams into the rows (wrapped
+across the full width, up/down to scroll). Type a follow-up and press enter: one session per visit
+keeps the conversation's context. Enter on an empty field copies the answer; esc stops a streaming
+answer, then leaves.
+
+**How it is wired.** FoundationModels is Swift-only (no Objective-C headers), so
+`packages/nimble-macos/swift/ai.swift` wraps it in a C ABI (`nimble_ai_availability`,
+`_session_new`, `_ask`, `_cancel`, `_prewarm`), compiled to a static library by `build.rs` and linked
+into the one binary. Replies stream on a Swift concurrency thread; `src/ai.rs` queues events,
+collapses consecutive partial replies, and delivers them on the main queue. Tish sees `aiAvailability`,
+`aiSession`, `aiAsk(session, prompt, onEvent)`, `aiCancel`, `aiPrewarm` and `aiEndSession`.
+
+**Older macOS.** Every FoundationModels use is behind `#available`, so the framework is weak-linked
+and Nimble still launches on macOS 14; `aiAvailability()` then returns `requires macOS 26`. Other
+reasons it reports: `deviceNotEligible`, `appleIntelligenceNotEnabled`, `modelNotReady`. The Swift
+runtime comes from `/usr/lib/swift`, which needs a deployment target of 12 or later (Nimble uses 14).
+
+**Limits.** A small model with a context window Apple documents as 4,096 tokens: good for short
+answers, rewriting and extraction, weak on long input and broad knowledge. Long conversations fail
+with `exceededContextWindowSize` (shown as a message; esc starts over). Apple's safety filter can
+refuse (`guardrailViolation`).
 
 ## Features
 
-- **Quick AI:** type a question in root search and get a streamed answer in the panel.
+- **Quick AI:** type a question in root search and get a streamed answer in the panel. Built on
+  Apple's model (above); Hypery as a remote option is not built.
 - **Chat:** a conversation view with history.
 - **AI Commands:** saved prompt templates with `{selection}`, `{clipboard}` and `{argument}`
   placeholders, listed in root search like any command.

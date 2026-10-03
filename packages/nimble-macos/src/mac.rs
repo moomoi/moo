@@ -305,6 +305,7 @@ fn install_key_monitor() {
             (126, _) | (35, true) => Some("up"),
             (36, _) | (76, _) => Some("enter"),
             (53, _) => Some("escape"),
+            (48, _) => Some("tab"),
             _ => None,
         };
         match name {
@@ -529,6 +530,22 @@ fn install_status_item(hotkey: &str) {
     }
     item.setMenu(Some(&menu));
     STATUS.with(|s| *s.borrow_mut() = Some((item, target)));
+}
+
+/// Register SF Symbol `symbol` as a named image (once) and return the name.
+pub fn symbol_icon(symbol: &str) -> String {
+    let name = format!("nimble-symbol-{symbol}");
+    let ns_name = NSString::from_str(&name);
+    if NSImage::imageNamed(&ns_name).is_none() {
+        let desc = NSString::from_str(symbol);
+        match NSImage::imageWithSystemSymbolName_accessibilityDescription(&NSString::from_str(symbol), Some(&desc)) {
+            Some(img) => {
+                img.setName(Some(&ns_name));
+            }
+            None => return String::new(),
+        }
+    }
+    name
 }
 
 /// Icons are registered as named images so `<image src={name}>` can find them. Names live in a
