@@ -17,6 +17,7 @@ const AI_WRAP = 92
 const AI_INSTRUCTIONS = "You are the assistant inside Nimble, a macOS launcher. Answer briefly and plainly in a few short sentences. Do not use Markdown."
 const AI_TITLE = "Apple Intelligence"
 
+// Keys as printed on the keyboard; registerHotkey applies System Settings' modifier key mappings.
 let HOTKEYS = ["cmd+space", "alt+space", "ctrl+alt+space", "cmd+shift+space"]
 if (env.NIMBLE_HOTKEY) {
   HOTKEYS = [env.NIMBLE_HOTKEY].concat(HOTKEYS)
@@ -27,15 +28,18 @@ let PLUGIN_DIR = env.NIMBLE_PLUGINS ? env.NIMBLE_PLUGINS : (resources ? resource
 let index = reindex()
 let watching = watchApps()
 let hotkey = ""
+let hotkeyLabel = ""
 for (let i = 0; i < HOTKEYS.length && hotkey === ""; i = i + 1) {
   let r = registerHotkey(HOTKEYS[i])
   if (r.ok) {
     hotkey = HOTKEYS[i]
+    hotkeyLabel = r.display
+    console.log("nimble: hotkey " + r.display + " (registered as " + r.registered.join(", ") + ")")
   } else {
     console.log("nimble: hotkey " + r.error)
   }
 }
-statusItem(hotkey)
+statusItem(hotkeyLabel)
 watchClipboard()
 
 // ── Plugins: every module in PLUGIN_DIR contributes its manifest's commands to root search ──
@@ -101,7 +105,7 @@ for (let i = 0; i < pluginFiles.length; i = i + 1) {
 }
 let commandTitles = commands.map((c) => c.name)
 console.log("nimble: indexed " + index.count + " apps in " + index.ms.toFixed(1) + " ms, watching " + watching
-  + ", " + pluginCount + " plugins / " + (commands.length - BUILTIN_COUNT) + " commands in " + (Date.now() - pluginT0) + " ms, hotkey " + hotkey)
+  + ", " + pluginCount + " plugins / " + (commands.length - BUILTIN_COUNT) + " commands in " + (Date.now() - pluginT0) + " ms, hotkey " + hotkeyLabel)
 
 // ── Shell state ──
 // Native key and show callbacks are registered once, so state lives outside the component.
