@@ -1,0 +1,16 @@
+// Bytecode VM: does JSX resolve a script-level `h` and component functions?
+fn h(tag, props, children) {
+  if (typeof tag === "function") {
+    let p = props === null ? {} : props
+    p.children = children
+    return tag(p)
+  }
+  return { tag: tag, props: props, children: children }
+}
+
+fn Row(props) {
+  return <item title={props.title} />
+}
+
+let tree = <list>{["a", "b"].map((t) => <Row title={t} />)}</list>
+console.log(JSON.stringify(tree))

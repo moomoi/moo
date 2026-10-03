@@ -1,0 +1,45 @@
+[package]
+name = "nimble_macos"
+version = "0.1.0"
+edition = "2021"
+description = "Nimble launcher natives for macOS, exposed to Tish as a native module"
+license = "MIT"
+
+[dependencies]
+# Same checkout the compiler and vendored tish-macos use, so all share one tishlang_core.
+tishlang_core = { path = "../../../../tish/tish-nimble/crates/tish_core" }
+tishlang_ui = { path = "../../../../tish/tish-nimble/crates/tish_ui", default-features = false, features = ["runtime"] }
+nucleo-matcher = "0.3"
+# Tier A plugins: bytecode chunks in a capability-free VM.
+# `send-values` must match the app build, which enables it on tishlang_core (http implies it).
+tishlang_vm = { path = "../../../../tish/tish-nimble/crates/tish_vm", features = ["send-values"] }
+tishlang_bytecode = { path = "../../../../tish/tish-nimble/crates/tish_bytecode" }
+
+[dev-dependencies]
+tishlang_parser = { path = "../../../../tish/tish-nimble/crates/tish_parser" }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+objc2-foundation = { version = "0.3", features = ["NSString", "NSURL", "NSArray", "NSGeometry", "NSNotification", "NSOperation", "block2"] }
+objc2-app-kit = { version = "0.3", features = [
+    "NSApplication",
+    "NSRunningApplication",
+    "NSWindow",
+    "NSPanel",
+    "NSAppearance",
+    "NSColor",
+    "NSView",
+    "NSResponder",
+    "NSEvent",
+    "NSScreen",
+    "NSButton",
+    "NSControl",
+    "NSTextField",
+    "NSWorkspace",
+    "NSPasteboard",
+    "NSImage",
+    "NSGraphics",
+    "block2",
+] }
+block2 = "0.6"
+dispatch2 = "0.3"

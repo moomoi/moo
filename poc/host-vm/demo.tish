@@ -1,0 +1,22 @@
+// Stage 0: `tish run` (bytecode VM host) dlopens a plugin that was itself written in Tish,
+// compiled with `--target rust-lib`, and wrapped as a decoupled tish_ffi cdylib.
+
+import { manifest, greet, search, stats, fail } from "ffi:./plugins/hello.lib"
+
+console.log("manifest  =", JSON.stringify(manifest()))
+console.log("greet     =", greet("Nimble"))
+
+let items = ["Safari", "Slack", "System Settings", "Terminal"]
+let titled = items.map((t) => ({ title: t }))
+// v1 cannot pass host objects into the plugin (no key enumeration), so objects arrive as null.
+console.log("search v1 =", JSON.stringify(search(titled, "s")))
+console.log("fail      =", JSON.stringify(fail()))
+
+let n = 100000
+let t0 = Date.now()
+for (let i = 0; i < n; i = i + 1) {
+  greet("x")
+}
+let dt = Date.now() - t0
+console.log("greet x" + n + " in " + dt + "ms => " + (dt * 1000 / n) + "us/call")
+console.log("stats     =", JSON.stringify(stats()))

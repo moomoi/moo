@@ -1,0 +1,40 @@
+// A Nimble plugin written in Tish, compiled to a dynamically loadable native module.
+
+let calls = 0
+
+export fn manifest() {
+  return {
+    id: "hello",
+    title: "Hello Plugin",
+    commands: [
+      { name: "greet", mode: "view" },
+      { name: "count", mode: "no-view" }
+    ]
+  }
+}
+
+export fn greet(name) {
+  calls = calls + 1
+  return "Hello, " + name + "! (from a Tish-compiled plugin)"
+}
+
+export fn search(items, query) {
+  calls = calls + 1
+  let q = query.toLowerCase()
+  return items.filter((it) => it.title.toLowerCase().indexOf(q) >= 0)
+}
+
+// The host passes `render`; the plugin calls back with a view tree and returns an action handler.
+export fn run(render) {
+  calls = calls + 1
+  render({ tag: "list", props: { title: "Hello" }, children: [{ tag: "listitem", props: { title: "One" } }] })
+  return (action) => "handled " + action
+}
+
+export fn stats() {
+  return { calls: calls }
+}
+
+export fn fail() {
+  throw "plugin error"
+}

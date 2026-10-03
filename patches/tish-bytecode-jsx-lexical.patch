@@ -1,0 +1,87 @@
+diff --git a/crates/tish_bytecode/src/compiler.rs b/crates/tish_bytecode/src/compiler.rs
+index c513e426f..8fbe75301 100644
+--- a/crates/tish_bytecode/src/compiler.rs
++++ b/crates/tish_bytecode/src/compiler.rs
+@@ -3086,8 +3086,9 @@ impl<'a> Compiler<'a> {
+         props: &[JsxProp],
+         children: &[JsxChild],
+     ) -> Result<(), CompileError> {
+-        let h_idx = self.name_idx(&Arc::from("h"));
+-        self.emit_u16(Opcode::LoadGlobal, h_idx);
++        // `h`, `Fragment` and component tags resolve lexically (imports, module `fn`s, locals)
++        // and fall back to globals, so embedder-injected `h` via `set_global` still works.
++        self.emit_var_load(&Arc::from("h"));
+         let tag_str = tag.as_ref();
+         let is_component = tag_str
+             .chars()
+@@ -3095,8 +3096,7 @@ impl<'a> Compiler<'a> {
+             .map(|c| c.is_uppercase())
+             .unwrap_or(false);
+         if is_component {
+-            let tag_idx = self.name_idx(tag);
+-            self.emit_u16(Opcode::LoadGlobal, tag_idx);
++            self.emit_var_load(tag);
+         } else {
+             let tag_const = self.constant_idx(Constant::String(Arc::from(tag_str)));
+             self.emit(Opcode::LoadConst);
+@@ -3109,10 +3109,8 @@ impl<'a> Compiler<'a> {
+     }
+ 
+     fn compile_jsx_fragment(&mut self, children: &[JsxChild]) -> Result<(), CompileError> {
+-        let h_idx = self.name_idx(&Arc::from("h"));
+-        self.emit_u16(Opcode::LoadGlobal, h_idx);
+-        let fragment_idx = self.name_idx(&Arc::from("Fragment"));
+-        self.emit_u16(Opcode::LoadGlobal, fragment_idx);
++        self.emit_var_load(&Arc::from("h"));
++        self.emit_var_load(&Arc::from("Fragment"));
+         let null_idx = self.constant_idx(Constant::Null);
+         self.emit(Opcode::LoadConst);
+         self.chunk.write_u16(null_idx);
+diff --git a/crates/tish_vm/tests/jsx_lexical_resolution.rs b/crates/tish_vm/tests/jsx_lexical_resolution.rs
+new file mode 100644
+index 000000000..0183a555a
+--- /dev/null
++++ b/crates/tish_vm/tests/jsx_lexical_resolution.rs
+@@ -0,0 +1,42 @@
++//! Bytecode JSX resolves `h`, `Fragment` and component tags lexically, falling back to globals.
++
++use tishlang_bytecode::compile;
++use tishlang_vm::run;
++
++fn run_src(src: &str) {
++    let program = tishlang_parser::parse(src).expect("parse");
++    let chunk = compile(&program).expect("compile");
++    run(&chunk).expect("run");
++}
++
++#[test]
++fn component_tag_resolves_script_level_fn() {
++    run_src(
++        r#"
++fn h(tag, props, children) {
++  if (typeof tag === "function") { return tag(props) }
++  return { tag: tag, props: props, children: children }
++}
++fn Row(props) { return <item title={props.title} /> }
++let tree = <list><Row title="a" /></list>
++let row = tree.children[0]
++if (row.tag !== "item" || row.props.title !== "a") { throw "component tag did not resolve" }
++"#,
++    );
++}
++
++#[test]
++fn h_and_fragment_resolve_from_enclosing_scope() {
++    run_src(
++        r#"
++fn render() {
++  let Fragment = "frag"
++  let h = (tag, props, children) => typeof tag === "function" ? tag(props) : { tag: tag, children: children }
++  fn Inner(p) { return <leaf /> }
++  return <><Inner /></>
++}
++let t = render()
++if (t.tag !== "frag" || t.children[0].tag !== "leaf") { throw "local h/Fragment/component not used" }
++"#,
++    );
++}

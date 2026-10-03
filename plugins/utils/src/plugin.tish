@@ -1,0 +1,100 @@
+// Nimble Utils: a first-party Tier B plugin, compiled to a native module and loaded at runtime.
+// Contract: manifest(); run(command) for "no-view" commands; list(command, query) for "list" commands.
+// Results carry an action the shell performs: { copy }, { open } or { hud }.
+
+let runs = 0
+
+export fn manifest() {
+  return {
+    id: "utils",
+    title: "Nimble Utils",
+    commands: [
+      { name: "uuid", title: "Generate UUID", subtitle: "Copy a random v4 UUID", mode: "no-view" },
+      { name: "emoji", title: "Search Emoji", subtitle: "Find and copy an emoji", mode: "list" },
+      { name: "links", title: "Developer Links", subtitle: "Open docs in the browser", mode: "list" },
+      { name: "stats", title: "Plugin Stats", subtitle: "Show how often this plugin ran", mode: "no-view" }
+    ]
+  }
+}
+
+fn hex(n) {
+  let digits = "0123456789abcdef"
+  let s = ""
+  for (let i = 0; i < n; i = i + 1) {
+    s = s + digits[Math.floor(Math.random() * 16)]
+  }
+  return s
+}
+
+fn uuid() {
+  let variant = "89ab"[Math.floor(Math.random() * 4)]
+  return hex(8) + "-" + hex(4) + "-4" + hex(3) + "-" + variant + hex(3) + "-" + hex(12)
+}
+
+export fn run(command) {
+  runs = runs + 1
+  if (command === "uuid") {
+    let id = uuid()
+    return { copy: id, hud: "Copied " + id }
+  }
+  if (command === "stats") {
+    return { hud: "Nimble Utils has run " + runs + " times since launch" }
+  }
+  return { hud: "Unknown command " + command }
+}
+
+const EMOJI = [
+  ["😀", "grinning face smile happy"],
+  ["😂", "joy laugh tears"],
+  ["😍", "heart eyes love"],
+  ["🤔", "thinking hmm"],
+  ["👍", "thumbs up yes ok"],
+  ["👎", "thumbs down no"],
+  ["🙏", "pray thanks please"],
+  ["🔥", "fire hot lit"],
+  ["🚀", "rocket ship launch fast"],
+  ["✅", "check done yes"],
+  ["❌", "cross no wrong"],
+  ["⚠️", "warning caution"],
+  ["🎉", "party tada celebrate"],
+  ["💡", "idea bulb light"],
+  ["🐛", "bug insect"],
+  ["☕", "coffee tea hot drink"],
+  ["🍕", "pizza food"],
+  ["❤️", "red heart love"],
+  ["👀", "eyes look see"],
+  ["🤖", "robot bot ai"]
+]
+
+const LINKS = [
+  ["Tish", "https://tishlang.com"],
+  ["Rust std docs", "https://doc.rust-lang.org/std/"],
+  ["Apple AppKit", "https://developer.apple.com/documentation/appkit"],
+  ["objc2 crate docs", "https://docs.rs/objc2/latest/objc2/"],
+  ["Raycast API", "https://developers.raycast.com"]
+]
+
+fn matches(text, query) {
+  return query === "" || text.toLowerCase().indexOf(query.toLowerCase()) >= 0
+}
+
+export fn list(command, query) {
+  runs = runs + 1
+  let out = []
+  if (command === "emoji") {
+    for (let i = 0; i < EMOJI.length; i = i + 1) {
+      let e = EMOJI[i]
+      if (matches(e[1], query)) {
+        out.push({ title: e[0] + "  " + e[1].split(" ")[0], subtitle: e[1], action: { copy: e[0], hud: "Copied " + e[0] } })
+      }
+    }
+  } else if (command === "links") {
+    for (let i = 0; i < LINKS.length; i = i + 1) {
+      let l = LINKS[i]
+      if (matches(l[0] + " " + l[1], query)) {
+        out.push({ title: l[0], subtitle: l[1], action: { open: l[1] } })
+      }
+    }
+  }
+  return out
+}

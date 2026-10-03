@@ -1,0 +1,314 @@
+// Nimble launcher shell: Lattish-style JSX on tish-macos (`tish:macos`), launcher services from
+// packages/nimble-macos (`tish:nimble`), plugins loaded at runtime as native modules (`tish:ffi`).
+// Hotkey toggles the panel; type to search apps, plugin commands and files; up/down select;
+// enter (or click) opens; esc leaves a plugin list, otherwise hides.
+
+import { loadModule } from "tish:ffi"
+import { macos, useState } from "tish:macos"
+import { reindex, search, launch, setup, registerHotkey, quit, hide, appCount, searchFiles, watchApps, fuzzy, pluginPaths, copyText, loadBytecodePlugin, bundleResources } from "tish:nimble"
+import { env } from "tish:process"
+
+const ROWS = 8
+const FILE_MIN_CHARS = 2
+const FILE_ROWS_WITH_APPS = 3
+
+let HOTKEYS = ["alt+space", "ctrl+alt+space", "cmd+shift+space"]
+if (env.NIMBLE_HOTKEY) {
+  HOTKEYS = [env.NIMBLE_HOTKEY].concat(HOTKEYS)
+}
+let resources = bundleResources()
+let PLUGIN_DIR = env.NIMBLE_PLUGINS ? env.NIMBLE_PLUGINS : (resources ? resources + "/plugins" : "../plugins/dist")
+
+let index = reindex()
+let watching = watchApps()
+let hotkey = ""
+for (let i = 0; i < HOTKEYS.length && hotkey === ""; i = i + 1) {
+  let r = registerHotkey(HOTKEYS[i])
+  if (r.ok) {
+    hotkey = HOTKEYS[i]
+  } else {
+    console.log("nimble: hotkey " + r.error)
+  }
+}
+
+// ── Plugins: every module in PLUGIN_DIR contributes its manifest's commands to root search ──
+
+let commands = [{ name: "Quit Nimble", path: "nimble:quit", icon: "NSStopProgressTemplate", kind: "Command", mode: "builtin" }]
+let pluginCount = 0
+let pluginFiles = pluginPaths(PLUGIN_DIR)
+let pluginT0 = Date.now()
+
+// Tier A (`.tishc`): bytecode in a capability-free VM. Tier B (`.lib`): native module via tish:ffi.
+fn loadPlugin(path) {
+  if (path.indexOf(".tishc") >= 0) {
+    let r = loadBytecodePlugin(path)
+    if (!r.ok) {
+      console.log("nimble: plugin " + r.error)
+      return null
+    }
+    console.log("nimble: tier A " + path + " in " + r.ms.toFixed(2) + " ms")
+    return r.plugin
+  }
+  let t0 = Date.now()
+  let mod = loadModule(path)
+  console.log("nimble: tier B " + path + " in " + (Date.now() - t0) + " ms")
+  return mod
+}
+
+fn addCommands(mod) {
+  let m = mod.manifest()
+  for (let j = 0; j < m.commands.length; j = j + 1) {
+    let c = m.commands[j]
+    commands.push({
+      name: c.title,
+      path: "plugin:" + m.id + "/" + c.name,
+      icon: c.mode === "list" ? "NSListViewTemplate" : "NSActionTemplate",
+      kind: m.title,
+      mode: c.mode,
+      plugin: mod,
+      command: c.name,
+      pluginTitle: m.title
+    })
+  }
+  pluginCount = pluginCount + 1
+}
+
+// No `continue` inside `try`: the native backend emits the try body as a closure.
+for (let i = 0; i < pluginFiles.length; i = i + 1) {
+  try {
+    let mod = loadPlugin(pluginFiles[i])
+    if (mod !== null) {
+      addCommands(mod)
+    }
+  } catch (e) {
+    console.log("nimble: plugin " + pluginFiles[i] + " failed: " + e.message)
+  }
+}
+let commandTitles = commands.map((c) => c.name)
+console.log("nimble: indexed " + index.count + " apps in " + index.ms.toFixed(1) + " ms, watching " + watching
+  + ", " + pluginCount + " plugins / " + (commands.length - 1) + " commands in " + (Date.now() - pluginT0) + " ms, hotkey " + hotkey)
+
+// ── Shell state ──
+// Native key and show callbacks are registered once, so state lives outside the component.
+// `apps` holds the synchronous rows (apps + commands, or a plugin's list); `files` arrives later
+// from Spotlight for the same query. `mode` is the open plugin list command, or null at root.
+let shell = { query: "", selected: 0, apps: [], files: [], results: [], rowCount: ROWS, mode: null, hud: "", version: 0, rerender: null }
+
+fn refresh() {
+  shell.version = shell.version + 1
+  if (shell.rerender !== null) {
+    shell.rerender(shell.version)
+  }
+}
+
+// Apps and plugin commands share one nucleo scale, so merge them by score.
+fn rootResults(text) {
+  let apps = search(text, ROWS)
+  if (text.trim() === "") {
+    return apps
+  }
+  let hits = fuzzy(text, commandTitles, ROWS)
+  let out = []
+  let i = 0
+  let j = 0
+  while (out.length < ROWS && (i < hits.length || j < apps.length)) {
+    if (j >= apps.length || (i < hits.length && hits[i].score >= apps[j].score)) {
+      out.push(commands[hits[i].index])
+      i = i + 1
+    } else {
+      out.push(apps[j])
+      j = j + 1
+    }
+  }
+  return out
+}
+
+fn listResults(text) {
+  let m = shell.mode
+  try {
+    let items = m.plugin.list(m.command, text)
+    return items.slice(0, ROWS).map((it) => ({ name: it.title, kind: it.subtitle, icon: m.icon, action: it.action }))
+  } catch (e) {
+    shell.hud = "Plugin error: " + e.message
+    return []
+  }
+}
+
+// Synchronous rows first; once files arrive they get at least FILE_ROWS_WITH_APPS rows.
+fn compose() {
+  let keepApps = shell.files.length > 0 ? ROWS - Math.min(shell.files.length, FILE_ROWS_WITH_APPS) : ROWS
+  shell.results = shell.apps.slice(0, keepApps).concat(shell.files).slice(0, ROWS)
+  if (shell.selected >= shell.results.length) {
+    shell.selected = 0
+  }
+}
+
+fn onFiles(r) {
+  if (shell.mode !== null || r.query !== shell.query) {
+    return
+  }
+  shell.files = r.results
+  compose()
+  refresh()
+}
+
+fn setQuery(text) {
+  shell.query = text
+  shell.selected = 0
+  shell.hud = ""
+  shell.files = []
+  if (shell.mode !== null) {
+    shell.apps = listResults(text)
+  } else {
+    shell.apps = rootResults(text)
+    if (text.trim().length >= FILE_MIN_CHARS) {
+      searchFiles(text, ROWS, onFiles)
+    }
+  }
+  compose()
+  refresh()
+}
+
+fn enterList(c) {
+  shell.mode = c
+  setQuery("")
+}
+
+fn leaveList() {
+  shell.mode = null
+  setQuery("")
+}
+
+// Plugin actions: { copy } puts text on the clipboard, { open } opens a URL or path, { hud } is a message.
+fn perform(action) {
+  if (action === null) {
+    return
+  }
+  if (action.copy) {
+    copyText(action.copy)
+  }
+  if (action.hud) {
+    shell.hud = action.hud
+  }
+  if (action.open) {
+    launch(action.open)
+    leaveList()
+    return
+  }
+  refresh()
+}
+
+fn runCommand(c) {
+  try {
+    perform(c.plugin.run(c.command))
+  } catch (e) {
+    shell.hud = "Plugin error: " + e.message
+    refresh()
+  }
+}
+
+fn open(i) {
+  if (i >= shell.results.length) {
+    return
+  }
+  let target = shell.results[i]
+  if (shell.mode !== null) {
+    perform(target.action)
+  } else if (target.mode === "builtin") {
+    quit()
+  } else if (target.mode === "list") {
+    enterList(target)
+  } else if (target.mode === "no-view") {
+    runCommand(target)
+  } else {
+    launch(target.path)
+    setQuery("")
+  }
+}
+
+fn onKey(name) {
+  let n = shell.results.length
+  if (name === "down" && n > 0) {
+    shell.selected = (shell.selected + 1) % n
+    refresh()
+  } else if (name === "up" && n > 0) {
+    shell.selected = (shell.selected - 1 + n) % n
+    refresh()
+  } else if (name === "enter") {
+    open(shell.selected)
+  } else if (name === "escape") {
+    if (shell.mode !== null) {
+      leaveList()
+    } else {
+      hide()
+      setQuery("")
+    }
+  }
+}
+
+fn onShow(_) {
+  shell.selected = 0
+  refresh()
+}
+
+// ── View ──
+
+fn kindLabel(r) {
+  if (r === null) {
+    return ""
+  }
+  return r.kind === "File" || r.kind === "Folder" ? r.detail : r.kind
+}
+
+fn ResultRow(props) {
+  let r = props.result
+  let selected = props.selected
+  return (
+    <row
+      onClick={() => open(props.index)}
+      borderRadius={8}
+      backgroundColor={selected ? "#0A84FF40" : "#00000000"}
+      columnWidths={[40, "flex", 250]}
+      paddingTop={5}
+      paddingBottom={5}
+      paddingLeft={8}
+      paddingRight={10}
+    ><image src={r !== null ? r.icon : ""} height={26} /><text fontSize={15}>{r !== null ? r.name : ""}</text><text fontSize={12} color="secondaryLabel" textAlign="right">{kindLabel(r)}</text></row>
+  )
+}
+
+fn statusText() {
+  if (shell.hud !== "") {
+    return shell.hud
+  }
+  let where = shell.mode !== null ? shell.mode.pluginTitle + " › " + shell.mode.name : "Nimble"
+  if (shell.results.length === 0) {
+    return where + " · No matches"
+  }
+  if (shell.mode === null && shell.query === "") {
+    return where + " · " + appCount() + " apps · " + (commands.length - 1) + " commands"
+  }
+  return where + " · " + shell.results.length + " matches"
+}
+
+fn App() {
+  let [version, setVersion] = useState(0)
+  shell.rerender = setVersion
+
+  let rows = []
+  let rowCount = shell.rowCount
+  for (let i = 0; i < rowCount; i = i + 1) {
+    let r = i < shell.results.length ? shell.results[i] : null
+    rows.push(<ResultRow index={i} result={r} selected={r !== null && i === shell.selected} />)
+  }
+  let hints = shell.mode !== null ? "↑↓ select   ↵ run   esc back" : "↑↓ select   ↵ open   esc hide   " + hotkey
+  let footer = <row columnWidths={["flex", 280]} paddingTop={6}><text fontSize={11} color="secondaryLabel">{statusText()}</text><text fontSize={11} color="secondaryLabel" textAlign="right">{hints}</text></row>
+  return (
+    <div paddingTop={18} paddingLeft={16} paddingRight={16} paddingBottom={10}><textinput value={shell.query} onChange={setQuery} /><space height={10} />{rows}<space height={6} /><rule />{footer}</div>
+  )
+}
+
+shell.apps = rootResults("")
+compose()
+setup({ width: 680, height: 372, onKey: onKey, onShow: onShow })
+macos.run(App)

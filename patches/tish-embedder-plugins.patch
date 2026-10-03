@@ -1,0 +1,2197 @@
+diff --git a/Cargo.lock b/Cargo.lock
+index 1e2b3fe30..3e214887f 100644
+--- a/Cargo.lock
++++ b/Cargo.lock
+@@ -3634,6 +3634,13 @@ dependencies = [
+  "tishlang_core",
+ ]
+ 
++[[package]]
++name = "tishlang_ffi_guest"
++version = "0.1.0"
++dependencies = [
++ "tishlang_core",
++]
++
+ [[package]]
+ name = "tishlang_fmt"
+ version = "0.1.0"
+@@ -3782,6 +3789,7 @@ dependencies = [
+  "tiny_http",
+  "tishlang_builtins",
+  "tishlang_core",
++ "tishlang_ffi",
+  "tokio",
+  "tokio-tungstenite",
+  "zip",
+diff --git a/Cargo.toml b/Cargo.toml
+index 5779bc321..3f4507841 100644
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -22,6 +22,7 @@ members = [
+     "crates/tish_vm",
+     "crates/tish_llvm",
+     "crates/tish_ffi",
++    "crates/tish_ffi_guest",
+     "examples/ffi/mathext",
+ 
+     "crates/tish_native",
+diff --git a/crates/tish/Cargo.toml b/crates/tish/Cargo.toml
+index 6222a26fa..89969d5ea 100644
+--- a/crates/tish/Cargo.toml
++++ b/crates/tish/Cargo.toml
+@@ -25,7 +25,7 @@ path = "src/main.rs"
+ default = ["full", "fast-alloc"]
+ # Alias: same dependency edges as `default` (kept for `--features full` in CI and docs).
+ # Includes `pg` so `tish run` can resolve `import … from '@tishlang/pg'` (`cargo:tish_pg`) on the bytecode VM.
+-full = ["http", "fs", "process", "regex", "ws", "timers", "tty", "pg", "test-runner"]
++full = ["http", "fs", "process", "regex", "ws", "timers", "tty", "ffi", "pg", "test-runner"]
+ # Fast allocator (mimalloc) as the process `#[global_allocator]`. tish's object/array/string workloads
+ # are allocation-bound (a sampling profile of object-heavy code spends ~14%+ in system malloc/free);
+ # mimalloc is markedly faster for the many-small-allocations pattern — the same reason JSC ships bmalloc.
+@@ -43,6 +43,8 @@ process = ["tishlang_eval/process", "tishlang_runtime/process", "tishlang_compil
+ regex   = ["tishlang_eval/regex",   "tishlang_runtime/regex",   "tishlang_compile/regex",   "tishlang_vm/regex"]
+ ws      = ["tishlang_eval/ws",      "tishlang_runtime/ws",      "tishlang_compile/ws",      "tishlang_vm/ws"]
+ tty     = ["tishlang_eval/tty",     "tishlang_runtime/tty",     "tishlang_compile/tty",     "tishlang_vm/tty"]
++# `tish:ffi` loadModule (runtime loading of `--crate-type cdylib` modules); static `ffi:` imports need no feature.
++ffi     = ["tishlang_runtime/ffi",  "tishlang_vm/ffi"]
+ # GPU compute — Apple Silicon only
+ [dependencies]
+ rustyline = { version = "17", features = ["with-file-history"] }
+diff --git a/crates/tish/src/cli_help.rs b/crates/tish/src/cli_help.rs
+index e52198b95..3a4a52328 100644
+--- a/crates/tish/src/cli_help.rs
++++ b/crates/tish/src/cli_help.rs
+@@ -556,7 +556,8 @@ pub(crate) struct BuildArgs {
+     /// Cross-compile to an Apple iOS triple (e.g. `aarch64-apple-ios-sim`). Implies `--crate-type staticlib`.
+     #[arg(long, value_name = "TRIPLE", help_heading = "Options")]
+     pub ios_triple: Option<String>,
+-    /// Output artifact for `--target native` (default: `bin`; use `staticlib` for embedded iOS).
++    /// Output artifact for `--target native` (default: `bin`; `staticlib` for embedded iOS; `cdylib`
++    /// for a dynamically loadable tish FFI module whose `export fn`s any tish host can load).
+     #[arg(long, value_name = "TYPE", default_value = "bin", help_heading = "Options")]
+     pub crate_type: String,
+     #[arg(long, help_heading = "Options")]
+diff --git a/crates/tish/src/main.rs b/crates/tish/src/main.rs
+index 8c22ac9cc..a53e22c60 100644
+--- a/crates/tish/src/main.rs
++++ b/crates/tish/src/main.rs
+@@ -30,7 +30,7 @@ fn normalize_capability_flags(features: &[String]) -> HashSet<String> {
+     for s in features {
+         for part in s.split(',').map(str::trim).filter(|p| !p.is_empty()) {
+             if part == "full" {
+-                for name in ["http", "timers", "fs", "process", "regex", "ws", "tty"] {
++                for name in ["http", "timers", "fs", "process", "regex", "ws", "tty", "ffi"] {
+                     out.insert(name.to_string());
+                 }
+             } else {
+@@ -1077,9 +1077,14 @@ fn build_file(
+             cargo_target: None,
+             emit_mode: tishlang_compile::NativeEmitMode::EmbeddedLib,
+         }
++    } else if crate_type == "cdylib" {
++        if is_js {
++            return Err("--crate-type cdylib requires a .tish entry file.".to_string());
++        }
++        tishlang_native::NativeBuildConfig::ffi_module()
+     } else if crate_type != "bin" {
+         return Err(format!(
+-            "Unknown --crate-type: {}. Use 'bin' or 'staticlib'.",
++            "Unknown --crate-type: {}. Use 'bin', 'staticlib' or 'cdylib'.",
+             crate_type
+         ));
+     } else {
+@@ -1121,6 +1126,10 @@ fn build_file(
+     if build_config.artifact == tishlang_native::NativeArtifact::RustLib {
+         return Ok(());
+     }
++    if build_config.artifact == tishlang_native::NativeArtifact::FfiModule {
++        println!("Built tish FFI module: {}", output_path);
++        return Ok(());
++    }
+ 
+     let out_name = Path::new(output_path)
+         .file_stem()
+diff --git a/crates/tish_bytecode/src/compiler.rs b/crates/tish_bytecode/src/compiler.rs
+index c513e426f..8fbe75301 100644
+--- a/crates/tish_bytecode/src/compiler.rs
++++ b/crates/tish_bytecode/src/compiler.rs
+@@ -3086,8 +3086,9 @@ impl<'a> Compiler<'a> {
+         props: &[JsxProp],
+         children: &[JsxChild],
+     ) -> Result<(), CompileError> {
+-        let h_idx = self.name_idx(&Arc::from("h"));
+-        self.emit_u16(Opcode::LoadGlobal, h_idx);
++        // `h`, `Fragment` and component tags resolve lexically (imports, module `fn`s, locals)
++        // and fall back to globals, so embedder-injected `h` via `set_global` still works.
++        self.emit_var_load(&Arc::from("h"));
+         let tag_str = tag.as_ref();
+         let is_component = tag_str
+             .chars()
+@@ -3095,8 +3096,7 @@ impl<'a> Compiler<'a> {
+             .map(|c| c.is_uppercase())
+             .unwrap_or(false);
+         if is_component {
+-            let tag_idx = self.name_idx(tag);
+-            self.emit_u16(Opcode::LoadGlobal, tag_idx);
++            self.emit_var_load(tag);
+         } else {
+             let tag_const = self.constant_idx(Constant::String(Arc::from(tag_str)));
+             self.emit(Opcode::LoadConst);
+@@ -3109,10 +3109,8 @@ impl<'a> Compiler<'a> {
+     }
+ 
+     fn compile_jsx_fragment(&mut self, children: &[JsxChild]) -> Result<(), CompileError> {
+-        let h_idx = self.name_idx(&Arc::from("h"));
+-        self.emit_u16(Opcode::LoadGlobal, h_idx);
+-        let fragment_idx = self.name_idx(&Arc::from("Fragment"));
+-        self.emit_u16(Opcode::LoadGlobal, fragment_idx);
++        self.emit_var_load(&Arc::from("h"));
++        self.emit_var_load(&Arc::from("Fragment"));
+         let null_idx = self.constant_idx(Constant::Null);
+         self.emit(Opcode::LoadConst);
+         self.chunk.write_u16(null_idx);
+diff --git a/crates/tish_compile/src/codegen.rs b/crates/tish_compile/src/codegen.rs
+index 314d632dc..fe282d643 100644
+--- a/crates/tish_compile/src/codegen.rs
++++ b/crates/tish_compile/src/codegen.rs
+@@ -2446,6 +2446,10 @@ impl Codegen {
+                     "entries" => Some("Value::native(|args: &[Value]| tishlang_runtime::zip_entries(args))"),
+                     _ => None,
+                 },
++            "tish:ffi" if self.has_feature("ffi") => match export_name {
++                    "loadModule" => Some("Value::native(|args: &[Value]| tishlang_runtime::ffi_load_module(args))"),
++                    _ => None,
++                },
+             _ => return None,
+         };
+         init.map(String::from)
+@@ -2456,7 +2460,7 @@ impl Codegen {
+             matches!(
+                 name,
+                 "http" | "timers" | "fs" | "process" | "regex" | "ws" | "tty" | "pty" | "net"
+-                    | "encoding" | "crypto" | "zip"
++                    | "encoding" | "crypto" | "zip" | "ffi"
+             )
+         } else {
+             self.features.contains(name)
+@@ -3150,7 +3154,7 @@ impl Codegen {
+         // `VmRef`) from THIS crate and cannot version-skew them against a separate `tishlang_runtime`
+         // dependency of their own. Also avoids a duplicate-import error, since `Value` is already in
+         // this list and could not be re-exported a second time at the crate root.
+-        if self.emit_mode == crate::NativeEmitMode::RustLib {
++        if self.is_lib_surface() {
+             self.write("pub ");
+         }
+         self.write("use tishlang_runtime::{console_debug as tish_console_debug, console_info as tish_console_info, console_log as tish_console_log, console_warn as tish_console_warn, console_error as tish_console_error, boolean as tish_boolean, decode_uri as tish_decode_uri, encode_uri as tish_encode_uri, encode_uri_component as tish_encode_uri_component, decode_uri_component as tish_decode_uri_component, string_escape_html_impl as tish_escape_html, in_operator as tish_in_operator, is_finite as tish_is_finite, is_nan as tish_is_nan, json_parse as tish_json_parse, json_stringify as tish_json_stringify, math_abs as tish_math_abs, math_ceil as tish_math_ceil, math_floor as tish_math_floor, math_max as tish_math_max, math_min as tish_math_min, math_round as tish_math_round, math_sqrt as tish_math_sqrt, parse_float as tish_parse_float, parse_int as tish_parse_int, math_random as tish_math_random, math_pow as tish_math_pow, math_sin as tish_math_sin, math_cos as tish_math_cos, math_tan as tish_math_tan, math_log as tish_math_log, math_exp as tish_math_exp, math_sign as tish_math_sign, math_trunc as tish_math_trunc, math_imul as tish_math_imul, math_sinh as tish_math_sinh, math_cosh as tish_math_cosh, math_tanh as tish_math_tanh, math_asinh as tish_math_asinh, math_acosh as tish_math_acosh, math_atanh as tish_math_atanh, math_cbrt as tish_math_cbrt, math_log2 as tish_math_log2, math_log10 as tish_math_log10, math_expm1 as tish_math_expm1, math_log1p as tish_math_log1p, math_clz32 as tish_math_clz32, math_fround as tish_math_fround, math_hypot as tish_math_hypot, math_atan2 as tish_math_atan2, math_asin as tish_math_asin, math_acos as tish_math_acos, math_atan as tish_math_atan, array_is_array as tish_array_is_array, array_of as tish_array_of, array_from as tish_array_from, object_is as tish_object_is, object_has_own as tish_object_has_own, structured_clone as tish_structured_clone, array_construct as tish_array_construct, string_from_char_code as tish_string_from_char_code, string_convert as tish_string_convert, number_convert as tish_number_convert, number_is_integer as tish_number_is_integer, number_is_safe_integer as tish_number_is_safe_integer, number_is_nan as tish_number_is_nan, number_is_finite as tish_number_is_finite, object_assign as tish_object_assign, object_freeze as tish_object_freeze, object_is_frozen as tish_object_is_frozen, object_keys as tish_object_keys, object_values as tish_object_values, object_entries as tish_object_entries, object_from_entries as tish_object_from_entries, symbol_object as tish_symbol_object, tish_construct, tish_error_constructor, tish_date_constructor, tish_set_constructor, tish_map_constructor, map_get as tish_map_get, map_has as tish_map_has, map_set as tish_map_set, map_values as tish_map_values, tish_float64_array_constructor, tish_float32_array_constructor, tish_int8_array_constructor, tish_uint8_array_constructor, tish_uint8_clamped_array_constructor, tish_int16_array_constructor, tish_uint16_array_constructor, tish_int32_array_constructor, tish_uint32_array_constructor, tish_audio_context_constructor, ObjectMap, ObjectData, PropMap, TishError, Value, VmRef};\n");
+@@ -3268,7 +3272,7 @@ impl Codegen {
+             self.writeln("}");
+             self.writeln("");
+         }
+-        if self.emit_mode == crate::NativeEmitMode::RustLib {
++        if self.is_lib_surface() {
+             self.emit_rust_lib_surface(program)?;
+         }
+         // M5 (default-on via native_opts_enabled; TISH_NATIVE_OPT=0 opts out): emit a parallel
+@@ -3571,7 +3575,7 @@ impl Codegen {
+             .unwrap_or(self.emit_mode == crate::NativeEmitMode::Gba || !threads_possible);
+         // `RustLib` publishes its exports by naming the `run()` local, so its bindings must stay
+         // locals; the whole point there is that the frame outlives the call anyway.
+-        if self.emit_mode == crate::NativeEmitMode::RustLib {
++        if self.is_lib_surface() {
+             self.module_statics_on = false;
+         }
+         if crate::module_statics_flag().unwrap_or(true) {
+@@ -4084,7 +4088,7 @@ impl Codegen {
+         // `Rc`, so the closure — and every module-level cell it captured — stays alive and shared.
+         // That is what makes module state survive between `pub fn` calls (and stay mutable through
+         // `clear*`-style reassignment, since captures are `VmRef` cells, not copies).
+-        if self.emit_mode == crate::NativeEmitMode::RustLib {
++        if self.is_lib_surface() {
+             let pairs: Vec<String> = self
+                 .rust_lib_exports(program)
+                 .iter()
+@@ -4171,6 +4175,51 @@ impl Codegen {
+     /// unless the `send-values` feature is on (it follows `http`), so a `static` would not compile
+     /// for the common configuration. Per-thread instances also match how a consumer uses this:
+     /// register into the module's registries, then call it, on one thread.
++    /// Library emit modes: the entry module's exports become a crate surface (no `fn main`).
++    fn is_lib_surface(&self) -> bool {
++        matches!(
++            self.emit_mode,
++            crate::NativeEmitMode::RustLib | crate::NativeEmitMode::FfiModule
++        )
++    }
++
++    /// The tish FFI ABI v2 surface for [`crate::NativeEmitMode::FfiModule`]: one `extern "C"`
++    /// trampoline per export (marshaling through `tishlang_ffi_guest`) and
++    /// `tish_module_register_v2`, which installs the host's API table and returns the export table.
++    fn emit_ffi_module_surface(&mut self, export_names: &[String]) {
++        self.writeln("// ── tish FFI module (ABI v2) ──────────────────────────────────────────");
++        self.writeln("mod __tish_ffi {");
++        self.indent += 1;
++        self.writeln("use super::*;");
++        self.writeln("use tishlang_ffi_guest as guest;");
++        for (i, name) in export_names.iter().enumerate() {
++            self.writeln(&format!(
++                "extern \"C\" fn __tish_ffi_export_{i}(args: *const guest::TishValueRef, argc: usize) -> guest::TishValueRef {{"
++            ));
++            self.writeln(&format!(
++                "    unsafe {{ guest::export_call(args, argc, |a| __tish_call_export({name:?}, &a), tish_last_throw) }}"
++            ));
++            self.writeln("}");
++        }
++        self.writeln("#[no_mangle]");
++        self.writeln("pub unsafe extern \"C\" fn tish_module_register_v2(api: *const guest::TishHostApi) -> *const guest::TishExportTable {");
++        self.indent += 1;
++        self.writeln("if !guest::install(api) { return ::std::ptr::null(); }");
++        self.writeln("guest::export_table(&[");
++        for (i, name) in export_names.iter().enumerate() {
++            let cname = format!("{name}\\0");
++            self.writeln(&format!(
++                "    (b\"{cname}\", __tish_ffi_export_{i} as guest::TishNativeFn),"
++            ));
++        }
++        self.writeln("])");
++        self.indent -= 1;
++        self.writeln("}");
++        self.indent -= 1;
++        self.writeln("}");
++        self.writeln("");
++    }
++
+     fn emit_rust_lib_surface(&mut self, program: &Program) -> Result<(), CompileError> {
+         if self.is_async {
+             return Err(CompileError::new(
+@@ -4299,7 +4348,32 @@ impl Codegen {
+         self.writeln("}");
+         self.writeln("");
+ 
++        // Items the surface itself defines: a same-named `pub fn` would not compile.
++        let reserved = |name: &str| {
++            matches!(name, "run" | "main" | "tish_last_throw" | "runtime") || name.starts_with("__tish")
++        };
++        let clashing: Vec<&str> = exports
++            .iter()
++            .map(|e| e.exported_name.as_str())
++            .filter(|n| reserved(n))
++            .collect();
++        if !clashing.is_empty() && self.emit_mode == crate::NativeEmitMode::RustLib {
++            return Err(CompileError::new(
++                format!(
++                    "--target rust-lib: the export name(s) `{}` clash with items the generated crate \
++                     defines. Rename them (e.g. `export {{ {} as start }}`).",
++                    clashing.join("`, `"),
++                    clashing[0]
++                ),
++                None,
++            ));
++        }
++
+         for e in &exports {
++            // FFI modules export by string name, so a clashing Rust wrapper is simply not emitted.
++            if reserved(&e.exported_name) {
++                continue;
++            }
+             // Checked above: every remaining export is a `fn`, so the arity is present.
+             let n = e.arity.unwrap_or(0);
+             let params: Vec<String> = (0..n).map(|i| format!("a{}: Value", i)).collect();
+@@ -4319,6 +4393,10 @@ impl Codegen {
+             self.writeln("}");
+         }
+         self.writeln("");
++        if self.emit_mode == crate::NativeEmitMode::FfiModule {
++            let names: Vec<String> = exports.iter().map(|e| e.exported_name.clone()).collect();
++            self.emit_ffi_module_surface(&names);
++        }
+         Ok(())
+     }
+ 
+@@ -25239,7 +25317,7 @@ impl Codegen {
+         // exported fn that got de-virtualized would leave the emitted `__tish_publish_exports` call
+         // referencing a binding that no longer exists. The unboxed path is a numeric fast path;
+         // a correct public surface outranks it.
+-        if self.emit_mode == crate::NativeEmitMode::RustLib {
++        if self.is_lib_surface() {
+             return;
+         }
+         let dbg = std::env::var("TISH_AGG_DEBUG").is_ok();
+diff --git a/crates/tish_compile/src/lib.rs b/crates/tish_compile/src/lib.rs
+index 65943767b..75a6906e2 100644
+--- a/crates/tish_compile/src/lib.rs
++++ b/crates/tish_compile/src/lib.rs
+@@ -73,6 +73,10 @@ pub enum NativeEmitMode {
+     /// `thread_local!` (rather than a global) is forced by `Value`: `send-values` is off unless
+     /// `http` is enabled, so `VmRef` is `Rc<RefCell<_>>` and `Value` is `!Send`.
+     RustLib,
++    /// [`NativeEmitMode::RustLib`] plus a tish FFI ABI v2 surface: one `extern "C"` trampoline per
++    /// `export fn` and `tish_module_register_v2`, via `tishlang_ffi_guest`. Built as a `cdylib`
++    /// that any tish host loads at runtime (`ffi:` import / `tishlang_ffi::load_module`).
++    FfiModule,
+     /// Game Boy Advance ROM: `#![no_std]`, `#[agb::entry] fn agb_main(gba)`, links the
+     /// `tishlang_runtime_gba` facade. Numbers/async lowering diverge; see codegen `emit_program`.
+     Gba,
+diff --git a/crates/tish_compile/src/resolve.rs b/crates/tish_compile/src/resolve.rs
+index 7291bef2b..b2ffe94dc 100644
+--- a/crates/tish_compile/src/resolve.rs
++++ b/crates/tish_compile/src/resolve.rs
+@@ -123,6 +123,7 @@ pub fn is_builtin_native_spec(spec: &str) -> bool {
+             | "tish:encoding"
+             | "tish:crypto"
+             | "tish:zip"
++            | "tish:ffi"
+             | "tish:test"
+             | "tish:assert"
+     ) || matches!(
+diff --git a/crates/tish_ffi/src/lib.rs b/crates/tish_ffi/src/lib.rs
+index 6cf2257ff..e309f2630 100644
+--- a/crates/tish_ffi/src/lib.rs
++++ b/crates/tish_ffi/src/lib.rs
+@@ -25,6 +25,12 @@ use std::ffi::{c_char, c_void, CStr, CString};
+ 
+ use tishlang_core::{ObjectData, Value, VmRef};
+ 
++mod v2;
++pub use v2::{
++    TishCallbackFn, TishCtxDropFn, TishHostApi, TISH_FFI_ABI_VERSION, TISH_HOST_API,
++    TISH_TAG_FUNCTION,
++};
++
+ /// Opaque handle to a tish value. Internally `*mut Value` (a leaked `Box`); never inspect or
+ /// free it except through the accessors. `null` is a valid "no value" sentinel for fallible
+ /// accessors (e.g. `tish_value_object_get` on a missing key returns a fresh null handle, not
+@@ -279,28 +285,33 @@ pub unsafe extern "C" fn tish_value_drop(r: TishValueRef) {
+ /// reference semantics, so an extension can mutate a passed array); the per-call handles and the
+ /// result handle are dropped here.
+ pub fn wrap_native_fn(func: TishNativeFn) -> Value {
+-    Value::native(move |args: &[Value]| -> Value {
+-        let handles: Vec<TishValueRef> = args.iter().map(|v| box_value(v.clone())).collect();
+-        // Calling an `extern "C"` fn pointer is a safe operation; the unsafety is in the accessors.
+-        let result = func(handles.as_ptr(), handles.len());
+-        // SAFETY: every `handles[i]` came from `box_value`; `result` is a freshly-owned handle
+-        // from a `_new_*`/`_clone` accessor (the documented return contract).
+-        unsafe {
+-            let out = as_value(result).cloned().unwrap_or(Value::Null);
+-            // #384: a buggy extension may violate the "return a fresh handle" contract and hand back
+-            // one of its INPUT handles. `out` has already been cloned out of it, so the underlying
+-            // value is safe — but dropping both `handles[i]` and `result` would then be a double-free
+-            // (heap corruption). Drop each input once; drop `result` only if it is not an input alias.
+-            let result_aliases_input = handles.iter().any(|h| std::ptr::eq(*h, result));
+-            for h in handles {
+-                tish_value_drop(h);
+-            }
+-            if !result_aliases_input {
+-                tish_value_drop(result);
+-            }
+-            out
++    Value::native(move |args: &[Value]| -> Value { call_through_handles(args, |argv, argc| func(argv, argc)) })
++}
++
++/// Box `args` as owned handles, invoke `call`, unwrap the returned handle, and release them all.
++pub(crate) fn call_through_handles(
++    args: &[Value],
++    call: impl FnOnce(*const TishValueRef, usize) -> TishValueRef,
++) -> Value {
++    let handles: Vec<TishValueRef> = args.iter().map(|v| box_value(v.clone())).collect();
++    let result = call(handles.as_ptr(), handles.len());
++    // SAFETY: every `handles[i]` came from `box_value`; `result` is a freshly-owned handle
++    // from a `_new_*`/`_clone` accessor (the documented return contract).
++    unsafe {
++        let out = as_value(result).cloned().unwrap_or(Value::Null);
++        // #384: a buggy extension may violate the "return a fresh handle" contract and hand back
++        // one of its INPUT handles. `out` has already been cloned out of it, so the underlying
++        // value is safe — but dropping both `handles[i]` and `result` would then be a double-free
++        // (heap corruption). Drop each input once; drop `result` only if it is not an input alias.
++        let result_aliases_input = handles.iter().any(|h| std::ptr::eq(*h, result));
++        for h in handles {
++            tish_value_drop(h);
++        }
++        if !result_aliases_input {
++            tish_value_drop(result);
+         }
+-    })
++        out
++    }
+ }
+ 
+ /// Cached exports of one loaded module: name → C-ABI fn pointer. Fn pointers — unlike `Value`,
+@@ -366,10 +377,22 @@ pub fn load_module(path: &str) -> Result<tishlang_core::ObjectMap, String> {
+     let exports: CachedExports = unsafe {
+         let lib =
+             libloading::Library::new(path).map_err(|e| format!("ffi: load {}: {}", path, e))?;
+-        let register: libloading::Symbol<unsafe extern "C" fn() -> *const TishExportTable> = lib
+-            .get(b"tish_module_register")
+-            .map_err(|e| format!("ffi: {}: no tish_module_register: {}", path, e))?;
+-        let table = register();
++        // v2 modules receive the host API table; v1 modules resolve exported accessors.
++        let table = match lib.get::<unsafe extern "C" fn(*const TishHostApi) -> *const TishExportTable>(
++            b"tish_module_register_v2",
++        ) {
++            Ok(register_v2) => register_v2(&TISH_HOST_API),
++            Err(_) => {
++                let register: libloading::Symbol<unsafe extern "C" fn() -> *const TishExportTable> =
++                    lib.get(b"tish_module_register").map_err(|e| {
++                        format!(
++                            "ffi: {}: no tish_module_register_v2 or tish_module_register: {}",
++                            path, e
++                        )
++                    })?;
++                register()
++            }
++        };
+         if table.is_null() {
+             return Err(format!("ffi: {}: tish_module_register returned null", path));
+         }
+diff --git a/crates/tish_native/src/build.rs b/crates/tish_native/src/build.rs
+index 424a5089d..ba7f86ad9 100644
+--- a/crates/tish_native/src/build.rs
++++ b/crates/tish_native/src/build.rs
+@@ -22,6 +22,7 @@ const RUNTIME_CARGO_FEATURES: &[&str] = &[
+     "encoding",
+     "crypto",
+     "zip",
++    "ffi",
+ ];
+ 
+ /// Map CLI/compile features to flags passed to `tishlang_runtime` in the temp crate's Cargo.toml.
+@@ -228,7 +229,18 @@ pub fn build_via_cargo_with_config(
+     // statement; semantically transparent. `TISH_NATIVE_FAST_ALLOC=0` opts out.
+     let use_fast_alloc = fast_alloc_enabled()
+         && build_config.artifact != NativeArtifact::StaticLib
++        && build_config.artifact != NativeArtifact::FfiModule
+         && build_config.cargo_target.is_none();
++    if build_config.artifact == NativeArtifact::FfiModule {
++        let guest_path = Path::new(&runtime_path)
++            .parent()
++            .map(|crates| crates.join("tish_ffi_guest"))
++            .ok_or_else(|| format!("Cannot locate tish_ffi_guest next to {}", runtime_path))?;
++        more_deps.push_str(&format!(
++            "\ntishlang_ffi_guest = {{ path = {:?} }}\n",
++            guest_path.display().to_string().replace('\\', "/")
++        ));
++    }
+     if use_fast_alloc {
+         more_deps.push_str("\nmimalloc = \"0.1\"\n");
+     }
+@@ -241,20 +253,25 @@ pub fn build_via_cargo_with_config(
+     let ui_dep = ui_dep_toml(&runtime_path, rust_code);
+ 
+     let profile = nested_release_profile_toml();
+-    let src_file = if build_config.artifact == NativeArtifact::StaticLib {
+-        "lib.rs"
+-    } else {
+-        "main.rs"
+-    };
+-    let crate_section = if build_config.artifact == NativeArtifact::StaticLib {
++    let is_lib_artifact = matches!(
++        build_config.artifact,
++        NativeArtifact::StaticLib | NativeArtifact::FfiModule
++    );
++    let src_file = if is_lib_artifact { "lib.rs" } else { "main.rs" };
++    let crate_section = if is_lib_artifact {
++        let crate_type = if build_config.artifact == NativeArtifact::FfiModule {
++            "cdylib"
++        } else {
++            "staticlib"
++        };
+         format!(
+             r#"[lib]
+ name = "{}"
+-crate-type = ["staticlib"]
++crate-type = ["{}"]
+ path = "src/lib.rs"
+ 
+ "#,
+-            cargo_name
++            cargo_name, crate_type
+         )
+     } else {
+         format!(
+@@ -317,12 +334,16 @@ edition = "2021"
+ 
+     tishlang_build_utils::run_cargo_build(&build_dir, target_dir.as_deref(), cross)?;
+ 
+-    let artifact = if build_config.artifact == NativeArtifact::StaticLib {
+-        tishlang_build_utils::find_release_staticlib(&binary_dir, &cargo_name)?
+-    } else {
+-        tishlang_build_utils::find_release_binary(&binary_dir, &cargo_name)?
++    let artifact = match build_config.artifact {
++        NativeArtifact::StaticLib => {
++            tishlang_build_utils::find_release_staticlib(&binary_dir, &cargo_name)?
++        }
++        NativeArtifact::FfiModule => find_release_cdylib(&binary_dir, &cargo_name)?,
++        _ => tishlang_build_utils::find_release_binary(&binary_dir, &cargo_name)?,
+     };
+-    let target = if build_config.artifact == NativeArtifact::StaticLib {
++    let target = if build_config.artifact == NativeArtifact::FfiModule {
++        output_path.to_path_buf()
++    } else if build_config.artifact == NativeArtifact::StaticLib {
+         if output_path.extension().is_some_and(|e| e == "a") {
+             output_path.to_path_buf()
+         } else if output_path.to_string_lossy().ends_with('/') || output_path.is_dir() {
+@@ -339,6 +360,20 @@ edition = "2021"
+     Ok(())
+ }
+ 
++/// The built `cdylib` for `cargo_name` under `dir` (`lib<name>.dylib` / `lib<name>.so` / `<name>.dll`).
++fn find_release_cdylib(dir: &Path, cargo_name: &str) -> Result<PathBuf, String> {
++    let candidates = [
++        format!("lib{cargo_name}.dylib"),
++        format!("lib{cargo_name}.so"),
++        format!("{cargo_name}.dll"),
++    ];
++    candidates
++        .iter()
++        .map(|c| dir.join(c))
++        .find(|p| p.is_file())
++        .ok_or_else(|| format!("Built cdylib not found in {} (looked for {:?})", dir.display(), candidates))
++}
++
+ /// Read the agb version the facade pins, from `<facade>/Cargo.toml`. This keeps the generated ROM
+ /// crate's agb in lockstep with the facade's (the single source of truth) — see [`build_gba_rom`].
+ /// Matches an `agb = "X"` or `agb = { version = "X", … }` line; `None` if absent (caller falls back).
+diff --git a/crates/tish_native/src/config.rs b/crates/tish_native/src/config.rs
+index c13077183..1fde005d6 100644
+--- a/crates/tish_native/src/config.rs
++++ b/crates/tish_native/src/config.rs
+@@ -15,6 +15,8 @@ pub enum NativeArtifact {
+     /// module's `export fn`s. Unlike every other artifact, cargo is **not** run — the emitted
+     /// crate directory is itself the output, for the consumer to add as a path/registry dependency.
+     RustLib,
++    /// A dynamically loadable tish native module (`crate-type = ["cdylib"]`, FFI ABI v2).
++    FfiModule,
+ }
+ 
+ /// Options passed from the CLI into nested `cargo build`.
+@@ -59,6 +61,14 @@ impl NativeBuildConfig {
+         }
+     }
+ 
++    pub fn ffi_module() -> Self {
++        Self {
++            artifact: NativeArtifact::FfiModule,
++            cargo_target: None,
++            emit_mode: NativeEmitMode::FfiModule,
++        }
++    }
++
+     pub fn is_cross_compile(&self) -> bool {
+         self.cargo_target.is_some()
+     }
+diff --git a/crates/tish_runtime/Cargo.toml b/crates/tish_runtime/Cargo.toml
+index 9007fe162..9ed5e0f46 100644
+--- a/crates/tish_runtime/Cargo.toml
++++ b/crates/tish_runtime/Cargo.toml
+@@ -65,6 +65,9 @@ encoding = ["dep:base64"]
+ crypto = ["dep:sha2", "dep:rand"]
+ # Zip extraction (tish:zip) — VSIX / archive extract with `..`-traversal guard + unix-mode preserved.
+ zip = ["dep:zip"]
++# Runtime loading of tish FFI cdylibs (tish:ffi `loadModule`), e.g. plugins built with
++# `tish build --crate-type cdylib`. Hosts need no linker flags: ABI v2 passes the accessor table.
++ffi = ["dep:tishlang_ffi"]
+ # Interactive terminal I/O (issue #101): raw mode, key/resize events, size, alt screen.
+ tty = ["dep:crossterm"]
+ # Pseudoterminal hosting (issue #493): spawn a shell/program on a real PTY, read/write/resize/kill —
+@@ -97,6 +100,7 @@ futures = { version = "0.3.32", optional = true }
+ base64 = { version = "0.22", optional = true }
+ sha2 = { version = "0.10", optional = true }
+ zip = { version = "2", default-features = false, features = ["deflate"], optional = true }
++tishlang_ffi = { path = "../tish_ffi", version = ">=0.1", optional = true }
+ bytes = { version = "1", optional = true }
+ tiny_http = { version = "0.12.0", optional = true }
+ # fs feature only: random suffix for `mkdtemp`.
+diff --git a/crates/tish_runtime/src/lib.rs b/crates/tish_runtime/src/lib.rs
+index 6963e347e..9e14bb7bd 100644
+--- a/crates/tish_runtime/src/lib.rs
++++ b/crates/tish_runtime/src/lib.rs
+@@ -1828,6 +1828,27 @@ pub mod zip;
+ #[cfg(feature = "zip")]
+ pub use zip::{zip_entries, zip_extract};
+ 
++/// `tish:ffi` `loadModule(path)`: load a tish FFI cdylib (ABI v2, falling back to v1) and return
++/// its exports as an object. Loading the same path again returns the cached module. Throws a
++/// `TypeError` if the path is not a string or the library cannot be loaded.
++#[cfg(all(feature = "ffi", not(target_arch = "wasm32")))]
++pub fn ffi_load_module(args: &[Value]) -> Value {
++    let path = match args.first() {
++        Some(Value::String(s)) => s.to_string(),
++        _ => {
++            set_pending_throw(tishlang_core::type_error("loadModule: expected a library path string"));
++            return Value::Null;
++        }
++    };
++    match tishlang_ffi::load_module(&path) {
++        Ok(exports) => Value::object(exports),
++        Err(e) => {
++            set_pending_throw(tishlang_core::type_error(format!("loadModule: {e}")));
++            Value::Null
++        }
++    }
++}
++
+ #[cfg(feature = "ws")]
+ pub use ws::{
+     web_socket_client, web_socket_server_accept, web_socket_server_construct,
+diff --git a/crates/tish_vm/Cargo.toml b/crates/tish_vm/Cargo.toml
+index b3bc03768..ae2a5272b 100644
+--- a/crates/tish_vm/Cargo.toml
++++ b/crates/tish_vm/Cargo.toml
+@@ -32,6 +32,8 @@ http = ["dep:tishlang_runtime", "tishlang_runtime/http", "send-values", "timers"
+ # Promise + `tish:http.await` / `Promise` export without the full HTTP client stack (e.g. wasm32-wasip1).
+ promise = ["dep:tishlang_runtime", "tishlang_runtime/promise", "send-values"]
+ ws = ["dep:tishlang_runtime", "tishlang_runtime/ws"]
++# `tish:ffi` loadModule: runtime loading of tish FFI cdylibs.
++ffi = ["dep:tishlang_runtime", "tishlang_runtime/ffi"]
+ 
+ [dependencies]
+ tishlang_ast = { path = "../tish_ast", version = ">=0.1" }
+diff --git a/crates/tish_vm/src/vm.rs b/crates/tish_vm/src/vm.rs
+index 5bd56d4ef..db1d814d6 100644
+--- a/crates/tish_vm/src/vm.rs
++++ b/crates/tish_vm/src/vm.rs
+@@ -134,7 +134,9 @@ fn value_object_from_map(m: ObjectMap) -> Value {
+     feature = "promise",
+     feature = "timers",
+     feature = "process",
+-    feature = "ws"
++    feature = "ws",
++    feature = "tty",
++    feature = "ffi"
+ ))]
+ #[inline]
+ fn cap_allows(enabled: &HashSet<String>, name: &str) -> bool {
+@@ -161,6 +163,8 @@ pub fn all_compiled_capabilities() -> HashSet<String> {
+     s.insert("ws".to_string());
+     #[cfg(feature = "tty")]
+     s.insert("tty".to_string());
++    #[cfg(feature = "ffi")]
++    s.insert("ffi".to_string());
+     s
+ }
+ 
+@@ -173,7 +177,8 @@ pub fn all_compiled_capabilities() -> HashSet<String> {
+         feature = "timers",
+         feature = "process",
+         feature = "ws",
+-        feature = "tty"
++        feature = "tty",
++        feature = "ffi"
+     )),
+     allow(unused_variables)
+ )]
+@@ -455,6 +460,15 @@ fn get_builtin_export(enabled: &HashSet<String>, spec: &str, export_name: &str)
+             _ => None,
+         };
+     }
++    #[cfg(feature = "ffi")]
++    if spec == "tish:ffi" && cap_allows(enabled, "ffi") {
++        return match export_name {
++            "loadModule" => Some(Value::native(|args: &[Value]| {
++                tishlang_runtime::ffi_load_module(args)
++            })),
++            _ => None,
++        };
++    }
+     None
+ }
+ 
+diff --git a/crates/tish_vm/tests/jsx_lexical_resolution.rs b/crates/tish_vm/tests/jsx_lexical_resolution.rs
+new file mode 100644
+index 000000000..0183a555a
+--- /dev/null
++++ b/crates/tish_vm/tests/jsx_lexical_resolution.rs
+@@ -0,0 +1,42 @@
++//! Bytecode JSX resolves `h`, `Fragment` and component tags lexically, falling back to globals.
++
++use tishlang_bytecode::compile;
++use tishlang_vm::run;
++
++fn run_src(src: &str) {
++    let program = tishlang_parser::parse(src).expect("parse");
++    let chunk = compile(&program).expect("compile");
++    run(&chunk).expect("run");
++}
++
++#[test]
++fn component_tag_resolves_script_level_fn() {
++    run_src(
++        r#"
++fn h(tag, props, children) {
++  if (typeof tag === "function") { return tag(props) }
++  return { tag: tag, props: props, children: children }
++}
++fn Row(props) { return <item title={props.title} /> }
++let tree = <list><Row title="a" /></list>
++let row = tree.children[0]
++if (row.tag !== "item" || row.props.title !== "a") { throw "component tag did not resolve" }
++"#,
++    );
++}
++
++#[test]
++fn h_and_fragment_resolve_from_enclosing_scope() {
++    run_src(
++        r#"
++fn render() {
++  let Fragment = "frag"
++  let h = (tag, props, children) => typeof tag === "function" ? tag(props) : { tag: tag, children: children }
++  fn Inner(p) { return <leaf /> }
++  return <><Inner /></>
++}
++let t = render()
++if (t.tag !== "frag" || t.children[0].tag !== "leaf") { throw "local h/Fragment/component not used" }
++"#,
++    );
++}
+diff --git a/crates/tish_compile/tests/regr_ffi_module_emit.rs b/crates/tish_compile/tests/regr_ffi_module_emit.rs
+new file mode 100644
+index 000000000..d37c80699
+--- /dev/null
++++ b/crates/tish_compile/tests/regr_ffi_module_emit.rs
+@@ -0,0 +1,105 @@
++//! `--crate-type cdylib` (`NativeEmitMode::FfiModule`): the RustLib surface plus a `tish_ffi` ABI v2
++//! entry point, so the result can be loaded at runtime via `import { .. } from "ffi:./x.lib"`.
++//! The loader behaviour itself is covered by `crates/tish_ffi/tests/loader_v2.rs`.
++use std::path::{Path, PathBuf};
++use tishlang_compile::{compile_project_full_emit, CompileError, NativeEmitMode};
++
++fn compile(path: &Path, mode: NativeEmitMode) -> Result<String, CompileError> {
++    compile_project_full_emit(path, path.parent(), &[], true, mode, None).map(|r| r.0)
++}
++
++fn fixture(rel: &str) -> PathBuf {
++    let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
++    manifest.join("../..").join(rel).canonicalize().unwrap()
++}
++
++fn temp_module(name: &str, src: &str) -> PathBuf {
++    let dir = std::env::temp_dir().join(name);
++    std::fs::create_dir_all(&dir).unwrap();
++    let path = dir.join("index.tish");
++    std::fs::write(&path, src).unwrap();
++    path
++}
++
++#[test]
++fn ffi_module_registers_every_export_by_name() {
++    let rust = compile(&fixture("tests/regression/rust_lib_emit.tish"), NativeEmitMode::FfiModule)
++        .expect("ffi module emit");
++    assert!(
++        rust.contains("pub unsafe extern \"C\" fn tish_module_register_v2("),
++        "missing the v2 entry point:\n{rust}"
++    );
++    for name in ["register", "lookup", "clearAll", "initRuns", "add"] {
++        assert!(
++            rust.contains(&format!("(b\"{name}\\0\", ")),
++            "`{name}` missing from the export table:\n{rust}"
++        );
++        assert!(
++            rust.contains(&format!("__tish_call_export(\"{name}\", &a)")),
++            "`{name}` has no trampoline:\n{rust}"
++        );
++    }
++    // Still a library: the Rust API stays available to in-process consumers.
++    assert!(rust.contains("pub fn add(a0: Value, a1: Value) -> Value"));
++    assert!(!rust.contains("fn main()"));
++}
++
++#[test]
++fn rust_lib_gains_no_ffi_entry_point() {
++    let rust = compile(&fixture("tests/regression/rust_lib_emit.tish"), NativeEmitMode::RustLib)
++        .expect("rust-lib emit");
++    assert!(
++        !rust.contains("tish_module_register_v2") && !rust.contains("tishlang_ffi_guest"),
++        "the FFI entry point must be FfiModule-only:\n{rust}"
++    );
++}
++
++#[test]
++fn an_export_named_like_a_generated_item_is_still_exported_over_ffi() {
++    let path = temp_module(
++        "tish_ffimodule_reserved_name",
++        "export fn run(cb) { return cb(1) }\nexport fn other() { return 2 }\n",
++    );
++    let rust = compile(&path, NativeEmitMode::FfiModule).expect("ffi module emit");
++    assert!(
++        !rust.contains("pub fn run(a0: Value)"),
++        "a `pub fn run` would clash with the module's own `run()`:\n{rust}"
++    );
++    assert!(
++        rust.contains("(b\"run\\0\", ") && rust.contains("__tish_call_export(\"run\", &a)"),
++        "`run` must still be reachable by name over FFI:\n{rust}"
++    );
++}
++
++#[test]
++fn tish_ffi_load_module_lowers_to_the_runtime_loader() {
++    let path = temp_module(
++        "tish_ffi_load_module_emit",
++        "import { loadModule } from \"tish:ffi\"\nlet m = loadModule(\"./x.lib\")\nconsole.log(m)\n",
++    );
++    let rust = compile_project_full_emit(
++        &path,
++        path.parent(),
++        &["ffi".to_string()],
++        true,
++        NativeEmitMode::DesktopBin,
++        None,
++    )
++    .expect("tish:ffi should compile with the ffi feature")
++    .0;
++    assert!(
++        rust.contains("tishlang_runtime::ffi_load_module(args)"),
++        "loadModule must call the runtime loader:\n{rust}"
++    );
++}
++
++#[test]
++fn rust_lib_rejects_an_export_named_like_a_generated_item() {
++    let path = temp_module("tish_rustlib_reserved_name", "export fn run() { return 1 }\n");
++    let err = compile(&path, NativeEmitMode::RustLib).expect_err("`run` cannot be a Rust pub fn here");
++    assert!(
++        err.message.contains("clash") && err.message.contains("`run`"),
++        "the error should name the clashing export: {}",
++        err.message
++    );
++}
+diff --git a/crates/tish_ffi/src/v2.rs b/crates/tish_ffi/src/v2.rs
+new file mode 100644
+index 000000000..5ff4b2567
+--- /dev/null
++++ b/crates/tish_ffi/src/v2.rs
+@@ -0,0 +1,349 @@
++//! # ABI v2 — host accessors delivered as a function-pointer table
++//!
++//! v1 extensions resolve the host's `tish_value_*` symbols at load time, which needs the host
++//! binary to export them (`-export_dynamic`) and keep them alive under LTO + strip. v2 hands the
++//! module a [`TishHostApi`] table instead: the loader calls
++//! `tish_module_register_v2(api: *const TishHostApi) -> *const TishExportTable`, the module keeps
++//! the pointer, and every host access goes through it. No symbol export, no late binding, and
++//! taking the functions' addresses keeps them alive in any host profile.
++//!
++//! Additions over v1: length-delimited UTF-8 strings (interior NUL allowed), object key
++//! enumeration, array set, function handles in both directions ([`TishHostApi::new_function`] /
++//! [`TishHostApi::call`]), and a throw channel ([`TishHostApi::throw_value`] /
++//! [`TishHostApi::take_throw`]). Packed `NumberArray` values read as arrays.
++//!
++//! Ownership follows v1: handles returned by `new_*` / `*_get` / `object_keys` / `call` /
++//! `take_throw` / `clone` are owned by the caller and released with `drop`; `*_push` / `*_set` /
++//! `throw_value` clone their arguments. [`TishHostApi::string_utf8`] returns a pointer *borrowed*
++//! from the handle, valid until that handle is dropped.
++//!
++//! Evolution: fields are only ever appended. A module checks `abi_version` and `size` before
++//! touching a field newer than the version it was built for.
++
++use std::cell::RefCell;
++use std::ffi::c_void;
++use std::sync::Arc;
++
++use tishlang_core::{ObjectData, Value, VmRef};
++
++use crate::{
++    box_value, tish_value_array_new, tish_value_array_push, tish_value_clone, tish_value_drop,
++    tish_value_new_bool, tish_value_new_null, tish_value_new_number, tish_value_object_new,
++    TishValueRef, TISH_TAG_ARRAY, TISH_TAG_BOOL, TISH_TAG_NULL, TISH_TAG_NUMBER, TISH_TAG_OBJECT,
++    TISH_TAG_OTHER, TISH_TAG_STRING,
++};
++
++pub const TISH_FFI_ABI_VERSION: u32 = 2;
++
++/// v2-only tag: a callable value (pass it to [`TishHostApi::call`]). v1's `tag` keeps reporting
++/// functions as `TISH_TAG_OTHER`.
++pub const TISH_TAG_FUNCTION: i32 = 7;
++
++/// A foreign callback wrapped by [`TishHostApi::new_function`]: borrowed argument handles in,
++/// freshly-owned result handle out (same contract as `TishNativeFn`, plus a context pointer).
++pub type TishCallbackFn =
++    extern "C" fn(ctx: *mut c_void, args: *const TishValueRef, argc: usize) -> TishValueRef;
++
++/// Releases a callback context when the last reference to the wrapping function value drops.
++pub type TishCtxDropFn = extern "C" fn(ctx: *mut c_void);
++
++/// The host API table. `#[repr(C)]`; fields are append-only across versions.
++#[repr(C)]
++pub struct TishHostApi {
++    pub abi_version: u32,
++    /// `size_of::<TishHostApi>()` as built by the host.
++    pub size: usize,
++
++    pub new_null: extern "C" fn() -> TishValueRef,
++    pub new_number: extern "C" fn(n: f64) -> TishValueRef,
++    pub new_bool: extern "C" fn(b: bool) -> TishValueRef,
++    pub new_string_utf8: unsafe extern "C" fn(ptr: *const u8, len: usize) -> TishValueRef,
++
++    /// `TISH_TAG_*`, with arrays covering `NumberArray` and [`TISH_TAG_FUNCTION`] for callables.
++    pub tag: unsafe extern "C" fn(r: TishValueRef) -> i32,
++    pub as_number: unsafe extern "C" fn(r: TishValueRef) -> f64,
++    pub as_bool: unsafe extern "C" fn(r: TishValueRef) -> bool,
++    /// Borrowed UTF-8 bytes of a string handle (null if not a string); `*len` receives the length.
++    pub string_utf8: unsafe extern "C" fn(r: TishValueRef, len: *mut usize) -> *const u8,
++
++    pub array_new: extern "C" fn() -> TishValueRef,
++    pub array_push: unsafe extern "C" fn(arr: TishValueRef, elem: TishValueRef),
++    pub array_len: unsafe extern "C" fn(arr: TishValueRef) -> usize,
++    pub array_get: unsafe extern "C" fn(arr: TishValueRef, i: usize) -> TishValueRef,
++    /// Sets element `i`, padding with null when `i >= len`.
++    pub array_set: unsafe extern "C" fn(arr: TishValueRef, i: usize, elem: TishValueRef),
++
++    pub object_new: extern "C" fn() -> TishValueRef,
++    pub object_set_utf8:
++        unsafe extern "C" fn(obj: TishValueRef, key: *const u8, key_len: usize, val: TishValueRef),
++    pub object_get_utf8:
++        unsafe extern "C" fn(obj: TishValueRef, key: *const u8, key_len: usize) -> TishValueRef,
++    /// Array of the object's own string keys, in insertion order.
++    pub object_keys: unsafe extern "C" fn(obj: TishValueRef) -> TishValueRef,
++
++    /// Wrap a foreign callback as a host function value. `drop_ctx` (nullable) runs once when the
++    /// function value is released.
++    pub new_function: unsafe extern "C" fn(
++        func: TishCallbackFn,
++        ctx: *mut c_void,
++        drop_ctx: Option<TishCtxDropFn>,
++    ) -> TishValueRef,
++    /// Call a function handle. If it throws, returns a null handle and parks the thrown value for
++    /// [`TishHostApi::take_throw`] on this thread.
++    pub call:
++        unsafe extern "C" fn(f: TishValueRef, args: *const TishValueRef, argc: usize) -> TishValueRef,
++    /// Raise `val` in the host when the current native call returns.
++    pub throw_value: unsafe extern "C" fn(val: TishValueRef),
++    /// The value thrown by the last failing [`TishHostApi::call`] on this thread, or a null
++    /// pointer if none. Clears it.
++    pub take_throw: extern "C" fn() -> TishValueRef,
++
++    pub clone: unsafe extern "C" fn(r: TishValueRef) -> TishValueRef,
++    pub drop: unsafe extern "C" fn(r: TishValueRef),
++}
++
++/// The host's table, handed to every v2 module the loader registers.
++pub static TISH_HOST_API: TishHostApi = TishHostApi {
++    abi_version: TISH_FFI_ABI_VERSION,
++    size: std::mem::size_of::<TishHostApi>(),
++    new_null: tish_value_new_null,
++    new_number: tish_value_new_number,
++    new_bool: tish_value_new_bool,
++    new_string_utf8: v2_new_string_utf8,
++    tag: v2_tag,
++    as_number: v2_as_number,
++    as_bool: v2_as_bool,
++    string_utf8: v2_string_utf8,
++    array_new: tish_value_array_new,
++    array_push: tish_value_array_push,
++    array_len: v2_array_len,
++    array_get: v2_array_get,
++    array_set: v2_array_set,
++    object_new: tish_value_object_new,
++    object_set_utf8: v2_object_set_utf8,
++    object_get_utf8: v2_object_get_utf8,
++    object_keys: v2_object_keys,
++    new_function: v2_new_function,
++    call: v2_call,
++    throw_value: v2_throw_value,
++    take_throw: v2_take_throw,
++    clone: tish_value_clone,
++    drop: tish_value_drop,
++};
++
++thread_local! {
++    static LAST_CALL_THROW: RefCell<Option<Value>> = const { RefCell::new(None) };
++}
++
++#[inline]
++unsafe fn val<'a>(r: TishValueRef) -> Option<&'a Value> {
++    (r as *const Value).as_ref()
++}
++
++#[inline]
++unsafe fn utf8<'a>(ptr: *const u8, len: usize) -> Option<&'a str> {
++    if ptr.is_null() {
++        return if len == 0 { Some("") } else { None };
++    }
++    std::str::from_utf8(std::slice::from_raw_parts(ptr, len)).ok()
++}
++
++fn object_of(v: &Value) -> Option<VmRef<ObjectData>> {
++    match v {
++        Value::Object(o) => Some(o.clone()),
++        _ => None,
++    }
++}
++
++unsafe extern "C" fn v2_new_string_utf8(ptr: *const u8, len: usize) -> TishValueRef {
++    match utf8(ptr, len) {
++        Some(s) => box_value(Value::String(s.into())),
++        None => box_value(Value::Null),
++    }
++}
++
++unsafe extern "C" fn v2_tag(r: TishValueRef) -> i32 {
++    match val(r) {
++        None | Some(Value::Null) => TISH_TAG_NULL,
++        Some(Value::Number(_)) => TISH_TAG_NUMBER,
++        Some(Value::String(_)) => TISH_TAG_STRING,
++        Some(Value::Bool(_)) => TISH_TAG_BOOL,
++        Some(Value::Array(_)) | Some(Value::NumberArray(_)) => TISH_TAG_ARRAY,
++        Some(Value::Object(_)) => TISH_TAG_OBJECT,
++        Some(Value::Function(_)) => TISH_TAG_FUNCTION,
++        Some(_) => TISH_TAG_OTHER,
++    }
++}
++
++unsafe extern "C" fn v2_as_number(r: TishValueRef) -> f64 {
++    match val(r) {
++        Some(Value::Number(n)) => *n,
++        _ => f64::NAN,
++    }
++}
++
++unsafe extern "C" fn v2_as_bool(r: TishValueRef) -> bool {
++    matches!(val(r), Some(Value::Bool(true)))
++}
++
++unsafe extern "C" fn v2_string_utf8(r: TishValueRef, len: *mut usize) -> *const u8 {
++    let (ptr, n) = match val(r) {
++        Some(Value::String(s)) => (s.as_bytes().as_ptr(), s.as_bytes().len()),
++        _ => (std::ptr::null(), 0),
++    };
++    if !len.is_null() {
++        *len = n;
++    }
++    ptr
++}
++
++unsafe extern "C" fn v2_array_len(arr: TishValueRef) -> usize {
++    match val(arr) {
++        Some(Value::Array(a)) => a.borrow().len(),
++        Some(Value::NumberArray(a)) => a.borrow().len(),
++        _ => 0,
++    }
++}
++
++unsafe extern "C" fn v2_array_get(arr: TishValueRef, i: usize) -> TishValueRef {
++    let v = match val(arr) {
++        Some(Value::Array(a)) => a.borrow().get(i).cloned(),
++        Some(Value::NumberArray(a)) => a.borrow().get(i),
++        _ => None,
++    };
++    box_value(v.unwrap_or(Value::Null))
++}
++
++unsafe extern "C" fn v2_array_set(arr: TishValueRef, i: usize, elem: TishValueRef) {
++    let v = val(elem).cloned().unwrap_or(Value::Null);
++    match val(arr) {
++        Some(Value::Array(a)) => {
++            let mut a = a.borrow_mut();
++            if i >= a.len() {
++                a.resize(i + 1, Value::Null);
++            }
++            a[i] = v;
++        }
++        Some(Value::NumberArray(a)) => {
++            let mut a = a.borrow_mut();
++            let mut vals = a.to_values();
++            if i >= vals.len() {
++                vals.resize(i + 1, Value::Null);
++            }
++            vals[i] = v;
++            *a = tishlang_core::NumArrayBacking::Boxed(vals);
++        }
++        _ => {}
++    }
++}
++
++unsafe extern "C" fn v2_object_set_utf8(
++    obj: TishValueRef,
++    key: *const u8,
++    key_len: usize,
++    v: TishValueRef,
++) {
++    if let (Some(Value::Object(o)), Some(k)) = (val(obj), utf8(key, key_len)) {
++        let v = val(v).cloned().unwrap_or(Value::Null);
++        o.borrow_mut().strings.insert(k.into(), v);
++    }
++}
++
++unsafe extern "C" fn v2_object_get_utf8(
++    obj: TishValueRef,
++    key: *const u8,
++    key_len: usize,
++) -> TishValueRef {
++    let got = match (val(obj).and_then(object_of), utf8(key, key_len)) {
++        (Some(o), Some(k)) => o.borrow().strings.get(k).cloned(),
++        _ => None,
++    };
++    box_value(got.unwrap_or(Value::Null))
++}
++
++unsafe extern "C" fn v2_object_keys(obj: TishValueRef) -> TishValueRef {
++    let keys: Vec<Value> = match val(obj).and_then(object_of) {
++        Some(o) => o
++            .borrow()
++            .strings
++            .keys()
++            .map(|k| Value::String(k.as_ref().into()))
++            .collect(),
++        None => Vec::new(),
++    };
++    box_value(Value::Array(VmRef::new(keys)))
++}
++
++/// A foreign callback + context, owned by the function value wrapping it.
++struct ForeignCallback {
++    func: TishCallbackFn,
++    ctx: *mut c_void,
++    drop_ctx: Option<TishCtxDropFn>,
++}
++
++// SAFETY: the context is opaque to the host; the module that created it owns its thread-safety
++// (the documented contract is that callbacks are invoked on the thread that calls them).
++unsafe impl Send for ForeignCallback {}
++unsafe impl Sync for ForeignCallback {}
++
++impl Drop for ForeignCallback {
++    fn drop(&mut self) {
++        if let Some(d) = self.drop_ctx {
++            d(self.ctx);
++        }
++    }
++}
++
++unsafe extern "C" fn v2_new_function(
++    func: TishCallbackFn,
++    ctx: *mut c_void,
++    drop_ctx: Option<TishCtxDropFn>,
++) -> TishValueRef {
++    let cb = Arc::new(ForeignCallback {
++        func,
++        ctx,
++        drop_ctx,
++    });
++    box_value(Value::native(move |args: &[Value]| {
++        let cb = &cb;
++        crate::call_through_handles(args, |argv, argc| (cb.func)(cb.ctx, argv, argc))
++    }))
++}
++
++unsafe extern "C" fn v2_call(
++    f: TishValueRef,
++    args: *const TishValueRef,
++    argc: usize,
++) -> TishValueRef {
++    let Some(Value::Function(func)) = val(f) else {
++        LAST_CALL_THROW.with(|t| {
++            *t.borrow_mut() = Some(Value::String("ffi: call of non-function".into()))
++        });
++        return box_value(Value::Null);
++    };
++    let argv: Vec<Value> = if args.is_null() {
++        Vec::new()
++    } else {
++        std::slice::from_raw_parts(args, argc)
++            .iter()
++            .map(|h| val(*h).cloned().unwrap_or(Value::Null))
++            .collect()
++    };
++    let out = func.call(&argv);
++    if let Some(thrown) = tishlang_core::take_pending_throw() {
++        LAST_CALL_THROW.with(|t| *t.borrow_mut() = Some(thrown));
++        return box_value(Value::Null);
++    }
++    box_value(out)
++}
++
++unsafe extern "C" fn v2_throw_value(v: TishValueRef) {
++    tishlang_core::set_pending_throw(val(v).cloned().unwrap_or(Value::Null));
++}
++
++extern "C" fn v2_take_throw() -> TishValueRef {
++    match LAST_CALL_THROW.with(|t| t.borrow_mut().take()) {
++        Some(v) => box_value(v),
++        None => std::ptr::null_mut(),
++    }
++}
+diff --git a/crates/tish_ffi/tests/fixtures/testmod_v2/Cargo.lock b/crates/tish_ffi/tests/fixtures/testmod_v2/Cargo.lock
+new file mode 100644
+index 000000000..088f4c9a3
+--- /dev/null
++++ b/crates/tish_ffi/tests/fixtures/testmod_v2/Cargo.lock
+@@ -0,0 +1,282 @@
++# This file is automatically @generated by Cargo.
++# It is not intended for manual editing.
++version = 4
++
++[[package]]
++name = "ahash"
++version = "0.8.12"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "5a15f179cd60c4584b8a8c596927aadc462e27f2ca70c04e0071964a73ba7a75"
++dependencies = [
++ "cfg-if",
++ "getrandom",
++ "once_cell",
++ "version_check",
++ "zerocopy",
++]
++
++[[package]]
++name = "arcstr"
++version = "1.2.0"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "03918c3dbd7701a85c6b9887732e2921175f26c350b4563841d0958c21d57e6d"
++
++[[package]]
++name = "bumpalo"
++version = "3.20.3"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "72f5acc6cb2ba439de613abc23857ec3d78374d8ed5ac84e9d11336e87da8649"
++
++[[package]]
++name = "cfg-if"
++version = "1.0.5"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "4e7648175b45a9a48536d676f68d918270699102aa8dab5496df06904c914600"
++
++[[package]]
++name = "equivalent"
++version = "1.0.2"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "877a4ace8713b0bcf2a4e7eec82529c029f1d0619886d18145fea96c3ffe5c0f"
++
++[[package]]
++name = "getrandom"
++version = "0.3.4"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "899def5c37c4fd7b2664648c28120ecec138e4d395b459e5ca34f9cce2dd77fd"
++dependencies = [
++ "cfg-if",
++ "js-sys",
++ "libc",
++ "r-efi",
++ "wasip2",
++ "wasm-bindgen",
++]
++
++[[package]]
++name = "hashbrown"
++version = "0.17.1"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "ed5909b6e89a2db4456e54cd5f673791d7eca6732202bbf2a9cc504fe2f9b84a"
++
++[[package]]
++name = "indexmap"
++version = "2.14.2"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "cc4e190f5d26ca7051642629da2c52fc03bde85a03197c99408dcd291734c855"
++dependencies = [
++ "equivalent",
++ "hashbrown",
++]
++
++[[package]]
++name = "itoa"
++version = "1.0.18"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "8f42a60cbdf9a97f5d2305f08a87dc4e09308d1276d28c869c684d7777685682"
++
++[[package]]
++name = "js-sys"
++version = "0.3.106"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "7883d941dae510fb2d978fc3fe018c71c9e2892fd38854de3e8b92c2e5ad9cc5"
++dependencies = [
++ "cfg-if",
++ "wasm-bindgen",
++]
++
++[[package]]
++name = "libc"
++version = "0.2.190"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "ce5d3ddc6d3fa000eb1536d85e147bfe31aacaba692ed6a876f95cb7c855be78"
++
++[[package]]
++name = "once_cell"
++version = "1.21.4"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "9f7c3e4beb33f85d45ae3e3a1792185706c8e16d043238c593331cc7cd313b50"
++
++[[package]]
++name = "proc-macro2"
++version = "1.0.107"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "985e7ec9bb745e6ce6535b544d84d6cd6f7ad8bd711c398938ae983b91a766d9"
++dependencies = [
++ "unicode-ident",
++]
++
++[[package]]
++name = "quote"
++version = "1.0.47"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "1fbf4db142a473a8d80c26bbf18454ed458bf8d26c8219c331daecfdbd079001"
++dependencies = [
++ "proc-macro2",
++]
++
++[[package]]
++name = "r-efi"
++version = "5.3.0"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "69cdb34c158ceb288df11e18b4bd39de994f6657d83847bdffdbd7f346754b0f"
++
++[[package]]
++name = "rustversion"
++version = "1.0.23"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "cf54715a573b99ac80df0bc206da022bcd442c974952c7b9720069370852e21f"
++
++[[package]]
++name = "ryu"
++version = "1.0.23"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "9774ba4a74de5f7b1c1451ed6cd5285a32eddb5cccb8cc655a4e50009e06477f"
++
++[[package]]
++name = "smallvec"
++version = "1.16.2"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "f9395f0f0eee849a9b707b2f06bb92a6a422090e2123bb2ef8e87a0e61892a8e"
++
++[[package]]
++name = "syn"
++version = "2.0.119"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "872831b642d1a07999a962a351ed35b955ea2cfc8f3862091e2a240a84f17297"
++dependencies = [
++ "proc-macro2",
++ "quote",
++ "unicode-ident",
++]
++
++[[package]]
++name = "syn"
++version = "3.0.6"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "8593e8e72159ed2257d083c7a454a85cbf854f37a0966d8d483aff8c8a3ebcee"
++dependencies = [
++ "proc-macro2",
++ "quote",
++ "unicode-ident",
++]
++
++[[package]]
++name = "tish_ffi_testmod_v2"
++version = "0.0.0"
++dependencies = [
++ "tishlang_core",
++ "tishlang_ffi_guest",
++]
++
++[[package]]
++name = "tishlang_core"
++version = "0.1.0"
++dependencies = [
++ "ahash",
++ "arcstr",
++ "getrandom",
++ "indexmap",
++ "itoa",
++ "ryu",
++ "smallvec",
++]
++
++[[package]]
++name = "tishlang_ffi_guest"
++version = "0.1.0"
++dependencies = [
++ "tishlang_core",
++]
++
++[[package]]
++name = "unicode-ident"
++version = "1.0.26"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "d245f478577f809a851594d02313b640fb437e0bb33866753cff937863096954"
++
++[[package]]
++name = "version_check"
++version = "0.9.5"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
++
++[[package]]
++name = "wasip2"
++version = "1.0.4+wasi-0.2.12"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "b67efb37e106e55ce722a510d6b5f9c17f083e5fc79afc2badeb12cc313d9487"
++dependencies = [
++ "wit-bindgen",
++]
++
++[[package]]
++name = "wasm-bindgen"
++version = "0.2.129"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "9bb54f33acc68fd454578d9820b0bde1a1a3d17aa17bb7b6595806d02886d409"
++dependencies = [
++ "cfg-if",
++ "once_cell",
++ "rustversion",
++ "wasm-bindgen-macro",
++ "wasm-bindgen-shared",
++]
++
++[[package]]
++name = "wasm-bindgen-macro"
++version = "0.2.129"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "2e29d0c35b16e224a7eeb5cd2d25e3e1968fbd65604117b44d3b789d00ee8535"
++dependencies = [
++ "quote",
++ "wasm-bindgen-macro-support",
++]
++
++[[package]]
++name = "wasm-bindgen-macro-support"
++version = "0.2.129"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "6f501a8bc3719dba86ef8ae4728879c08001bea749eb1333ac5b91e040e2a6b7"
++dependencies = [
++ "bumpalo",
++ "proc-macro2",
++ "quote",
++ "syn 3.0.6",
++ "wasm-bindgen-shared",
++]
++
++[[package]]
++name = "wasm-bindgen-shared"
++version = "0.2.129"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "23f0c9c52aa7cd7d77769a4cfe2a9adb1b331f489a41d912ce14513d5ab995c6"
++dependencies = [
++ "unicode-ident",
++]
++
++[[package]]
++name = "wit-bindgen"
++version = "0.57.1"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "1ebf944e87a7c253233ad6766e082e3cd714b5d03812acc24c318f549614536e"
++
++[[package]]
++name = "zerocopy"
++version = "0.8.59"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "6df92bf3d9227be3d53173901ddbffac2babc27ae50f397776ffd6dc33f800cb"
++dependencies = [
++ "zerocopy-derive",
++]
++
++[[package]]
++name = "zerocopy-derive"
++version = "0.8.59"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "ac4f328cf2f05d084e496c3e9c3f33ed0a183656a16e1fcec4d464d8373aec82"
++dependencies = [
++ "proc-macro2",
++ "quote",
++ "syn 2.0.119",
++]
+diff --git a/crates/tish_ffi/tests/fixtures/testmod_v2/Cargo.toml b/crates/tish_ffi/tests/fixtures/testmod_v2/Cargo.toml
+new file mode 100644
+index 000000000..2149536b8
+--- /dev/null
++++ b/crates/tish_ffi/tests/fixtures/testmod_v2/Cargo.toml
+@@ -0,0 +1,16 @@
++# ABI v2 fixture: links only `tishlang_ffi_guest` (its own tishlang_core copy, no host symbols) and
++# exports `tish_module_register_v2`. Standalone workspace so the main workspace ignores it.
++[package]
++name = "tish_ffi_testmod_v2"
++version = "0.0.0"
++edition = "2021"
++publish = false
++
++[workspace]
++
++[lib]
++crate-type = ["cdylib"]
++
++[dependencies]
++tishlang_ffi_guest = { path = "../../../../tish_ffi_guest" }
++tishlang_core = { path = "../../../../tish_core" }
+diff --git a/crates/tish_ffi/tests/fixtures/testmod_v2/src/lib.rs b/crates/tish_ffi/tests/fixtures/testmod_v2/src/lib.rs
+new file mode 100644
+index 000000000..594c33463
+--- /dev/null
++++ b/crates/tish_ffi/tests/fixtures/testmod_v2/src/lib.rs
+@@ -0,0 +1,111 @@
++use tishlang_core::{take_pending_throw, Value, VmRef};
++use tishlang_ffi_guest as guest;
++use guest::{TishExportTable, TishHostApi, TishValueRef};
++
++fn no_throw() -> Value {
++    Value::Null
++}
++
++fn parked_throw() -> Value {
++    take_pending_throw().unwrap_or(Value::Null)
++}
++
++/// `describe(obj)` → "k1,k2|<count>": reads a host object's keys (v1 could not).
++extern "C" fn describe(args: *const TishValueRef, argc: usize) -> TishValueRef {
++    unsafe {
++        guest::export_call(
++            args,
++            argc,
++            |a| match a.first() {
++                Some(Value::Object(o)) => {
++                    let o = o.borrow();
++                    let keys: Vec<String> = o.strings.keys().map(|k| k.to_string()).collect();
++                    Value::String(format!("{}|{}", keys.join(","), keys.len()).into())
++                }
++                _ => Value::Null,
++            },
++            no_throw,
++        )
++    }
++}
++
++/// `apply(f, x)` → `f(x) + 1`: calls a host function from the module.
++extern "C" fn apply(args: *const TishValueRef, argc: usize) -> TishValueRef {
++    unsafe {
++        guest::export_call(
++            args,
++            argc,
++            |a| match (a.first(), a.get(1)) {
++                (Some(Value::Function(f)), Some(x)) => match f.call(&[x.clone()]) {
++                    Value::Number(n) => Value::Number(n + 1.0),
++                    other => other,
++                },
++                _ => Value::Null,
++            },
++            parked_throw,
++        )
++    }
++}
++
++/// `make_adder(n)` → a module function `(x) => x + n` the host can call later.
++extern "C" fn make_adder(args: *const TishValueRef, argc: usize) -> TishValueRef {
++    unsafe {
++        guest::export_call(
++            args,
++            argc,
++            |a| {
++                let n = match a.first() {
++                    Some(Value::Number(n)) => *n,
++                    _ => 0.0,
++                };
++                Value::native(move |xs: &[Value]| match xs.first() {
++                    Some(Value::Number(x)) => Value::Number(x + n),
++                    _ => Value::Null,
++                })
++            },
++            no_throw,
++        )
++    }
++}
++
++/// `boom(msg)` throws `msg` into the host.
++extern "C" fn boom(args: *const TishValueRef, argc: usize) -> TishValueRef {
++    unsafe {
++        let msg = std::cell::RefCell::new(Value::Null);
++        guest::export_call(
++            args,
++            argc,
++            |a| {
++                *msg.borrow_mut() = a.first().cloned().unwrap_or(Value::Null);
++                Value::Null
++            },
++            || msg.borrow().clone(),
++        )
++    }
++}
++
++/// `echo(x)` returns a deep copy of `x` (arrays, nested objects, strings with NUL).
++extern "C" fn echo(args: *const TishValueRef, argc: usize) -> TishValueRef {
++    unsafe {
++        guest::export_call(
++            args,
++            argc,
++            |a| a.first().cloned().unwrap_or(Value::Array(VmRef::new(Vec::new()))),
++            no_throw,
++        )
++    }
++}
++
++#[no_mangle]
++pub unsafe extern "C" fn tish_module_register_v2(api: *const TishHostApi) -> *const TishExportTable {
++    if !guest::install(api) {
++        return std::ptr::null();
++    }
++    guest::export_table(&[
++        (b"describe\0", describe),
++        (b"apply\0", apply),
++        (b"make_adder\0", make_adder),
++        (b"boom\0", boom),
++        (b"echo\0", echo),
++    ])
++}
+diff --git a/crates/tish_ffi/tests/loader_v2.rs b/crates/tish_ffi/tests/loader_v2.rs
+new file mode 100644
+index 000000000..175c433d3
+--- /dev/null
++++ b/crates/tish_ffi/tests/loader_v2.rs
+@@ -0,0 +1,159 @@
++//! ABI v2 end to end: a cdylib that links no host symbols receives the `TishHostApi` table via
++//! `tish_module_register_v2`, and objects, callbacks (both directions) and throws cross it.
++
++#![cfg(not(target_arch = "wasm32"))]
++
++use std::path::PathBuf;
++use std::process::Command;
++
++use tishlang_core::{take_pending_throw, ObjectData, Value, VmRef};
++
++fn build_and_locate_fixture() -> PathBuf {
++    let manifest = format!(
++        "{}/tests/fixtures/testmod_v2/Cargo.toml",
++        env!("CARGO_MANIFEST_DIR")
++    );
++    let cargo = std::env::var("CARGO").unwrap_or_else(|_| "cargo".into());
++    let status = Command::new(cargo)
++        .args(["build", "--release", "--manifest-path", &manifest])
++        .status()
++        .expect("spawn cargo to build v2 fixture cdylib");
++    assert!(status.success(), "v2 fixture cdylib build failed");
++
++    let dir = format!(
++        "{}/tests/fixtures/testmod_v2/target/release",
++        env!("CARGO_MANIFEST_DIR")
++    );
++    std::fs::read_dir(&dir)
++        .unwrap_or_else(|e| panic!("read {dir}: {e}"))
++        .filter_map(|e| e.ok().map(|e| e.path()))
++        .find(|p| {
++            let name = p.file_name().unwrap_or_default().to_string_lossy();
++            name.contains("tish_ffi_testmod_v2")
++                && matches!(
++                    p.extension().and_then(|x| x.to_str()),
++                    Some("dylib") | Some("so") | Some("dll")
++                )
++        })
++        .expect("built v2 cdylib artifact")
++}
++
++fn export(name: &str) -> tishlang_core::NativeFn {
++    let lib = build_and_locate_fixture();
++    let module = tishlang_ffi::load_module(lib.to_str().unwrap())
++        .unwrap_or_else(|e| panic!("load_module: {e}"));
++    match module.get(name) {
++        Some(Value::Function(f)) => f.clone(),
++        other => panic!("{name} export = {other:?}"),
++    }
++}
++
++fn obj(pairs: &[(&str, Value)]) -> Value {
++    let mut o = ObjectData::default();
++    for (k, v) in pairs {
++        o.strings.insert((*k).into(), v.clone());
++    }
++    Value::Object(VmRef::new(o))
++}
++
++#[test]
++fn host_object_keys_are_readable_in_module() {
++    let describe = export("describe");
++    let out = describe.call(&[obj(&[("title", Value::String("Safari".into())), ("rank", Value::Number(1.0))])]);
++    match out {
++        Value::String(s) => assert_eq!(s.as_str(), "title,rank|2"),
++        other => panic!("describe = {other:?}"),
++    }
++}
++
++#[test]
++fn module_calls_host_function() {
++    let apply = export("apply");
++    let double = Value::native(|a: &[Value]| match a.first() {
++        Some(Value::Number(n)) => Value::Number(n * 2.0),
++        _ => Value::Null,
++    });
++    match apply.call(&[double, Value::Number(20.0)]) {
++        Value::Number(n) => assert_eq!(n, 41.0),
++        other => panic!("apply = {other:?}"),
++    }
++}
++
++#[test]
++fn host_calls_module_function() {
++    let make_adder = export("make_adder");
++    let add5 = make_adder.call(&[Value::Number(5.0)]);
++    let Value::Function(add5) = add5 else {
++        panic!("make_adder returned {add5:?}");
++    };
++    match add5.call(&[Value::Number(10.0)]) {
++        Value::Number(n) => assert_eq!(n, 15.0),
++        other => panic!("add5(10) = {other:?}"),
++    }
++}
++
++#[test]
++fn module_throw_reaches_host() {
++    let boom = export("boom");
++    let _ = take_pending_throw();
++    let out = boom.call(&[Value::String("plugin failed".into())]);
++    assert!(matches!(out, Value::Null));
++    match take_pending_throw() {
++        Some(Value::String(s)) => assert_eq!(s.as_str(), "plugin failed"),
++        other => panic!("pending throw = {other:?}"),
++    }
++}
++
++#[test]
++fn host_throw_inside_callback_propagates_through_module() {
++    let apply = export("apply");
++    let thrower = Value::native(|_a: &[Value]| {
++        tishlang_core::set_pending_throw(Value::String("host callback failed".into()));
++        Value::Null
++    });
++    let _ = take_pending_throw();
++    let out = apply.call(&[thrower, Value::Number(1.0)]);
++    assert!(matches!(out, Value::Null));
++    match take_pending_throw() {
++        Some(Value::String(s)) => assert_eq!(s.as_str(), "host callback failed"),
++        other => panic!("pending throw = {other:?}"),
++    }
++}
++
++#[test]
++fn nested_values_and_nul_strings_round_trip() {
++    let echo = export("echo");
++    let input = obj(&[
++        ("name", Value::String("a\0b".into())),
++        (
++            "items",
++            Value::Array(VmRef::new(vec![
++                Value::Number(1.0),
++                obj(&[("ok", Value::Bool(true))]),
++                Value::Null,
++            ])),
++        ),
++    ]);
++    let out = echo.call(&[input]);
++    let Value::Object(o) = out else {
++        panic!("echo = {out:?}");
++    };
++    let o = o.borrow();
++    match o.strings.get("name") {
++        Some(Value::String(s)) => assert_eq!(s.as_str(), "a\0b"),
++        other => panic!("name = {other:?}"),
++    }
++    match o.strings.get("items") {
++        Some(Value::Array(a)) => {
++            let a = a.borrow();
++            assert_eq!(a.len(), 3);
++            match &a[1] {
++                Value::Object(inner) => {
++                    assert!(matches!(inner.borrow().strings.get("ok"), Some(Value::Bool(true))))
++                }
++                other => panic!("items[1] = {other:?}"),
++            }
++        }
++        other => panic!("items = {other:?}"),
++    }
++}
+diff --git a/crates/tish_ffi_guest/Cargo.toml b/crates/tish_ffi_guest/Cargo.toml
+new file mode 100644
+index 000000000..71f4c2f23
+--- /dev/null
++++ b/crates/tish_ffi_guest/Cargo.toml
+@@ -0,0 +1,11 @@
++[package]
++name = "tishlang_ffi_guest"
++version = "0.1.0"
++edition = "2021"
++description = "Module-side half of the tish FFI ABI v2: deep-converts between the host's opaque handles (through the TishHostApi table) and the module's own tishlang_core values, including functions in both directions. Links no host symbols."
++
++license-file = { workspace = true }
++repository = { workspace = true }
++
++[dependencies]
++tishlang_core = { path = "../tish_core", version = ">=0.1" }
+diff --git a/crates/tish_ffi_guest/src/lib.rs b/crates/tish_ffi_guest/src/lib.rs
+new file mode 100644
+index 000000000..185b95787
+--- /dev/null
++++ b/crates/tish_ffi_guest/src/lib.rs
+@@ -0,0 +1,333 @@
++//! # Module side of the tish FFI ABI v2
++//!
++//! A native module (cdylib) exports
++//! `tish_module_register_v2(api: *const TishHostApi) -> *const TishExportTable`. It passes `api`
++//! to [`install`], then each export trampoline calls [`export_call`], which deep-converts the
++//! host's argument handles into the module's own [`Value`]s, runs the export, and converts the
++//! result (or the export's throw) back.
++//!
++//! The module links its own `tishlang_core`; nothing here names a host symbol, so no linker flags
++//! are needed on either side. Functions cross in both directions: a host function becomes a local
++//! `Value::Function` that calls back through `api.call`, and a local function becomes a host
++//! function via `api.new_function`. Calls happen on the calling thread.
++//!
++//! The `#[repr(C)]` types mirror `tishlang_ffi`'s host definitions field for field; the ABI is
++//! the contract, and `abi_version` / `size` guard every field newer than v2.
++
++use std::ffi::{c_char, c_void};
++use std::sync::OnceLock;
++
++use tishlang_core::{ObjectData, Value, VmRef};
++
++pub type TishValueRef = *mut c_void;
++pub type TishNativeFn = extern "C" fn(args: *const TishValueRef, argc: usize) -> TishValueRef;
++pub type TishCallbackFn =
++    extern "C" fn(ctx: *mut c_void, args: *const TishValueRef, argc: usize) -> TishValueRef;
++pub type TishCtxDropFn = extern "C" fn(ctx: *mut c_void);
++
++pub const TISH_FFI_ABI_VERSION: u32 = 2;
++pub const TISH_TAG_NULL: i32 = 0;
++pub const TISH_TAG_NUMBER: i32 = 1;
++pub const TISH_TAG_STRING: i32 = 2;
++pub const TISH_TAG_BOOL: i32 = 3;
++pub const TISH_TAG_ARRAY: i32 = 4;
++pub const TISH_TAG_OBJECT: i32 = 5;
++pub const TISH_TAG_OTHER: i32 = 6;
++pub const TISH_TAG_FUNCTION: i32 = 7;
++
++#[repr(C)]
++pub struct TishExport {
++    pub name: *const c_char,
++    pub func: TishNativeFn,
++}
++
++#[repr(C)]
++pub struct TishExportTable {
++    pub exports: *const TishExport,
++    pub count: usize,
++}
++
++// SAFETY: the table only holds pointers to `'static` names and fn pointers.
++unsafe impl Sync for TishExportTable {}
++unsafe impl Send for TishExportTable {}
++
++#[repr(C)]
++pub struct TishHostApi {
++    pub abi_version: u32,
++    pub size: usize,
++    pub new_null: extern "C" fn() -> TishValueRef,
++    pub new_number: extern "C" fn(n: f64) -> TishValueRef,
++    pub new_bool: extern "C" fn(b: bool) -> TishValueRef,
++    pub new_string_utf8: unsafe extern "C" fn(ptr: *const u8, len: usize) -> TishValueRef,
++    pub tag: unsafe extern "C" fn(r: TishValueRef) -> i32,
++    pub as_number: unsafe extern "C" fn(r: TishValueRef) -> f64,
++    pub as_bool: unsafe extern "C" fn(r: TishValueRef) -> bool,
++    pub string_utf8: unsafe extern "C" fn(r: TishValueRef, len: *mut usize) -> *const u8,
++    pub array_new: extern "C" fn() -> TishValueRef,
++    pub array_push: unsafe extern "C" fn(arr: TishValueRef, elem: TishValueRef),
++    pub array_len: unsafe extern "C" fn(arr: TishValueRef) -> usize,
++    pub array_get: unsafe extern "C" fn(arr: TishValueRef, i: usize) -> TishValueRef,
++    pub array_set: unsafe extern "C" fn(arr: TishValueRef, i: usize, elem: TishValueRef),
++    pub object_new: extern "C" fn() -> TishValueRef,
++    pub object_set_utf8:
++        unsafe extern "C" fn(obj: TishValueRef, key: *const u8, key_len: usize, val: TishValueRef),
++    pub object_get_utf8:
++        unsafe extern "C" fn(obj: TishValueRef, key: *const u8, key_len: usize) -> TishValueRef,
++    pub object_keys: unsafe extern "C" fn(obj: TishValueRef) -> TishValueRef,
++    pub new_function: unsafe extern "C" fn(
++        func: TishCallbackFn,
++        ctx: *mut c_void,
++        drop_ctx: Option<TishCtxDropFn>,
++    ) -> TishValueRef,
++    pub call:
++        unsafe extern "C" fn(f: TishValueRef, args: *const TishValueRef, argc: usize) -> TishValueRef,
++    pub throw_value: unsafe extern "C" fn(val: TishValueRef),
++    pub take_throw: extern "C" fn() -> TishValueRef,
++    pub clone: unsafe extern "C" fn(r: TishValueRef) -> TishValueRef,
++    pub drop: unsafe extern "C" fn(r: TishValueRef),
++}
++
++static API: OnceLock<&'static TishHostApi> = OnceLock::new();
++
++/// Record the host's table. Returns `false` (and the module should return a null export table)
++/// if the host is older than v2 or its table is smaller than this module expects.
++///
++/// # Safety
++/// `api` must be null or point to a host table that lives for the rest of the process.
++pub unsafe fn install(api: *const TishHostApi) -> bool {
++    let Some(api) = api.as_ref() else {
++        return false;
++    };
++    if api.abi_version < TISH_FFI_ABI_VERSION || api.size < std::mem::size_of::<TishHostApi>() {
++        return false;
++    }
++    let _ = API.set(api);
++    true
++}
++
++/// The installed host table. Panics if called before [`install`] succeeded.
++pub fn api() -> &'static TishHostApi {
++    API.get().expect("tish ffi guest: host api not installed")
++}
++
++/// Build a leaked export table for `tish_module_register_v2` to return.
++pub fn export_table(exports: &[(&'static [u8], TishNativeFn)]) -> *const TishExportTable {
++    let entries: Vec<TishExport> = exports
++        .iter()
++        .map(|(name, func)| TishExport {
++            name: name.as_ptr() as *const c_char,
++            func: *func,
++        })
++        .collect();
++    let entries = Box::leak(entries.into_boxed_slice());
++    Box::leak(Box::new(TishExportTable {
++        exports: entries.as_ptr(),
++        count: entries.len(),
++    }))
++}
++
++/// Run one export: convert args, call `f`, and convert its result. If the export threw (as
++/// reported by `last_throw`, the emitted module's `tish_last_throw`), the throw is raised in the
++/// host and a null handle is returned.
++///
++/// # Safety
++/// `args` must point to `argc` live host handles; [`install`] must have succeeded.
++pub unsafe fn export_call(
++    args: *const TishValueRef,
++    argc: usize,
++    f: impl FnOnce(Vec<Value>) -> Value,
++    last_throw: impl FnOnce() -> Value,
++) -> TishValueRef {
++    let argv: Vec<Value> = if args.is_null() {
++        Vec::new()
++    } else {
++        std::slice::from_raw_parts(args, argc)
++            .iter()
++            .map(|h| from_host(*h))
++            .collect()
++    };
++    let out = f(argv);
++    let thrown = last_throw();
++    if !matches!(thrown, Value::Null) {
++        raise_in_host(&thrown);
++        return (api().new_null)();
++    }
++    to_host(&out)
++}
++
++unsafe fn raise_in_host(thrown: &Value) {
++    let api = api();
++    let h = to_host(thrown);
++    (api.throw_value)(h);
++    (api.drop)(h);
++}
++
++/// Host handle → module value (deep copy; functions become callbacks into the host).
++///
++/// # Safety
++/// `h` must be null or a live host handle; [`install`] must have succeeded.
++pub unsafe fn from_host(h: TishValueRef) -> Value {
++    let api = api();
++    match (api.tag)(h) {
++        TISH_TAG_NUMBER => Value::Number((api.as_number)(h)),
++        TISH_TAG_BOOL => Value::Bool((api.as_bool)(h)),
++        TISH_TAG_STRING => {
++            let mut len = 0usize;
++            let p = (api.string_utf8)(h, &mut len);
++            if p.is_null() {
++                return Value::Null;
++            }
++            let bytes = std::slice::from_raw_parts(p, len);
++            Value::String(String::from_utf8_lossy(bytes).as_ref().into())
++        }
++        TISH_TAG_ARRAY => {
++            let n = (api.array_len)(h);
++            let mut out = Vec::with_capacity(n);
++            for i in 0..n {
++                let e = (api.array_get)(h, i);
++                out.push(from_host(e));
++                (api.drop)(e);
++            }
++            Value::Array(VmRef::new(out))
++        }
++        TISH_TAG_OBJECT => {
++            let keys = (api.object_keys)(h);
++            let n = (api.array_len)(keys);
++            let mut obj = ObjectData::default();
++            for i in 0..n {
++                let k = (api.array_get)(keys, i);
++                if let Value::String(key) = from_host(k) {
++                    let b = key.as_bytes();
++                    let v = (api.object_get_utf8)(h, b.as_ptr(), b.len());
++                    obj.strings.insert(key.as_str().into(), from_host(v));
++                    (api.drop)(v);
++                }
++                (api.drop)(k);
++            }
++            (api.drop)(keys);
++            Value::Object(VmRef::new(obj))
++        }
++        TISH_TAG_FUNCTION => host_function(h),
++        _ => Value::Null,
++    }
++}
++
++/// A retained host function handle, released when the wrapping local function drops.
++struct HostFn(TishValueRef);
++
++// SAFETY: the handle is only dereferenced by the host through the api table, on the calling
++// thread; the module never shares it across threads concurrently (calls are thread-affine).
++unsafe impl Send for HostFn {}
++unsafe impl Sync for HostFn {}
++
++impl Drop for HostFn {
++    fn drop(&mut self) {
++        unsafe { (api().drop)(self.0) }
++    }
++}
++
++unsafe fn host_function(h: TishValueRef) -> Value {
++    let held = HostFn((api().clone)(h));
++    Value::native(move |args: &[Value]| unsafe {
++        // Borrow the whole guard: capturing only `held.0` would drop (and release) it early.
++        let held = &held;
++        let api = api();
++        let handles: Vec<TishValueRef> = args.iter().map(|a| to_host(a)).collect();
++        let r = (api.call)(held.0, handles.as_ptr(), handles.len());
++        for h in handles {
++            (api.drop)(h);
++        }
++        let thrown = (api.take_throw)();
++        if !thrown.is_null() {
++            let e = from_host(thrown);
++            (api.drop)(thrown);
++            (api.drop)(r);
++            tishlang_core::set_pending_throw(e);
++            return Value::Null;
++        }
++        let out = from_host(r);
++        (api.drop)(r);
++        out
++    })
++}
++
++/// Module value → freshly owned host handle (deep copy; functions become host callables).
++///
++/// # Safety
++/// [`install`] must have succeeded.
++pub unsafe fn to_host(v: &Value) -> TishValueRef {
++    let api = api();
++    match v {
++        Value::Null => (api.new_null)(),
++        Value::Number(n) => (api.new_number)(*n),
++        Value::Bool(b) => (api.new_bool)(*b),
++        Value::String(s) => {
++            let b = s.as_bytes();
++            (api.new_string_utf8)(b.as_ptr(), b.len())
++        }
++        Value::Array(a) => {
++            let arr = (api.array_new)();
++            for e in a.borrow().iter() {
++                let h = to_host(e);
++                (api.array_push)(arr, h);
++                (api.drop)(h);
++            }
++            arr
++        }
++        Value::NumberArray(a) => {
++            let arr = (api.array_new)();
++            for e in a.borrow().to_values() {
++                let h = to_host(&e);
++                (api.array_push)(arr, h);
++                (api.drop)(h);
++            }
++            arr
++        }
++        Value::Object(o) => {
++            let obj = (api.object_new)();
++            for (k, val) in o.borrow().strings.iter() {
++                let h = to_host(val);
++                let kb = k.as_bytes();
++                (api.object_set_utf8)(obj, kb.as_ptr(), kb.len(), h);
++                (api.drop)(h);
++            }
++            obj
++        }
++        Value::Function(_) => {
++            let ctx = Box::into_raw(Box::new(v.clone())) as *mut c_void;
++            (api.new_function)(local_fn_trampoline, ctx, Some(local_fn_drop))
++        }
++        _ => (api.new_null)(),
++    }
++}
++
++extern "C" fn local_fn_trampoline(
++    ctx: *mut c_void,
++    args: *const TishValueRef,
++    argc: usize,
++) -> TishValueRef {
++    unsafe {
++        let Value::Function(f) = &*(ctx as *const Value) else {
++            return (api().new_null)();
++        };
++        let argv: Vec<Value> = if args.is_null() {
++            Vec::new()
++        } else {
++            std::slice::from_raw_parts(args, argc)
++                .iter()
++                .map(|h| from_host(*h))
++                .collect()
++        };
++        let _ = tishlang_core::take_pending_throw();
++        let out = f.call(&argv);
++        if let Some(thrown) = tishlang_core::take_pending_throw() {
++            raise_in_host(&thrown);
++            return (api().new_null)();
++        }
++        to_host(&out)
++    }
++}
++
++extern "C" fn local_fn_drop(ctx: *mut c_void) {
++    unsafe { drop(Box::from_raw(ctx as *mut Value)) }
++}
+diff --git a/crates/tish_vm/tests/ffi_load_module.rs b/crates/tish_vm/tests/ffi_load_module.rs
+new file mode 100644
+index 000000000..4c373f4e1
+--- /dev/null
++++ b/crates/tish_vm/tests/ffi_load_module.rs
+@@ -0,0 +1,32 @@
++//! `tish:ffi` `loadModule` on the bytecode VM. Loading real modules is covered by
++//! `crates/tish_ffi/tests/loader_v2.rs`; this pins the builtin wiring and its error contract.
++#![cfg(feature = "ffi")]
++
++use tishlang_bytecode::compile;
++use tishlang_vm::run;
++
++fn run_src(src: &str) {
++    let cwd = std::env::current_dir().expect("cwd");
++    let modules = tishlang_compile::resolve_project_from_stdin(src, &cwd).expect("resolve");
++    let program = tishlang_compile::merge_modules(modules).expect("merge").program;
++    let chunk = compile(&program).expect("compile");
++    run(&chunk).expect("run");
++}
++
++#[test]
++fn load_failures_throw_catchable_type_errors() {
++    run_src(
++        r#"
++import { loadModule } from "tish:ffi"
++if (typeof loadModule !== "function") { throw "loadModule is not wired" }
++
++let missing = ""
++try { loadModule("/nonexistent/nimble-test.lib") } catch (e) { missing = e.name + " " + e.message }
++if (missing.indexOf("TypeError loadModule:") !== 0) { throw "missing library: " + missing }
++
++let badArg = ""
++try { loadModule(42) } catch (e) { badArg = e.name }
++if (badArg !== "TypeError") { throw "non-string path: " + badArg }
++"#,
++    );
++}

@@ -1,0 +1,74 @@
+[package]
+name = "tishlang_macos"
+version = "0.1.0"
+edition = "2021"
+description = "AppKit native window + tishlang_ui Host for Tish JSX (macOS)"
+license = "MIT"
+repository = "https://github.com/tishlang/tish-apple"
+
+[dependencies]
+tishlang_apple_common = { path = "../tish-apple-common" }
+tishlang_core = { path = "/Users/a_/Projects/tish/tish-nimble/crates/tish_core" }
+tishlang_ui = { path = "/Users/a_/Projects/tish/tish-nimble/crates/tish_ui", default-features = false, features = ["runtime"] }
+tishlang_runtime = { path = "/Users/a_/Projects/tish/tish-nimble/crates/tish_runtime" }
+# BrokerCore crate under the desktop umbrella (crate only — not tishlang_desktop). tish-desktop is a
+# SEPARATE repo, so this comes from the registry: a path dep to a sibling checkout only resolves on a
+# machine that happens to have one, and makes the workspace unloadable anywhere else — including a
+# plain `git clone`, which is how CI and the tish downstream regression suite see this repo.
+tishlang_broker = "1.1"
+serde_json = "1"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = { version = "0.6", default-features = true, features = ["exception"] }
+objc2-foundation = { version = "0.3", default-features = true, features = [
+    "NSDate",
+    "NSTimer",
+    "NSData",
+    "NSString",
+    "NSError",
+    "NSURL",
+    "NSURLRequest",
+    "NSBundle",
+    "block2",
+] }
+block2 = "0.6"
+objc2-app-kit = { version = "0.3", default-features = true, features = [
+    "objc2-quartz-core",
+    "NSVisualEffectView",
+    "NSTextView",
+    "NSText",
+    "NSResponder",
+    "NSAppearance",
+    "NSToolbar",
+    "NSScreen",
+    "NSSound",
+    "NSAlert",
+    "NSUserInterfaceItemIdentification",
+] }
+objc2-core-foundation = { version = "0.3", default-features = true, features = [
+    "CFNotificationCenter",
+    "CFDictionary",
+    "CFString",
+] }
+objc2-quartz-core = { version = "0.3", default-features = false, features = [
+    "CALayer",
+    "objc2-core-foundation",
+    "objc2-core-graphics",
+] }
+objc2-web-kit = { version = "0.3", default-features = false, features = [
+    "std",
+    "block2",
+    "objc2-app-kit",
+    "objc2-core-foundation",
+    "WKWebView",
+    "WKWebViewConfiguration",
+    "WKNavigation",
+    "WKNavigationDelegate",
+    "WKUIDelegate",
+    "WKUserContentController",
+    "WKUserScript",
+    "WKScriptMessage",
+    "WKScriptMessageHandler",
+] }
+dispatch2 = "0.3"
+objc2-user-notifications = { version = "0.3", default-features = true }

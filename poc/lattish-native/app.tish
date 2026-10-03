@@ -1,0 +1,32 @@
+// Lattish-style JSX + hooks on the native backend (tish_ui runtime: h, useState, createRoot).
+
+let renders = 0
+let setQueryRef = null
+
+fn Row(props) {
+  return <item title={props.title} subtitle={props.subtitle} />
+}
+
+fn App() {
+  let [query, setQuery] = useState("")
+  setQueryRef = setQuery
+  renders = renders + 1
+  let all = [
+    { title: "Safari", subtitle: "Application" },
+    { title: "Slack", subtitle: "Application" },
+    { title: "Terminal", subtitle: "Application" }
+  ]
+  let rows = all.filter((r) => r.title.toLowerCase().indexOf(query) >= 0)
+  let tree = (
+    <list searchText={query}>
+      {rows.map((r) => <Row title={r.title} subtitle={r.subtitle} />)}
+    </list>
+  )
+  console.log("render #" + renders + " query=" + JSON.stringify(query) + " tree=" + JSON.stringify(tree))
+  return tree
+}
+
+createRoot(null).render(App)
+setQueryRef("s")
+setQueryRef("sa")
+console.log("renders=" + renders)

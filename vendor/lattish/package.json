@@ -1,0 +1,91 @@
+{
+  "name": "@tishlang/lattish",
+  "version": "1.4.0",
+  "type": "module",
+  "description": "Lattish runtime — hooks + DOM for Tish JSX",
+  "license": "PIF",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/tishlang/lattish.git"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "tish": {
+    "module": "./src/Lattish.tish",
+    "test": {
+      "root": [
+        "test"
+      ]
+    }
+  },
+  "main": "./dist/Lattish.js",
+  "module": "./dist/Lattish.js",
+  "exports": {
+    ".": {
+      "tish": "./src/Lattish.tish",
+      "import": "./dist/Lattish.js",
+      "require": "./dist/Lattish.js",
+      "default": "./dist/Lattish.js"
+    },
+    "./jsx-runtime": {
+      "tish": "./src/jsx-runtime.tish",
+      "import": "./dist/jsx-runtime.js",
+      "require": "./dist/jsx-runtime.js",
+      "default": "./dist/jsx-runtime.js"
+    },
+    "./jsx-dev-runtime": {
+      "tish": "./src/jsx-dev-runtime.tish",
+      "import": "./dist/jsx-dev-runtime.js",
+      "require": "./dist/jsx-dev-runtime.js",
+      "default": "./dist/jsx-dev-runtime.js"
+    },
+    "./hmr-runtime": {
+      "tish": "./src/lattishHmr.tish",
+      "import": "./dist/lattishHmr.js",
+      "require": "./dist/lattishHmr.js",
+      "default": "./dist/lattishHmr.js"
+    },
+    "./hmr": {
+      "import": "./hmr.cjs",
+      "require": "./hmr.cjs",
+      "default": "./hmr.cjs"
+    },
+    "./adapters/rn": {
+      "tish": "./src/adapters/rn.tish",
+      "default": "./src/adapters/rn.tish"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "src/",
+    "dist/",
+    "hmr.cjs",
+    "README.md",
+    "examples/"
+  ],
+  "scripts": {
+    "build": "tish build src/Lattish.tish -o dist/Lattish.js --target js && tish build src/lattishHmr.tish -o dist/lattishHmr.js --target js && tish build src/jsx-runtime.tish -o dist/jsx-runtime.js --target js && tish build src/jsx-dev-runtime.tish -o dist/jsx-dev-runtime.js --target js",
+    "tishversion": "tish -V",
+    "test": "npm run test:dom && npm run test:hmr",
+    "prepack": "npm run build",
+    "prepublishOnly": "npm run build",
+    "test:tish": "tish test test/jsx-runtime.test.tish",
+    "test:dom": "node test/run-tests.mjs",
+    "test:hmr": "node test/hmr-vite.test.mjs"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "devDependencies": {
+    "@semantic-release/commit-analyzer": "13.0.1",
+    "@semantic-release/github": "12.0.6",
+    "@semantic-release/npm": "13.1.5",
+    "@semantic-release/release-notes-generator": "14.1.0",
+    "@tishlang/tish": "3.7.1",
+    "@tishlang/vite-plugin-tish": "0.1.0",
+    "jsdom": "25.0.1",
+    "semantic-release": "25.0.3",
+    "vite": "6.4.3"
+  }
+}

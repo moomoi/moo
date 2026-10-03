@@ -1,0 +1,31 @@
+// Stage 1: a plugin compiled with `tish build --target native --crate-type cdylib` (ABI v2),
+// loaded by the bytecode VM host. Objects go in, callbacks go both ways, throws cross.
+
+import { manifest, greet, search, run, stats, fail } from "ffi:./plugins/hello-v2.lib"
+
+console.log("manifest =", JSON.stringify(manifest()))
+console.log("greet    =", greet("Nimble"))
+
+let items = ["Safari", "Slack", "System Settings", "Terminal"].map((t) => ({ title: t }))
+console.log("search   =", JSON.stringify(search(items, "s")))
+
+let rendered = []
+let onAction = run((tree) => { rendered.push(tree) })
+console.log("rendered =", JSON.stringify(rendered))
+console.log("onAction =", onAction("open"))
+
+try {
+  fail()
+  console.log("fail     = no throw (wrong)")
+} catch (e) {
+  console.log("fail     = caught", JSON.stringify(e))
+}
+
+let n = 100000
+let t0 = Date.now()
+for (let i = 0; i < n; i = i + 1) {
+  greet("x")
+}
+let dt = Date.now() - t0
+console.log("greet x" + n + " in " + dt + "ms => " + (dt * 1000 / n) + "us/call")
+console.log("stats    =", JSON.stringify(stats()))

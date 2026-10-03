@@ -1,0 +1,10 @@
+{
+  "name": "nimble",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Nimble launcher shell (Tish + tish-macos + nimble-macos). Build: ./build.sh",
+  "dependencies": {
+    "tish-macos": "file:../vendor/tish-apple/crates/tish-macos",
+    "tish-nimble": "file:../packages/nimble-macos"
+  }
+}
