@@ -41,14 +41,6 @@ open dist/Nimble.app             # the bundle
 | `NIMBLE_FRECENCY` | Frecency file (default `~/Library/Application Support/Nimble/frecency.tsv`) |
 | `NIMBLE_DEBUG` | Timestamped logs on stderr: focus changes, hotkey, key handling, file query timings |
 
-The hotkey is registered exactly as written (`cmd+space` registers Command+Space). System
-Settings › Keyboard › Modifier Keys swaps are applied by macOS before the keypress reaches Nimble,
-so Nimble does nothing about them.
-
-Combinations an enabled macOS shortcut owns (Spotlight ⌘Space, input sources ⌃Space and ⌃⌥Space,
-Finder search ⌘⌥Space, including their defaults when never changed) are skipped and the next
-default is tried, because macOS accepts the registration and then never delivers the keypress.
-
 If the default hotkey does nothing, another app probably owns it: registration succeeds, but the
 other app receives the keypress. Set `NIMBLE_HOTKEY`. Chrome's "Ask Gemini" bar also uses
 option+space: Nimble's panel opens and then loses focus to Chrome at once (the debug log shows

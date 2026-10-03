@@ -26,7 +26,7 @@ use objc2_foundation::{
 };
 use tishlang_core::{Value, VmRef};
 
-use crate::{clip, files, index, keymap, watch};
+use crate::{clip, files, index, watch};
 
 const ICON_SLOTS: usize = 512;
 use tishlang_ui::runtime::{run_with_current_root, LEGACY_ROOT_ID};
@@ -39,7 +39,6 @@ thread_local! {
     static PANEL_SIZE: Cell<(f64, f64)> = const { Cell::new((720.0, 440.0)) };
     static ICONS: RefCell<HashMap<String, String>> = RefCell::new(HashMap::new());
     static HOTKEY_HANDLER: Cell<bool> = const { Cell::new(false) };
-    static HOTKEY_IDS: Cell<u32> = const { Cell::new(1) };
     static SHOWN: Cell<bool> = const { Cell::new(false) };
     static PANEL: RefCell<Option<Retained<NSWindow>>> = const { RefCell::new(None) };
     static ON_FILES: RefCell<Option<Value>> = const { RefCell::new(None) };
@@ -397,42 +396,28 @@ extern "C" fn on_hotkey(_next: *mut c_void, _event: *mut c_void, _user: *mut c_v
     0
 }
 
-/// `(key code, Carbon modifiers, key name)`.
-fn parse_hotkey(spec: &str) -> Result<(u32, u32, &'static str), String> {
+fn parse_hotkey(spec: &str) -> Result<(u32, u32), String> {
     let mut mods = 0u32;
     let mut key = None;
     for part in spec.split('+').map(|p| p.trim().to_ascii_lowercase()) {
         match part.as_str() {
-            "cmd" | "command" => mods |= keymap::CMD,
-            "shift" => mods |= keymap::SHIFT,
-            "alt" | "opt" | "option" => mods |= keymap::OPT,
-            "ctrl" | "control" => mods |= keymap::CTRL,
-            "space" => key = Some((49, "space")),
-            "k" => key = Some((40, "k")),
-            "j" => key = Some((38, "j")),
-            "n" => key = Some((45, "n")),
-            "p" => key = Some((35, "p")),
+            "cmd" | "command" => mods |= 0x0100,
+            "shift" => mods |= 0x0200,
+            "alt" | "opt" | "option" => mods |= 0x0800,
+            "ctrl" | "control" => mods |= 0x1000,
+            "space" => key = Some(49),
+            "k" => key = Some(40),
+            "j" => key = Some(38),
+            "n" => key = Some(45),
+            "p" => key = Some(35),
             other => return Err(format!("unsupported hotkey part `{other}`")),
         }
     }
-    key.map(|(k, name)| (k, mods, name)).ok_or_else(|| format!("hotkey `{spec}` has no key"))
+    key.map(|k| (k, mods)).ok_or_else(|| format!("hotkey `{spec}` has no key"))
 }
 
-pub struct Hotkey {
-    /// `⌘Space`.
-    pub display: String,
-    /// `cmd+space`.
-    pub registered: Vec<String>,
-}
-
-/// Register `spec` exactly as given. System Settings' modifier key mappings are applied by macOS
-/// before the event reaches any hotkey, so they need no handling here. A combination an enabled
-/// system shortcut owns is refused: macOS would accept it and then never deliver the keypress.
-pub fn register_hotkey(spec: &str) -> Result<Hotkey, String> {
-    let (code, mods, key) = parse_hotkey(spec)?;
-    let display = keymap::symbols(mods, key);
-    let mut registered = Vec::new();
-    let mut taken = Vec::new();
+pub fn register_hotkey(spec: &str) -> Result<(), String> {
+    let (code, mods) = parse_hotkey(spec)?;
     unsafe {
         let target = GetApplicationEventTarget();
         if !HOTKEY_HANDLER.with(|c| c.get()) {
@@ -443,23 +428,14 @@ pub fn register_hotkey(spec: &str) -> Result<Hotkey, String> {
             }
             HOTKEY_HANDLER.with(|c| c.set(true));
         }
-        let name = keymap::spec_name(mods, key);
-        if let Some(owner) = keymap::system_shortcut(code, mods) {
-            taken.push(format!("{name} is macOS \"{owner}\""));
-        } else {
-            let mut out = std::ptr::null_mut();
-            let id = EventHotKeyID { signature: fourcc(b"nmbl"), id: HOTKEY_IDS.with(|n| n.replace(n.get() + 1)) };
-            match RegisterEventHotKey(code, mods, id, target, 0, &mut out) {
-                0 => registered.push(name),
-                st => taken.push(format!("{name} is taken (RegisterEventHotKey: {st})")),
-            }
+        let mut out = std::ptr::null_mut();
+        let id = EventHotKeyID { signature: fourcc(b"nmbl"), id: 1 };
+        let st = RegisterEventHotKey(code, mods, id, target, 0, &mut out);
+        if st != 0 {
+            return Err(format!("`{spec}` is unavailable (RegisterEventHotKey: {st})"));
         }
     }
-    if registered.is_empty() {
-        return Err(format!("{display} unavailable: {}", taken.join("; ")));
-    }
-    debug_log(&format!("hotkey {display} registered as {}", registered.join(", ")));
-    Ok(Hotkey { display, registered })
+    Ok(())
 }
 
 // ── Launch and icons ────────────────────────────────────────────────────────

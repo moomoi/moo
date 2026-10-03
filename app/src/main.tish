@@ -27,18 +27,15 @@ let PLUGIN_DIR = env.NIMBLE_PLUGINS ? env.NIMBLE_PLUGINS : (resources ? resource
 let index = reindex()
 let watching = watchApps()
 let hotkey = ""
-let hotkeyLabel = ""
 for (let i = 0; i < HOTKEYS.length && hotkey === ""; i = i + 1) {
   let r = registerHotkey(HOTKEYS[i])
   if (r.ok) {
     hotkey = HOTKEYS[i]
-    hotkeyLabel = r.display
-    console.log("nimble: hotkey " + r.display + " (registered as " + r.registered.join(", ") + ")")
   } else {
     console.log("nimble: hotkey " + r.error)
   }
 }
-statusItem(hotkeyLabel)
+statusItem(hotkey)
 watchClipboard()
 
 // ── Plugins: every module in PLUGIN_DIR contributes its manifest's commands to root search ──
@@ -104,7 +101,7 @@ for (let i = 0; i < pluginFiles.length; i = i + 1) {
 }
 let commandTitles = commands.map((c) => c.name)
 console.log("nimble: indexed " + index.count + " apps in " + index.ms.toFixed(1) + " ms, watching " + watching
-  + ", " + pluginCount + " plugins / " + (commands.length - BUILTIN_COUNT) + " commands in " + (Date.now() - pluginT0) + " ms, hotkey " + hotkeyLabel)
+  + ", " + pluginCount + " plugins / " + (commands.length - BUILTIN_COUNT) + " commands in " + (Date.now() - pluginT0) + " ms, hotkey " + hotkey)
 
 // ── Shell state ──
 // Native key and show callbacks are registered once, so state lives outside the component.

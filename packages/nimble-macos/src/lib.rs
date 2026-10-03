@@ -10,8 +10,6 @@ mod files;
 mod frecency;
 mod index;
 #[cfg(target_os = "macos")]
-mod keymap;
-#[cfg(target_os = "macos")]
 mod mac;
 mod vmplug;
 #[cfg(target_os = "macos")]
@@ -169,18 +167,9 @@ mod natives {
         Value::Null
     }
 
-    /// `registerHotkey(spec)` -> `{ ok, display, registered }` or `{ ok: false, error }`, e.g.
-    /// `registerHotkey("cmd+space")` -> `{ ok: true, display: "⌘Space", registered: ["cmd+space"] }`.
     pub fn register_hotkey(args: &[Value]) -> Value {
         match mac::register_hotkey(&str_arg(args, 0)) {
-            Ok(h) => obj(vec![
-                ("ok", Value::Bool(true)),
-                ("display", Value::String(h.display.as_str().into())),
-                (
-                    "registered",
-                    Value::Array(VmRef::new(h.registered.iter().map(|s| Value::String(s.as_str().into())).collect())),
-                ),
-            ]),
+            Ok(()) => obj(vec![("ok", Value::Bool(true))]),
             Err(e) => obj(vec![("ok", Value::Bool(false)), ("error", Value::String(e.as_str().into()))]),
         }
     }
