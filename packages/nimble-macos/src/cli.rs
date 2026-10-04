@@ -26,6 +26,8 @@ usage: nimble [command] [args]
   toggle | show | hide | quit
   search <text>                show the launcher with <text> typed
   category <name> [text]       show Applications, Files, Actions, Clipboard or Recent searches
+  key <name>                   act as if a key was pressed in the open launcher (tab, shift+tab, enter, escape, …)
+  type <text>                  insert text into the focused field, one character every 120 ms
   history [--clear]            recent searches, newest first
   run <keyword|id> [text]      run a shortcut or command (ids: nimble list commands)
   open <path|url>              open with the default app

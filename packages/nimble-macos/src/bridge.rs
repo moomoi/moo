@@ -8,8 +8,6 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use dispatch2::DispatchQueue;
 use tishlang_core::Value;
-use tishlang_ui::runtime::{run_with_current_root, LEGACY_ROOT_ID};
-
 thread_local! {
     static CALLBACKS: RefCell<HashMap<u64, Value>> = RefCell::new(HashMap::new());
 }
@@ -33,7 +31,7 @@ pub fn release(id: u64) {
 pub fn call(id: u64, v: Value, last: bool) {
     let cb = CALLBACKS.with(|c| if last { c.borrow_mut().remove(&id) } else { c.borrow().get(&id).cloned() });
     if let Some(Value::Function(f)) = cb {
-        run_with_current_root(LEGACY_ROOT_ID, || {
+        crate::mac::with_ui(|| {
             let _ = f.call(&[v]);
         });
     }

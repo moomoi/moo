@@ -65,9 +65,10 @@ Apps and files are already indexed when the panel first opens, so there is no on
 
 | Spotlight | Nimble |
 | --- | --- |
-| Opens as a compact search pill with Applications, Files, Actions and Clipboard buttons beside it | Done: a 52 pt bar, field capsule plus four circles, each with its own blur and edge |
+| Opens as a compact search pill with Applications, Files, Actions and Clipboard buttons beside it | Done: a 52 pt bar, field capsule plus four Liquid Glass circles that spring out of the field when it opens |
 | Typing expands into results grouped by category, best match first | Done: Top Hit, then Applications, Files, Actions and Ask AI headings |
 | ⌘1–⌘4 (or a button) narrow to Applications, Files, Actions, Clipboard | Done: the field shows the category's symbol and "Search Files" etc.; the same key, ⌫ in an empty field, or esc goes back. Text already typed carries over |
+| Applications shows every app as a grid of icons | Done: 7 × 4 icons A–Z with names, arrows move, scrolls by rows; ⌘L switches to a list (remembered) |
 | "/" to filter the search | Done: "/" lists the categories; "/files report" opens Files searching "report" |
 | ↑ shows previous searches | Done: ↑ in the empty bar lists recent searches (`history.txt`, newest first); a query is recorded when something is opened from it |
 | ↓/↑ move, Return opens | Done; headings are skipped and the list scrolls by slots |

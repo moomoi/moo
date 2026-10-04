@@ -29,14 +29,45 @@ reasons it reports: `deviceNotEligible`, `appleIntelligenceNotEnabled`, `modelNo
 runtime comes from `/usr/lib/swift`, which needs a deployment target of 12 or later (Nimble uses 14).
 
 **Tools.** The model can act, not just answer. `aiSession(instructions, toolsJson, onTool)` takes
-tools as `[{ name, description, params: [{ name, description }] }]` (string parameters); Swift turns
-each into a FoundationModels `Tool` with a `DynamicGenerationSchema`. When the model calls one,
-the Swift thread waits on the main queue while `onTool(name, argsJson)` runs in Tish, and the
-returned text goes back to the model. Built-in tools: `open` (app name, path or URL; `~` expanded,
-and a path that does not exist retries its last part under home, because the model guesses home
-folders) and `copyText`. The instructions include the home folder; with it, "open finder to my
-documents" called `open` with `/Users/<you>/Documents` in 3 of 3 runs, under 1 s each
-(`ai::tests::model_calls_a_host_tool`). Plugin `tools[]` can use the same path later.
+tools as `[{ name, description, params: [{ name, description, optional?, choices? }] }]` (string
+parameters; `choices` limits one to fixed values); Swift turns each into a FoundationModels `Tool`
+with a `DynamicGenerationSchema`. When the model calls one, the Swift thread waits on the main queue
+while `onTool(name, argsJson)` runs in Tish, and the returned text goes back to the model. Every
+call is logged to stderr as `nimble: AI tool <name> <args> -> <first line of the reply>`.
+
+Without a tool the model cannot see the Mac, and it will invent an answer ("I couldn't find any
+large files") rather than say so. The tools, defined in `aiTools()` in `main.tish`:
+
+| Tool | What it does |
+| --- | --- |
+| `open` | App name, path or URL; `~` expanded, a missing path retries its last part under home |
+| `copyText` | Put text on the clipboard |
+| `findFiles` | Spotlight metadata search: name, kind, minimum size, created / modified / opened within, folder, sorted by size, date or name |
+| `revealFile` | Select a file in Finder |
+| `findApps` | Installed apps by name (the app index) |
+| `runningApps` | Apps with a Dock icon, frontmost and hidden marked |
+| `clipboardHistory` | Nimble's in-memory clipboard history, optionally filtered |
+| `systemInfo` | macOS version, model, chip, cores, memory, disk free, battery, uptime |
+| `runShortcut` | Run a user shortcut by keyword (listed in the tool description); commands are left to the user |
+
+`findFiles` is `queryFiles` in Rust (`files::find`, an in-process `MDQuery`). Arguments arrive as
+text ("100 MB", "2 days") and are parsed in Tish. "Largest" with no size floor narrows from 1 GB
+down until enough files qualify, and "newest" with no date range does the same from the last day,
+so the top of the list is right. Only app bundle internals are skipped: build output, caches and
+hidden folders count when the question is what takes up space. If no file reaches the model's size
+floor, the largest files matching the other filters come back instead.
+
+Tool results that are files, apps or clipboard entries also appear as rows under the answer (at
+most four answer lines stay visible above them). ↓ scrolls the answer, then walks the rows; ↵ opens
+or copies the selected row, ⌘↵ shows it in Finder, ⌥↵ copies its path, esc deselects. `nimble ask`
+uses the same tools and prints only the answer.
+
+Checked with `nimble ask` on this Mac: "find large files created in the last 2 days" called
+`findFiles {minSize: 100 MB, createdWithin: 2 days}` and listed the 8 largest; "which apps are open
+right now?", "do I have any photo editing apps installed?", "how much disk space do I have left and
+what's my battery at?", "run my stamp shortcut" and "show … in Finder" each called the matching
+tool. The instructions include the home folder; with it, "open finder to my documents" called `open`
+with `/Users/<you>/Documents` in 3 of 3 runs (`ai::tests::model_calls_a_host_tool`).
 
 **Limits.** A small model with a context window Apple documents as 4,096 tokens: good for short
 answers, rewriting and extraction, weak on long input and broad knowledge. Long conversations fail

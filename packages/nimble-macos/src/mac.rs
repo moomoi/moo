@@ -10,24 +10,26 @@ use std::ffi::c_void;
 use std::ptr::NonNull;
 
 use block2::RcBlock;
-use dispatch2::DispatchQueue;
+use dispatch2::{DispatchQueue, DispatchTime};
 use objc2::rc::Retained;
-use objc2::runtime::{AnyObject, Bool};
-use objc2::{define_class, msg_send, sel, MainThreadMarker, MainThreadOnly};
+use objc2::runtime::{AnyClass, AnyObject};
+use objc2::{define_class, msg_send, sel, ClassType, MainThreadMarker, MainThreadOnly};
 use objc2_app_kit::{
     NSAppearanceCustomization, NSAppearanceNameAqua, NSAppearanceNameDarkAqua, NSApplication, NSApplicationActivationPolicy,
-    NSAutoresizingMaskOptions, NSBackingStoreType, NSBezierPath, NSColor, NSEvent, NSEventMask, NSEventModifierFlags, NSMenu, NSMenuItem,
+    NSAutoresizingMaskOptions, NSBackingStoreType, NSColor, NSGlassEffectContainerView, NSGlassEffectView,
+    NSEvent, NSEventMask, NSEventModifierFlags, NSMenu, NSMenuItem,
     NSPanel, NSResponder, NSScreen, NSStatusBar, NSStatusItem, NSTextField, NSView, NSVisualEffectBlendingMode,
-    NSVisualEffectMaterial, NSVisualEffectState, NSVisualEffectView, NSWindow, NSWindowButton, NSWindowCollectionBehavior,
+    NSVisualEffectState, NSVisualEffectView, NSWindow, NSWindowButton, NSWindowCollectionBehavior,
     NSWindowDidBecomeKeyNotification, NSWindowDidResignKeyNotification, NSWindowStyleMask,
     NSImage, NSPasteboard, NSPasteboardTypeString, NSWindowTitleVisibility, NSWorkspace,
 };
 use objc2_foundation::{
-    NSArray, NSNotification, NSNotificationCenter, NSObject, NSPoint, NSRect, NSSize, NSString, NSURL,
+    NSArray, NSNotification, NSNotificationCenter, NSObject, NSObjectProtocol, NSPoint, NSRange, NSRect, NSSize, NSString,
+    NSTimer, NSURL,
 };
 use tishlang_core::{Value, VmRef};
 
-use crate::{clip, files, index, keymap, keys, watch};
+use crate::{clip, files, index, keymap, keys, theme, watch};
 
 const ICON_SLOTS: usize = 512;
 use tishlang_ui::runtime::{run_with_current_root, LEGACY_ROOT_ID};
@@ -48,10 +50,17 @@ thread_local! {
     static ON_FILES: RefCell<Option<Value>> = const { RefCell::new(None) };
     static ICON_RING: RefCell<(usize, Vec<String>)> = const { RefCell::new((0, Vec::new())) };
     static STATUS: RefCell<Option<(Retained<NSStatusItem>, Retained<MenuTarget>)>> = const { RefCell::new(None) };
-    /// Panel height and its rounded pieces `(x, width, radius)`; empty means one full rounded rect.
-    static SHAPE: RefCell<(f64, Vec<(f64, f64, f64)>)> = const { RefCell::new((0.0, Vec::new())) };
-    /// Holds one tinted, bordered view per shape piece, behind the layout.
-    static BACKING: RefCell<Option<Retained<NSView>>> = const { RefCell::new(None) };
+    /// Panel height and its rounded pieces; empty means one full rounded rect.
+    static SHAPE: RefCell<(f64, Vec<Piece>)> = const { RefCell::new((0.0, Vec::new())) };
+    /// Holds one glass (or blur) view per shape piece, behind the layout.
+    static PIECES_HOST: RefCell<Option<Retained<NSView>>> = const { RefCell::new(None) };
+    static PIECES: RefCell<Vec<Retained<NSView>>> = const { RefCell::new(Vec::new()) };
+    /// The top-anchored view holding the root view; faded in while the panel opens.
+    static CONTENT: RefCell<Option<Retained<NSView>>> = const { RefCell::new(None) };
+    /// Liquid Glass (macOS 26) is available; otherwise pieces are tinted vibrancy views.
+    static GLASS: Cell<bool> = const { Cell::new(false) };
+    static OPEN_ANIM: RefCell<Option<Retained<NSTimer>>> = const { RefCell::new(None) };
+    static MORPH_ANIM: RefCell<Option<Retained<NSTimer>>> = const { RefCell::new(None) };
 }
 
 pub fn set_callbacks(on_key: Option<Value>, on_show: Option<Value>, on_hotkey: Option<Value>) {
@@ -88,6 +97,14 @@ fn host_window(mtm: MainThreadMarker) -> Option<Retained<NSWindow>> {
 
 // ── Deferred callbacks ──────────────────────────────────────────────────────
 
+/// Run Tish code against the launcher root. A re-render can rebuild the search field and drop its
+/// focus, so focus is handed back afterwards.
+pub(crate) fn with_ui<R>(f: impl FnOnce() -> R) -> R {
+    let out = run_with_current_root(LEGACY_ROOT_ID, f);
+    restore_focus();
+    out
+}
+
 /// Queue `(callback, arg)` and flush it from the main queue once the current handler returns.
 fn defer_callback(which: &'static str, arg: impl Into<String>) {
     PENDING.with(|q| q.borrow_mut().push((which, arg.into())));
@@ -99,7 +116,7 @@ fn flush_pending() {
     if events.is_empty() {
         return;
     }
-    run_with_current_root(LEGACY_ROOT_ID, || {
+    with_ui(|| {
         for (which, arg) in events {
             let cb = match which {
                 "key" => ON_KEY.with(|c| c.borrow().clone()),
@@ -121,11 +138,34 @@ fn position_panel(w: &NSWindow, mtm: MainThreadMarker) {
     let vf = screen.visibleFrame();
     let f = w.frame();
     let x = vf.origin.x + (vf.size.width - f.size.width) / 2.0;
-    let top = vf.origin.y + vf.size.height * 0.80;
+    let top = vf.origin.y + vf.size.height * theme::get().top + margin();
     w.setFrameOrigin(NSPoint::new(x, top - f.size.height));
 }
 
-const PANEL_RADIUS: f64 = 22.0;
+/// Clear border around the panel shape (from the theme).
+fn margin() -> f64 {
+    theme::get().margin
+}
+
+/// Restyle the panel after `setTheme`; before setup the theme is simply used when it is built.
+pub fn theme_changed() {
+    let Some(mtm) = MainThreadMarker::new() else { return };
+    let Some(w) = PANEL.with(|p| p.borrow().clone()) else { return };
+    let t = theme::get();
+    let host = PIECES_HOST.with(|b| b.borrow().clone());
+    if let Some(container) = host.and_then(|h| unsafe { h.superview() }).and_then(|s| s.downcast::<NSGlassEffectContainerView>().ok()) {
+        container.setSpacing(t.glass_spacing);
+    }
+    if !GLASS.with(|g| g.get()) {
+        w.setHasShadow(t.shadow);
+    }
+    // Pieces are recreated so their glass style or material is the new one.
+    stop_open_animation();
+    stop_morph();
+    set_piece_count(0, mtm);
+    apply_shape(&w, mtm);
+    position_panel(&w, mtm);
+}
 
 define_class!(
     /// A borderless panel that can still take keys (AppKit refuses key status to borderless
@@ -144,6 +184,29 @@ define_class!(
         #[unsafe(method(canBecomeMainWindow))]
         fn can_become_main(&self) -> bool {
             false
+        }
+    }
+);
+
+define_class!(
+    /// The panel's content view. The window takes every click (see `adopt_into_panel`), so a click
+    /// that nothing inside handled and that missed the glass counts as a click outside: it closes
+    /// the panel, as it would if the click had gone to the window below.
+    #[unsafe(super(NSView, NSResponder, NSObject))]
+    #[thread_kind = MainThreadOnly]
+    #[name = "NimblePanelStage"]
+    struct PanelStage;
+
+    impl PanelStage {
+        #[unsafe(method(mouseDown:))]
+        fn mouse_down(&self, event: &NSEvent) {
+            let p = self.convertPoint_fromView(event.locationInWindow(), None);
+            let inside = |r: NSRect| {
+                p.x >= r.origin.x && p.x <= r.origin.x + r.size.width && p.y >= r.origin.y && p.y <= r.origin.y + r.size.height
+            };
+            if !PIECES.with(|ps| ps.borrow().iter().any(|v| inside(v.frame()))) {
+                hide();
+            }
         }
     }
 );
@@ -169,12 +232,18 @@ define_class!(
 /// NSWindow (re-classing it breaks AppKit's KVO), so its root view moves into our own panel. The
 /// host keeps measuring its window's content view, so that window keeps a same-size placeholder.
 ///
-/// The panel is borderless and clear; its content is a vibrancy view (the blurred desktop behind,
-/// like Spotlight) masked to the panel shape, over tinted pieces of that shape, under the root view.
+/// The panel is borderless and clear, the theme's margin larger than its shape on every side. Behind the root
+/// view sits one Liquid Glass view per piece of the shape, in a glass container so pieces that
+/// touch melt together (before macOS 26: rounded, tinted vibrancy views).
 fn adopt_into_panel(host_window: &NSWindow, mtm: MainThreadMarker) -> Option<Retained<NSWindow>> {
     let root = host_window.contentView()?;
     let (pw, ph) = PANEL_SIZE.with(|c| c.get());
+    let theme = theme::get();
+    let margin = theme.margin;
     let rect = NSRect::new(NSPoint::new(0.0, 0.0), NSSize::new(pw, ph));
+    let outer = NSRect::new(NSPoint::new(0.0, 0.0), NSSize::new(pw + 2.0 * margin, ph + 2.0 * margin));
+    let glass = std::env::var_os("NIMBLE_NO_GLASS").is_none() && AnyClass::get(c"NSGlassEffectView").is_some();
+    GLASS.with(|g| g.set(glass));
 
     let placeholder = NSView::initWithFrame(NSView::alloc(mtm), rect);
     host_window.setContentView(Some(&placeholder));
@@ -184,7 +253,7 @@ fn adopt_into_panel(host_window: &NSWindow, mtm: MainThreadMarker) -> Option<Ret
     let panel: Retained<LauncherPanel> = unsafe {
         msg_send![
             LauncherPanel::alloc(mtm),
-            initWithContentRect: rect,
+            initWithContentRect: outer,
             styleMask: NSWindowStyleMask::Borderless | NSWindowStyleMask::NonactivatingPanel,
             backing: NSBackingStoreType::Buffered,
             defer: false
@@ -198,107 +267,413 @@ fn adopt_into_panel(host_window: &NSWindow, mtm: MainThreadMarker) -> Option<Ret
     panel.setAppearance(host_window.appearance().as_deref());
     panel.setOpaque(false);
     panel.setBackgroundColor(Some(&NSColor::clearColor()));
-    panel.setHasShadow(true);
+    // A clear window lets clicks on its transparent pixels through to the window below, which is
+    // nearly all of it (glass is composited by the window server, rows and the field are clear):
+    // the click would land elsewhere and the panel close on losing key. Setting this explicitly
+    // turns that off; PanelStage treats clicks off the glass as clicks outside.
+    panel.setIgnoresMouseEvents(false);
+    // Glass draws its own shadow, which follows the pieces while they move.
+    panel.setHasShadow(!glass && theme.shadow);
 
-    let fx = NSVisualEffectView::initWithFrame(NSVisualEffectView::alloc(mtm), rect);
-    fx.setMaterial(NSVisualEffectMaterial::Popover);
-    fx.setBlendingMode(NSVisualEffectBlendingMode::BehindWindow);
-    fx.setState(NSVisualEffectState::Active);
-    fx.setWantsLayer(true);
     let sizable = NSAutoresizingMaskOptions::ViewWidthSizable | NSAutoresizingMaskOptions::ViewHeightSizable;
-    // Raw vibrancy lets busy windows behind show through; a dense tint keeps text readable.
-    let backing = NSView::initWithFrame(NSView::alloc(mtm), rect);
-    backing.setAutoresizingMask(sizable);
-    fx.addSubview(&backing);
-    let content: Retained<TopAnchoredView> = unsafe { msg_send![TopAnchoredView::alloc(mtm), initWithFrame: rect] };
-    content.setAutoresizingMask(sizable);
+    let stage: Retained<PanelStage> = unsafe { msg_send![PanelStage::alloc(mtm), initWithFrame: outer] };
+    let pieces = NSView::initWithFrame(NSView::alloc(mtm), outer);
+    pieces.setAutoresizingMask(sizable);
+    if glass {
+        let container = NSGlassEffectContainerView::initWithFrame(NSGlassEffectContainerView::alloc(mtm), outer);
+        container.setSpacing(theme.glass_spacing);
+        container.setAutoresizingMask(sizable);
+        container.setContentView(Some(&pieces));
+        stage.addSubview(&container);
+    } else {
+        stage.addSubview(&pieces);
+    }
+    let content: Retained<TopAnchoredView> = unsafe {
+        msg_send![TopAnchoredView::alloc(mtm), initWithFrame: NSRect::new(NSPoint::new(margin, margin), NSSize::new(pw, ph))]
+    };
+    // Placed by hand (apply_shape, layout_morph), never by autoresizing: a sizable view keeps its
+    // margins as constraints, and the large bottom margin it has after a top-anchored morph would
+    // stop the window shrinking back to the bar.
+    content.setAutoresizingMask(NSAutoresizingMaskOptions::ViewNotSizable);
+    // The layout is taller than the idle bar and than the panel mid-morph; show only what the
+    // glass covers.
+    content.setClipsToBounds(true);
     root.setFrame(rect);
     root.setAutoresizingMask(NSAutoresizingMaskOptions::ViewNotSizable);
     content.addSubview(&root);
-    fx.addSubview(&content);
-    panel.setContentView(Some(&fx));
-    BACKING.with(|b| *b.borrow_mut() = Some(backing));
+    stage.addSubview(&content);
+    panel.setContentView(Some(&stage));
+    PIECES_HOST.with(|b| *b.borrow_mut() = Some(pieces));
+    CONTENT.with(|c| *c.borrow_mut() = Some(Retained::into_super(content)));
     Some(Retained::into_super(panel))
 }
 
-fn current_shape() -> (f64, Vec<(f64, f64, f64)>) {
+/// One rounded piece of the panel's glass, spanning its full height. Only the backdrop: everything
+/// drawn on it (icons, selection) is the Tish view.
+#[derive(Clone)]
+pub struct Piece {
+    pub x: f64,
+    pub width: f64,
+    pub radius: f64,
+}
+
+fn current_shape() -> (f64, Vec<Piece>) {
     let (pw, ph) = PANEL_SIZE.with(|c| c.get());
     let (h, segs) = SHAPE.with(|s| s.borrow().clone());
     let h = if h > 0.0 { h.min(ph) } else { ph };
-    let segs = if segs.is_empty() { vec![(0.0, pw, PANEL_RADIUS)] } else { segs };
+    let segs = if segs.is_empty() { vec![Piece { x: 0.0, width: pw, radius: theme::get().radius }] } else { segs };
     (h, segs)
 }
 
-/// The blur's alpha mask: the shape pieces as filled rounded rects.
-fn shape_mask(w: f64, h: f64, segs: &[(f64, f64, f64)]) -> Retained<NSImage> {
-    let segs = segs.to_vec();
-    let draw = RcBlock::new(move |_r: NSRect| -> Bool {
-        NSColor::blackColor().set();
-        for &(x, sw, r) in &segs {
-            let rect = NSRect::new(NSPoint::new(x, 0.0), NSSize::new(sw, h));
-            NSBezierPath::bezierPathWithRoundedRect_xRadius_yRadius(rect, r, r).fill();
-        }
-        Bool::YES
-    });
-    NSImage::imageWithSize_flipped_drawingHandler(NSSize::new(w, h), false, &draw)
+/// Each piece's frame in window coordinates and its corner radius.
+fn piece_frames() -> Vec<(NSRect, f64)> {
+    let (h, segs) = current_shape();
+    let m = margin();
+    segs.iter()
+        .map(|p| (NSRect::new(NSPoint::new(m + p.x, m), NSSize::new(p.width, h)), p.radius))
+        .collect()
 }
 
-/// Size the panel to the current shape (keeping its top edge) and rebuild the mask and pieces.
+fn make_piece(mtm: MainThreadMarker) -> Retained<NSView> {
+    let theme = theme::get();
+    if GLASS.with(|g| g.get()) {
+        let g = NSGlassEffectView::initWithFrame(NSGlassEffectView::alloc(mtm), NSRect::ZERO);
+        g.setStyle(theme.glass_style);
+        return Retained::into_super(g);
+    }
+    let fx = NSVisualEffectView::initWithFrame(NSVisualEffectView::alloc(mtm), NSRect::ZERO);
+    fx.setMaterial(theme.material);
+    fx.setBlendingMode(NSVisualEffectBlendingMode::BehindWindow);
+    fx.setState(NSVisualEffectState::Active);
+    fx.setWantsLayer(true);
+    if let Some(layer) = fx.layer() {
+        layer.setMasksToBounds(true);
+        layer.setBorderWidth(theme.edge_width);
+    }
+    // A tint layer over the vibrancy (its colour comes from the theme).
+    let tint = NSView::initWithFrame(NSView::alloc(mtm), NSRect::ZERO);
+    tint.setWantsLayer(true);
+    fx.addSubview(&tint);
+    Retained::into_super(fx)
+}
+
+/// The radius never exceeds half the height, so a squashed piece stays a capsule.
+fn place_piece(piece: &NSView, rect: NSRect, radius: f64) {
+    piece.setFrame(rect);
+    let r = radius.min(rect.size.height / 2.0).min(rect.size.width / 2.0).max(0.0);
+    if GLASS.with(|g| g.get()) {
+        if let Some(g) = piece.downcast_ref::<NSGlassEffectView>() {
+            g.setCornerRadius(r);
+        }
+        return;
+    }
+    if let Some(layer) = piece.layer() {
+        layer.setCornerRadius(r);
+    }
+    let subs = piece.subviews();
+    if subs.count() > 0 {
+        subs.objectAtIndex(0).setFrame(piece.bounds());
+    }
+}
+
+/// Size the panel to the current shape (keeping its top edge) and lay out its pieces.
 fn apply_shape(w: &NSWindow, mtm: MainThreadMarker) {
     let (pw, _) = PANEL_SIZE.with(|c| c.get());
-    let (h, segs) = current_shape();
+    let (h, _) = current_shape();
+    let m = margin();
+    let (ow, oh) = (pw + 2.0 * m, h + 2.0 * m);
     let f = w.frame();
-    if (f.size.height - h).abs() > 0.5 || (f.size.width - pw).abs() > 0.5 {
+    if (f.size.height - oh).abs() > 0.5 || (f.size.width - ow).abs() > 0.5 {
         let top = f.origin.y + f.size.height;
-        w.setFrame_display(NSRect::new(NSPoint::new(f.origin.x, top - h), NSSize::new(pw, h)), true);
+        w.setFrame_display(NSRect::new(NSPoint::new(f.origin.x, top - oh), NSSize::new(ow, oh)), true);
     }
-    let Some(fx) = w.contentView().and_then(|v| v.downcast::<NSVisualEffectView>().ok()) else { return };
-    fx.setMaskImage(Some(&shape_mask(pw, h, &segs)));
-    if let Some(backing) = BACKING.with(|b| b.borrow().clone()) {
-        let old = backing.subviews();
-        for i in (0..old.count()).rev() {
-            old.objectAtIndex(i).removeFromSuperview();
-        }
-        for &(x, sw, r) in &segs {
-            let piece = NSView::initWithFrame(NSView::alloc(mtm), NSRect::new(NSPoint::new(x, 0.0), NSSize::new(sw, h)));
-            piece.setWantsLayer(true);
-            piece.setAutoresizingMask(NSAutoresizingMaskOptions::ViewHeightSizable);
-            if let Some(layer) = piece.layer() {
-                layer.setCornerRadius(r);
-                layer.setBorderWidth(1.0);
-            }
-            backing.addSubview(&piece);
-        }
+    if let Some(c) = CONTENT.with(|c| c.borrow().clone()) {
+        c.setFrame(NSRect::new(NSPoint::new(m, m), NSSize::new(pw, h)));
     }
+    let frames = piece_frames();
+    set_piece_count(frames.len(), mtm);
+    PIECES.with(|p| {
+        for (piece, &(rect, r)) in p.borrow().iter().zip(&frames) {
+            place_piece(piece, rect, r);
+        }
+    });
     refresh_edge(w);
 }
 
-pub fn set_panel_shape(h: f64, segs: Vec<(f64, f64, f64)>) {
-    SHAPE.with(|s| *s.borrow_mut() = (h, segs));
-    let Some(mtm) = MainThreadMarker::new() else { return };
-    if let Some(w) = PANEL.with(|p| p.borrow().clone()) {
-        apply_shape(&w, mtm);
-    }
+/// Add or remove pieces at the end; the first (the field, or the whole panel) always stays, so a
+/// change of shape never recreates the glass under the field.
+fn set_piece_count(n: usize, mtm: MainThreadMarker) {
+    let Some(host) = PIECES_HOST.with(|b| b.borrow().clone()) else { return };
+    PIECES.with(|p| {
+        let mut pieces = p.borrow_mut();
+        while pieces.len() > n {
+            if let Some(old) = pieces.pop() {
+                old.removeFromSuperview();
+            }
+        }
+        while pieces.len() < n {
+            let piece = make_piece(mtm);
+            host.addSubview(&piece);
+            pieces.push(piece);
+        }
+    });
 }
 
-/// The tint and hairline edge follow light / dark mode; layer colours do not update by themselves.
+pub fn set_panel_shape(h: f64, segs: Vec<Piece>) {
+    let Some(mtm) = MainThreadMarker::new() else { return };
+    let Some(w) = PANEL.with(|p| p.borrow().clone()) else {
+        SHAPE.with(|s| *s.borrow_mut() = (h, segs));
+        return;
+    };
+    let animate = SHOWN.with(|s| s.get())
+        && w.isVisible()
+        && theme::get().morph.secs > 0.0
+        && std::env::var_os("NIMBLE_NO_ANIMATION").is_none();
+    if animate {
+        stop_open_animation();
+        stop_morph();
+    }
+    let (_, old_segs) = current_shape();
+    let from: Vec<(NSRect, f64)> = PIECES.with(|p| p.borrow().iter().map(|v| v.frame()).collect::<Vec<_>>())
+        .into_iter()
+        .zip(old_segs.iter().map(|s| s.radius))
+        .collect();
+    let from_win = w.frame().size.height;
+    SHAPE.with(|s| *s.borrow_mut() = (h, segs));
+    if !animate || from.is_empty() {
+        apply_shape(&w, mtm);
+        return;
+    }
+    animate_morph(&w, from, from_win, mtm);
+}
+
+/// Apply the theme's tints for the current light / dark mode; layer and tint colours do not
+/// update by themselves. Glass takes the bar or panel tint by the number of pieces; before macOS 26
+/// pieces are vibrancy with a tint layer and an edge.
 fn refresh_edge(w: &NSWindow) {
     let appearance = w.effectiveAppearance();
     let dark = appearance
         .bestMatchFromAppearancesWithNames(&NSArray::from_slice(&[unsafe { NSAppearanceNameAqua }, unsafe { NSAppearanceNameDarkAqua }]))
         .is_some_and(|n| n.to_string().contains("Dark"));
-    let rgba = |r, g, b, a| NSColor::colorWithSRGBRed_green_blue_alpha(r, g, b, a);
-    let (edge, tint) = if dark { (rgba(1.0, 1.0, 1.0, 0.14), rgba(0.10, 0.10, 0.11, 0.78)) } else { (rgba(0.0, 0.0, 0.0, 0.12), rgba(0.98, 0.98, 0.99, 0.78)) };
-    if let Some(backing) = BACKING.with(|b| b.borrow().clone()) {
-        let pieces = backing.subviews();
-        for i in 0..pieces.count() {
-            if let Some(layer) = pieces.objectAtIndex(i).layer() {
-                layer.setBackgroundColor(Some(&tint.CGColor()));
-                layer.setBorderColor(Some(&edge.CGColor()));
+    let theme = theme::get();
+    if GLASS.with(|g| g.get()) {
+        let single = current_shape().1.len() == 1;
+        let tint = if single { &theme.glass_tint_panel } else { &theme.glass_tint_bar }.resolve(dark);
+        PIECES.with(|p| {
+            for piece in p.borrow().iter() {
+                if let Some(g) = piece.downcast_ref::<NSGlassEffectView>() {
+                    g.setTintColor(tint.as_deref());
+                }
+            }
+        });
+        return;
+    }
+    let edge = theme.edge.resolve(dark);
+    let tint = theme.vibrancy_tint.resolve(dark);
+    PIECES.with(|p| {
+        for piece in p.borrow().iter() {
+            if let Some(layer) = piece.layer() {
+                layer.setBorderColor(edge.as_ref().map(|c| c.CGColor()).as_deref());
+            }
+            let subs = piece.subviews();
+            if let Some(layer) = (subs.count() > 0).then(|| subs.objectAtIndex(0)).and_then(|t| t.layer()) {
+                layer.setBackgroundColor(tint.as_ref().map(|c| c.CGColor()).as_deref());
             }
         }
-    }
+    });
     w.invalidateShadow();
+}
+
+// ── Opening animation ───────────────────────────────────────────────────────
+
+/// Damped spring from 0 to 1 `t` seconds in; below critical damping it overshoots past 1 before
+/// settling, at or above it it eases in without overshoot.
+fn spring(t: f64, s: theme::Spring) -> f64 {
+    if t <= 0.0 {
+        return 0.0;
+    }
+    let w0 = 2.0 * std::f64::consts::PI / s.response.max(1e-3);
+    let z = s.damping.max(0.0);
+    if z >= 1.0 {
+        return 1.0 - (-w0 * t).exp() * (1.0 + w0 * t);
+    }
+    let wd = w0 * (1.0 - z * z).sqrt();
+    1.0 - (-z * w0 * t).exp() * ((wd * t).cos() + z * w0 / wd * (wd * t).sin())
+}
+
+fn lerp_rect(a: NSRect, b: NSRect, p: f64) -> NSRect {
+    let l = |x: f64, y: f64| x + (y - x) * p;
+    NSRect::new(
+        NSPoint::new(l(a.origin.x, b.origin.x), l(a.origin.y, b.origin.y)),
+        NSSize::new(l(a.size.width, b.size.width).max(1.0), l(a.size.height, b.size.height).max(1.0)),
+    )
+}
+
+/// The panel `t` seconds into opening: the first piece grows from its centre in both directions
+/// and the others spring out of its right end, farthest first, so on glass they bead off it. The
+/// Tish view (field, icons) fades in as the pieces arrive.
+fn layout_open(t: f64) {
+    let frames = piece_frames();
+    let pieces: Vec<Retained<NSView>> = PIECES.with(|p| p.borrow().clone());
+    if pieces.len() != frames.len() || frames.is_empty() {
+        return;
+    }
+    let th = theme::get();
+    let (sx, sy) = if frames.len() > 1 { th.open_scale_bar } else { th.open_scale_panel };
+    let (f0, r0) = frames[0];
+    let start0 = NSRect::new(
+        NSPoint::new(f0.origin.x + f0.size.width * (1.0 - sx) / 2.0, f0.origin.y + f0.size.height * (1.0 - sy) / 2.0),
+        NSSize::new(f0.size.width * sx, f0.size.height * sy),
+    );
+    let cur0 = lerp_rect(start0, f0, spring(t, th.open));
+    place_piece(&pieces[0], cur0, r0);
+    let n = pieces.len();
+    for i in 1..n {
+        let (target, r) = frames[i];
+        let p = spring(t - (n - 1 - i) as f64 * th.stagger, th.open);
+        let tucked = NSRect::new(
+            NSPoint::new(cur0.origin.x + cur0.size.width - target.size.width - th.tuck, cur0.origin.y),
+            NSSize::new(target.size.width, cur0.size.height),
+        );
+        place_piece(&pieces[i], lerp_rect(tucked, target, p), r);
+        pieces[i].setAlphaValue((p * th.piece_fade).clamp(0.0, 1.0));
+    }
+    if let Some(c) = CONTENT.with(|c| c.borrow().clone()) {
+        let shown = if th.fade_secs > 0.0 { (t - th.fade_delay) / th.fade_secs } else if t >= th.fade_delay { 1.0 } else { 0.0 };
+        c.setAlphaValue(shown.clamp(0.0, 1.0));
+    }
+}
+
+fn finish_open() {
+    let Some(mtm) = MainThreadMarker::new() else { return };
+    PIECES.with(|p| {
+        for v in p.borrow().iter() {
+            v.setAlphaValue(1.0);
+        }
+    });
+    if let Some(c) = CONTENT.with(|c| c.borrow().clone()) {
+        c.setAlphaValue(1.0);
+    }
+    if let Some(w) = PANEL.with(|p| p.borrow().clone()) {
+        apply_shape(&w, mtm);
+    }
+}
+
+fn stop_open_animation() {
+    if let Some(timer) = OPEN_ANIM.with(|a| a.borrow_mut().take()) {
+        timer.invalidate();
+        finish_open();
+    }
+}
+
+/// Spring the panel open, stepped on a 120 Hz timer so glass re-shapes (and melts) every frame.
+fn animate_open() {
+    stop_open_animation();
+    let secs = theme::get().open.secs;
+    if secs <= 0.0 || std::env::var_os("NIMBLE_NO_ANIMATION").is_some() {
+        return;
+    }
+    layout_open(0.0);
+    let t0 = std::time::Instant::now();
+    let tick = RcBlock::new(move |timer: NonNull<NSTimer>| {
+        let t = t0.elapsed().as_secs_f64();
+        if t < secs {
+            layout_open(t);
+            return;
+        }
+        unsafe { timer.as_ref() }.invalidate();
+        OPEN_ANIM.with(|a| a.borrow_mut().take());
+        finish_open();
+    });
+    let timer = unsafe { NSTimer::scheduledTimerWithTimeInterval_repeats_block(1.0 / 120.0, true, &tick) };
+    OPEN_ANIM.with(|a| *a.borrow_mut() = Some(timer));
+}
+
+/// One frame of a morph `p` of the way (springs past 1). Pieces in both shapes move; the field
+/// (piece 0) grows into the panel or shrinks back. A piece only in the old shape stays put and
+/// fades, melting into the panel as it grows over it; one only in the new shape appears in place,
+/// beading off as the panel shrinks away from it. The layout is clipped to the first piece's height.
+fn layout_morph(p: f64, from: &[(NSRect, f64)], to: &[(NSRect, f64)], heights: (f64, f64), win: f64) {
+    let th = theme::get();
+    PIECES.with(|ps| {
+        for (i, v) in ps.borrow().iter().enumerate() {
+            match (from.get(i), to.get(i)) {
+                (Some(&(a, ra)), Some(&(b, rb))) => {
+                    place_piece(v, lerp_rect(a, b, p), ra + (rb - ra) * p.clamp(0.0, 1.0));
+                    v.setAlphaValue(1.0);
+                }
+                (Some(&(a, ra)), None) => {
+                    place_piece(v, a, ra);
+                    v.setAlphaValue((1.0 - p * th.morph_fade).clamp(0.0, 1.0));
+                }
+                (None, Some(&(b, rb))) => {
+                    place_piece(v, b, rb);
+                    v.setAlphaValue((p * th.morph_fade).clamp(0.0, 1.0));
+                }
+                (None, None) => {}
+            }
+        }
+    });
+    if let Some(c) = CONTENT.with(|c| c.borrow().clone()) {
+        let (pw, _) = PANEL_SIZE.with(|c| c.get());
+        let h = (heights.0 + (heights.1 - heights.0) * p).max(1.0);
+        c.setFrame(NSRect::new(NSPoint::new(th.margin, win - th.margin - h), NSSize::new(pw, h)));
+    }
+}
+
+/// Spring from the shape the pieces have now (`from`, in a window `from_win` tall) to the current
+/// shape. The window takes the taller of the two for the duration, keeping its top edge.
+fn animate_morph(w: &NSWindow, from: Vec<(NSRect, f64)>, from_win: f64, mtm: MainThreadMarker) {
+    let (pw, _) = PANEL_SIZE.with(|c| c.get());
+    let (h_to, _) = current_shape();
+    let m = margin();
+    let morph = theme::get().morph;
+    let to_win = h_to + 2.0 * m;
+    let win = from_win.max(to_win);
+    let f = w.frame();
+    if (f.size.height - win).abs() > 0.5 {
+        let top = f.origin.y + f.size.height;
+        w.setFrame_display(NSRect::new(NSPoint::new(f.origin.x, top - win), NSSize::new(pw + 2.0 * m, win)), false);
+    }
+    let shift = |r: NSRect, dy: f64| NSRect::new(NSPoint::new(r.origin.x, r.origin.y + dy), r.size);
+    let from: Vec<(NSRect, f64)> = from.into_iter().map(|(r, rad)| (shift(r, win - from_win), rad)).collect();
+    let to: Vec<(NSRect, f64)> = piece_frames().into_iter().map(|(r, rad)| (shift(r, win - to_win), rad)).collect();
+    let heights = (from_win - 2.0 * m, h_to);
+    set_piece_count(from.len().max(to.len()), mtm);
+    refresh_edge(w);
+    layout_morph(0.0, &from, &to, heights, win);
+    let t0 = std::time::Instant::now();
+    let tick = RcBlock::new(move |timer: NonNull<NSTimer>| {
+        let t = t0.elapsed().as_secs_f64();
+        if t < morph.secs {
+            layout_morph(spring(t, morph), &from, &to, heights, win);
+            return;
+        }
+        unsafe { timer.as_ref() }.invalidate();
+        MORPH_ANIM.with(|a| a.borrow_mut().take());
+        finish_morph();
+    });
+    let timer = unsafe { NSTimer::scheduledTimerWithTimeInterval_repeats_block(1.0 / 120.0, true, &tick) };
+    MORPH_ANIM.with(|a| *a.borrow_mut() = Some(timer));
+}
+
+fn finish_morph() {
+    let Some(mtm) = MainThreadMarker::new() else { return };
+    if let Some(w) = PANEL.with(|p| p.borrow().clone()) {
+        apply_shape(&w, mtm);
+    }
+    PIECES.with(|p| {
+        for v in p.borrow().iter() {
+            v.setAlphaValue(1.0);
+        }
+    });
+}
+
+fn stop_morph() {
+    if let Some(timer) = MORPH_ANIM.with(|a| a.borrow_mut().take()) {
+        timer.invalidate();
+        finish_morph();
+    }
 }
 
 fn debug_log(msg: &str) {
@@ -354,7 +729,8 @@ fn style_panel(w: &NSWindow, mtm: MainThreadMarker) {
             | NSWindowCollectionBehavior::FullScreenAuxiliary,
     );
     let (pw, ph) = PANEL_SIZE.with(|c| c.get());
-    w.setContentSize(NSSize::new(pw, ph));
+    let m = margin();
+    w.setContentSize(NSSize::new(pw + 2.0 * m, ph + 2.0 * m));
     position_panel(w, mtm);
 }
 
@@ -391,11 +767,34 @@ fn focus_search(w: &NSWindow) {
     }
 }
 
+/// A re-render that rebuilds the field leaves the panel itself as first responder;
+/// hand focus back to the search field with the caret after what was typed.
+fn restore_focus() {
+    let Some(mtm) = MainThreadMarker::new() else { return };
+    let Some(w) = main_window(mtm) else { return };
+    if !SHOWN.with(|s| s.get()) || !w.isVisible() {
+        return;
+    }
+    if w.firstResponder().is_some_and(|r| !r.isKindOfClass(NSWindow::class())) {
+        return;
+    }
+    let Some(tf) = w.contentView().and_then(|c| first_editable_text_field(&c)) else { return };
+    w.makeFirstResponder(Some(&tf));
+    let end = tf.stringValue().length();
+    let editor: Option<Retained<AnyObject>> = unsafe { msg_send![&*tf, currentEditor] };
+    if let Some(ed) = editor {
+        let _: () = unsafe { msg_send![&*ed, setSelectedRange: NSRange::new(end, 0)] };
+    }
+}
+
 pub fn show() {
     let Some(mtm) = MainThreadMarker::new() else { return };
     if let Some(w) = main_window(mtm) {
         position_panel(&w, mtm);
         refresh_edge(&w);
+        if !w.isVisible() && PANEL.with(|p| p.borrow().is_some()) {
+            animate_open();
+        }
         w.orderFrontRegardless();
         w.makeKeyWindow();
         focus_search(&w);
@@ -405,9 +804,37 @@ pub fn show() {
     defer_callback("show", "show");
 }
 
+/// Test hook for `nimble type`: feed `text` to whatever has focus through `insertText:`, one
+/// character every 120 ms, reporting where focus is after each.
+pub fn type_text(text: String) {
+    let chars: Vec<char> = text.chars().collect();
+    type_step(chars, 0);
+}
+
+fn type_step(chars: Vec<char>, i: usize) {
+    let Some(mtm) = MainThreadMarker::new() else { return };
+    let Some(w) = main_window(mtm) else { return };
+    let responder = |w: &NSWindow| w.firstResponder().map(|r| r.class().name().to_string_lossy().into_owned()).unwrap_or_default();
+    let field = || w.contentView().and_then(|c| first_editable_text_field(&c)).map(|tf| tf.stringValue().to_string()).unwrap_or_default();
+    if i >= chars.len() {
+        eprintln!("nimble: TYPE done: responder={} field={:?}", responder(&w), field());
+        return;
+    }
+    let before = responder(&w);
+    if let Some(r) = w.firstResponder() {
+        let s = NSString::from_str(&chars[i].to_string());
+        let _: () = unsafe { msg_send![&*r, insertText: &*s] };
+    }
+    eprintln!("nimble: TYPE {:?}: before={before} after={} field={:?}", chars[i], responder(&w), field());
+    let when = DispatchTime::try_from(std::time::Duration::from_millis(120)).unwrap_or(DispatchTime::NOW);
+    let _ = DispatchQueue::main().after(when, move || type_step(chars, i + 1));
+}
+
 pub fn hide() {
     let Some(mtm) = MainThreadMarker::new() else { return };
     SHOWN.with(|s| s.set(false));
+    stop_open_animation();
+    stop_morph();
     if let Some(w) = main_window(mtm) {
         w.orderOut(None);
     }
@@ -459,6 +886,15 @@ fn edit_shortcut(e: &NSEvent) -> bool {
     unsafe { app(mtm).sendAction_to_from(action, None, None) }
 }
 
+thread_local! {
+    static ARROWS: Cell<bool> = const { Cell::new(false) };
+}
+
+/// While on, plain ← and → are launcher keys rather than cursor movement in the search field.
+pub fn set_arrow_keys(on: bool) {
+    ARROWS.with(|a| a.set(on));
+}
+
 fn install_key_monitor() {
     if MONITOR.with(|m| m.borrow().is_some()) {
         return;
@@ -486,6 +922,7 @@ fn install_key_monitor() {
                 "3" => Some("cmd+3"),
                 "4" => Some("cmd+4"),
                 "r" => Some("cmd+r"),
+                "l" => Some("cmd+l"),
                 _ => None,
             };
             if let Some(n) = named {
@@ -493,7 +930,10 @@ fn install_key_monitor() {
                 return std::ptr::null_mut();
             }
         }
+        let arrows = ARROWS.with(|a| a.get()) && !cmd && !alt && !flags.contains(NSEventModifierFlags::Shift);
         let name = match (e.keyCode(), ctrl) {
+            (123, false) if arrows => Some("left"),
+            (124, false) if arrows => Some("right"),
             (125, _) | (45, true) => Some("down"),
             (126, _) | (35, true) => Some("up"),
             (36, _) | (76, _) if cmd => Some("cmd+enter"),
@@ -502,6 +942,7 @@ fn install_key_monitor() {
             (51, _) if cmd => Some("cmd+delete"),
             (51, false) if !alt && search_field_empty() => Some("delete-empty"),
             (53, _) => Some("escape"),
+            (48, _) if flags.contains(NSEventModifierFlags::Shift) => Some("shift+tab"),
             (48, _) => Some("tab"),
             _ => None,
         };
@@ -846,16 +1287,16 @@ impl MenuTarget {
 
 /// Menu bar icon with Show / Quit, installed once the run loop is live. `hotkey` is shown next
 /// to Show as a reminder.
-pub fn status_item(hotkey: &str) -> bool {
+pub fn status_item(hotkey: &str, symbol: &str) -> bool {
     if STATUS.with(|s| s.borrow().is_some()) {
         return false;
     }
-    let hotkey = hotkey.to_string();
-    DispatchQueue::main().exec_async(move || install_status_item(&hotkey));
+    let (hotkey, symbol) = (hotkey.to_string(), symbol.to_string());
+    DispatchQueue::main().exec_async(move || install_status_item(&hotkey, &symbol));
     true
 }
 
-fn install_status_item(hotkey: &str) {
+fn install_status_item(hotkey: &str, symbol: &str) {
     let Some(mtm) = MainThreadMarker::new() else { return };
     if STATUS.with(|s| s.borrow().is_some()) {
         return;
@@ -864,7 +1305,7 @@ fn install_status_item(hotkey: &str) {
     let item = NSStatusBar::systemStatusBar().statusItemWithLength(-1.0);
     if let Some(button) = item.button(mtm) {
         let desc = NSString::from_str("Nimble");
-        match NSImage::imageWithSystemSymbolName_accessibilityDescription(&NSString::from_str("magnifyingglass"), Some(&desc)) {
+        match NSImage::imageWithSystemSymbolName_accessibilityDescription(&NSString::from_str(symbol), Some(&desc)) {
             Some(img) => {
                 img.setTemplate(true);
                 button.setImage(Some(&img));
@@ -933,7 +1374,56 @@ pub fn icon_name(path: &str) -> String {
     let img = NSWorkspace::sharedWorkspace().iconForFile(&NSString::from_str(path));
     img.setName(Some(&ns_name));
     ICONS.with(|m| m.borrow_mut().insert(path.to_string(), name.clone()));
+    warm_later(img);
     name
+}
+
+thread_local! {
+    static WARM_QUEUE: RefCell<std::collections::VecDeque<Retained<NSImage>>> = RefCell::new(std::collections::VecDeque::new());
+    static WARMING: Cell<bool> = const { Cell::new(false) };
+}
+
+/// Workspace icons load lazily: an image view draws a placeholder and is not told when the real
+/// icon arrives. Drawing each icon once offscreen loads it (about 15 ms each), so that happens one
+/// icon per main-loop turn, keeping keys and drawing responsive in between. When the queue runs
+/// dry with the panel open, `onKey("icons")` asks the view to redraw.
+fn warm_later(img: Retained<NSImage>) {
+    WARM_QUEUE.with(|q| q.borrow_mut().push_back(img));
+    if !WARMING.with(|w| w.replace(true)) {
+        schedule_warm();
+    }
+}
+
+fn schedule_warm() {
+    let when = DispatchTime::try_from(std::time::Duration::from_millis(1)).unwrap_or(DispatchTime::NOW);
+    let _ = DispatchQueue::main().after(when, warm_next);
+}
+
+fn warm_next() {
+    let Some(img) = WARM_QUEUE.with(|q| q.borrow_mut().pop_front()) else {
+        WARMING.with(|w| w.set(false));
+        // Views drawn before their icon loaded still show the placeholder until redrawn.
+        if SHOWN.with(|s| s.get()) {
+            defer_callback("key", "icons");
+        }
+        return;
+    };
+    let side = NSSize::new(128.0, 128.0);
+    let canvas = NSImage::initWithSize(<NSImage as objc2::AllocAnyThread>::alloc(), side);
+    #[allow(deprecated)]
+    unsafe {
+        canvas.lockFocus();
+        img.drawInRect(NSRect::new(NSPoint::new(0.0, 0.0), side));
+        canvas.unlockFocus();
+    }
+    schedule_warm();
+}
+
+/// Register every app's icon now, A–Z, so they are loaded before Applications is opened.
+pub fn warm_app_icons() {
+    for p in index::paths() {
+        icon_name(&p);
+    }
 }
 
 // ── Sources: Spotlight files and live app index ─────────────────────────────
@@ -968,7 +1458,7 @@ fn deliver_files(d: files::Delivery) {
         ("results", Value::Array(VmRef::new(rows))),
         ("ms", Value::Number(d.ms)),
     ]);
-    run_with_current_root(LEGACY_ROOT_ID, || {
+    with_ui(|| {
         let _ = f.call(&[payload]);
     });
 }
@@ -976,6 +1466,7 @@ fn deliver_files(d: files::Delivery) {
 pub fn watch_apps() -> bool {
     watch::watch(&index::root_strings(), || {
         let (n, ms) = index::reindex();
+        warm_app_icons();
         debug_log(&format!("apps reindexed: {n} in {ms:.1} ms"));
     })
 }

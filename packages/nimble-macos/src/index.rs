@@ -84,6 +84,11 @@ pub fn reindex() -> (usize, f64) {
     (n, t0.elapsed().as_secs_f64() * 1000.0)
 }
 
+/// Every indexed app's path, A–Z by name.
+pub fn paths() -> Vec<String> {
+    APPS.with(|a| a.borrow().iter().map(|x| x.path.clone()).collect())
+}
+
 /// Rank arbitrary titles (plugin commands, plugin list items) with the same matcher as apps.
 /// Returns `(index, score)` best first; an empty query keeps the original order.
 pub fn fuzzy(query: &str, titles: &[String], limit: usize) -> Vec<(usize, u32)> {

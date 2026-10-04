@@ -11,8 +11,6 @@ use std::time::{Duration, Instant};
 
 use dispatch2::DispatchQueue;
 use tishlang_core::Value;
-use tishlang_ui::runtime::{run_with_current_root, LEGACY_ROOT_ID};
-
 const MAX_OUTPUT: usize = 1 << 20;
 const TIMEOUT: Duration = Duration::from_secs(60);
 
@@ -100,7 +98,7 @@ pub fn run(cmd: &str, cwd: &str, cb: Value, to_value: fn(u64, Output) -> Value) 
         let out = run_blocking(&cmd, &cwd);
         DispatchQueue::main().exec_async(move || {
             let Some(Value::Function(f)) = CALLBACKS.with(|c| c.borrow_mut().remove(&id)) else { return };
-            run_with_current_root(LEGACY_ROOT_ID, || {
+            crate::mac::with_ui(|| {
                 let _ = f.call(&[to_value(id, out)]);
             });
         });

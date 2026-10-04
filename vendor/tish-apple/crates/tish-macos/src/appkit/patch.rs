@@ -435,14 +435,15 @@ fn patch_vnode(
                             max_h = max_h.max(h);
                             x_off += cw;
                         }
-                        let expected = children.len() + if click_overlay { 1 } else { 0 };
-                        if inner != children.len()
-                            || shell.subviews().count() as usize != expected
-                        {
+                        // A container child (`div`) lays its children straight into the shell,
+                        // so `inner` (views used) can exceed the child count; the click overlay
+                        // is added after all of them.
+                        let expected = inner + if click_overlay { 1 } else { 0 };
+                        if shell.subviews().count() as usize != expected {
                             return Err(());
                         }
                         if click_overlay {
-                            let ov = shell.subviews().objectAtIndex(children.len());
+                            let ov = shell.subviews().objectAtIndex(inner);
                             if !ov.isKindOfClass(NSButton::class()) {
                                 return Err(());
                             }

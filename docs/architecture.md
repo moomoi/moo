@@ -34,8 +34,10 @@ Tish binary) over a Unix-socket RPC. It does not exist yet.
 | Path | What it is |
 | --- | --- |
 | `app/src/main.tish` | The launcher: state, search composition, plugin loading, key handling, view |
+| `app/src/theme.tish` | The whole look: colours, type, radii, icons, glass tints, panel geometry, motion |
 | `packages/nimble-macos` | Rust native module imported as `tish:nimble` |
 | `  src/mac.rs` | Panel, focus, key routing, Carbon hotkeys and the recorder, launch, icons, status item |
+| `  src/theme.rs` | Holds the theme set from Tish (`setTheme`) and resolves its colours; no values of its own |
 | `  src/keys.rs` | Key names, hotkey spec parsing and display (`cmd+shift+k` → ⇧⌘K) |
 | `  src/keymap.rs` | Per-keyboard modifier remaps and macOS system shortcut conflicts |
 | `  src/shortcuts.rs` | `shortcuts.json`: parse, validate, save, templates (portable) |
@@ -44,7 +46,8 @@ Tish binary) over a Unix-socket RPC. It does not exist yet.
 | `  src/index.rs` | App index and nucleo fuzzy ranking (portable) |
 | `  src/fsindex.rs` | File name index: crawl, search, rescan, snapshot (portable) |
 | `  src/fslive.rs` | File index service: background build, FSEvents updates, saves |
-| `  src/files.rs` | Spotlight file search on a worker thread (fallback while indexing) |
+| `  src/files.rs` | Spotlight file search on a worker thread (fallback while indexing); metadata search (size, dates, kind, folder) for the AI's `findFiles` |
+| `  src/sysinfo.rs` | Running apps, OS, hardware, disk and battery facts for the AI's tools |
 | `  src/watch.rs` | FSEvents on the application folders |
 | `  src/frecency.rs` | Use counts with decay, persisted as TSV (portable) |
 | `  src/history.rs` | Recent searches for Spotlight's ↑ list, newest first (portable) |
@@ -64,34 +67,84 @@ crashes because AppKit's KVO observers are bound to the original class. So `adop
 moves tish-macos's root view into Nimble's own panel and leaves the host window offscreen with a
 same-size placeholder (tish-macos measures layout from its window's content view).
 
+All styling lives in Tish, in `app/src/theme.tish`, so a theme can be swapped without touching
+Rust. The views in `main.tish` take their colours, type sizes, weights, radii and icons from
+`THEME`; `setTheme(THEME)` (called before `setup`, and again at any time to restyle the open panel)
+hands the native side the panel's part: corner radius, margin, position, glass style, spacing and
+tints, the pre-macOS 26 vibrancy material, tint, edge and shadow, and every opening and morph
+timing. `theme.rs` only stores and applies it; without a theme the panel is plain (square,
+untinted, no animation). Colours are AppKit semantic names (`label`, `controlAccent`, which follow
+light and dark mode) or `#RRGGBB` / `#RRGGBBAA`, and panel colours may be `{ light, dark }`. The
+numbers below are the current theme's.
+
 The panel follows macOS Spotlight (see [raycast-overview.md](raycast-overview.md#spotlight-patterns)):
 a borderless, clear window (a small `NSPanel` subclass, since AppKit refuses key status to
-borderless windows). Its content view is a vibrancy view (the blurred desktop) holding two
-subviews: a backing view with one tinted, hairline-edged rounded view per piece of the panel's
-shape, and a top-anchored (flipped) container with the root view. `refresh_edge` recolours the
-pieces for light or dark mode on every show.
+borderless windows), 36 pt larger than the panel's shape on every side. Behind the root view there
+is one Liquid Glass view (`NSGlassEffectView`) per piece of the shape, all in one
+`NSGlassEffectContainerView`, so pieces that come within 6 pt of each other melt into one shape.
+Before macOS 26 (or with `NIMBLE_NO_GLASS=1`) each piece is a rounded, tinted vibrancy view with a
+hairline edge. `refresh_edge` applies the theme's tints for light or dark mode on every show: light
+on the bar, denser on the results panel so the desktop does not fight the text.
 
-`setPanelShape(height, [[x, width, radius], ...])` resizes the panel, keeping its top edge, and cuts
-it into pieces: the idle bar is 52 pt tall, made of a field capsule and four circles; the expanded
-panel is one rounded rectangle. The vibrancy view's `maskImage` is drawn from the same rounded
-rects, so the blur, the tint and the window shadow all follow the shape. tish-macos still lays the
-tree out at full height (it re-sizes the root view to the host's placeholder on every commit); the
-flipped container keeps the header at the top and the panel clips the rest.
+`setPanelShape(height, [[x, width, radius], ...])` resizes the panel, keeping its top edge, and
+cuts it into pieces: the idle bar is 52 pt tall, made of a field capsule and four circles; the
+expanded panel is one rounded rectangle. The pieces are only the glass backdrop: everything on them,
+including the category buttons' icons and the tab selection, is drawn by the Tish view, whose
+columns line up with the pieces. tish-macos still lays the tree out at full height (it re-sizes the root view to
+the host's placeholder on every commit); a top-anchored (flipped) container keeps the header at the
+top and the panel clips the rest.
+
+Opening springs the pieces into place: the field grows from its centre in both directions and the
+circles spring out of its right end, farthest first, 16 ms apart; the Tish view fades in from
+0.09 s to 0.19 s, as the circles reach the places its icons sit in. The spring is damped (0.18 s
+period, damping ratio 0.58, about 11% overshoot, which the window's margin leaves room for) and is
+stepped on a 120 Hz timer that sets the glass views' frames, so the glass re-shapes and melts every
+frame rather than being scaled as a picture. Changing shape (bar to panel and back) morphs the same
+way with a slower, softer spring (0.42 s, damping 0.78, 0.6 s): pieces in both shapes move, the
+others fade in or out where they are, and the window keeps the taller height until it settles.
+`NIMBLE_NO_ANIMATION=1` turns both off.
+
+In the idle bar Tab and Shift-Tab move a selection from the field through the four circles and back
+(`shell.bubble`); the selected circle is filled with the system accent colour (`controlAccent`)
+with a white icon, Return opens its category and Escape returns to the field. Typing clears it, and
+so does showing the panel. `nimble key <name>` feeds a key name to the same handler for scripting
+and tests.
 
 The Tish view keeps one fixed shape in every state: a header (icon, a borderless search field
 `<textinput bezeled={false} fontSize placeholder>` added to the vendored tish-macos, and four
-category buttons that collapse to 1 pt columns when expanded), 13 list slots, and a footer with up
-to three key-cap hints. Each list slot is a result row, a section heading or filler, and filler
-takes the leftover height so the list height never changes. A different shape would make
-tish-macos rebuild the views instead of patching them, and the search field would lose focus.
+category buttons that collapse to 1 pt columns when expanded), 13 list slots, 4 grid rows of 7
+icons, and a footer with up to three key-cap hints. Each list slot is a result row, a section
+heading or filler, and filler takes the leftover height so the list height never changes. A
+different shape would make tish-macos rebuild the views instead of patching them, and the search
+field would lose focus. When a rebuild does happen anyway (the first render after launch, or
+Spotlight results arriving), every native → Tish callback runs through `mac::with_ui`, which
+gives focus back to the search field, caret at the end, if the panel was left with nothing
+focused. Footer key caps are clickable and do what their key does.
+
+Applications is a grid by default, like Spotlight: every app A–Z (typing ranks matches), a 64 pt
+icon over its name, cut in the middle when long. The grid rows are 1 pt tall in every other view;
+in the grid the slots shrink to the heading and the rows share the list's height. ⌘L (or its
+footer key cap) switches between grid and list, and the choice is kept in `prefs.tsv`
+(`NIMBLE_PREFS`, next to `history.txt`). While the grid shows, `setArrowKeys(true)` makes the key
+monitor deliver ← and → too; ↑↓ move by a row and the grid scrolls by rows.
+
+Workspace app icons load lazily: an image view draws a dashed placeholder and is not told when the
+real icon arrives. Every icon is therefore drawn once offscreen when it is first registered, one
+per main-loop turn (about 15 ms each, so all apps take a few seconds after launch), starting with
+all apps A–Z when the index is built. When that queue empties with the panel open, Tish gets
+`onKey("icons")` and redraws.
 
 Other consequences of being an accessory app:
 
 - There is no Edit menu, so Cmd/Ctrl+C, V, X, Z, Shift+Z and Cmd+A are sent down the responder
   chain by hand (`edit_shortcut`).
-- Up, down, enter (also ⌘↵ and ⌥↵), escape, tab, ⌘1–⌘4, ⌘R and ⌫ in an empty field are caught
-  by a local key monitor and delivered to Tish as `onKey`.
-- The panel hides when it loses key status.
+- Up, down, enter (also ⌘↵ and ⌥↵), escape, tab and shift-tab, ⌘1–⌘4, ⌘R, ⌘L and ⌫ in an empty
+  field (plus left and right while the Applications grid shows) are caught by a local key monitor
+  and delivered to Tish as `onKey`.
+- The panel hides when it loses key status. Because the window is clear, AppKit would send clicks
+  on its transparent pixels (nearly all of it: glass is composited by the window server) to the
+  window below, so the panel sets `ignoresMouseEvents = false` explicitly to take every click; its
+  content view (`PanelStage`) hides the panel for clicks that miss the glass, as a click outside.
 
 **Callbacks into Tish never run inside an AppKit or Carbon handler.** They are queued and flushed
 from a main-queue block under `run_with_current_root`, because a callback that calls `setState`

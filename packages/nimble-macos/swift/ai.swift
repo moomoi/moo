@@ -48,8 +48,9 @@ public func nimble_ai_free(_ p: UnsafeMutablePointer<CChar>?) {
 public typealias NimbleAIToolCallback = @convention(c) (UInt64, UnsafePointer<CChar>?, UnsafePointer<CChar>?) -> UnsafeMutablePointer<CChar>?
 
 /// A conversation: later asks see earlier turns. `tools` is a JSON array of
-/// `{ name, description, params: [{ name, description }] }` (string parameters); the model may call
-/// them while answering, through `toolCb`. Returns 0 when the model is unavailable.
+/// `{ name, description, params: [{ name, description, optional?, choices? }] }` (string parameters;
+/// `choices` limits one to those values); the model may call them while answering, through
+/// `toolCb`. Returns 0 when the model is unavailable.
 @_cdecl("nimble_ai_session_new")
 public func nimble_ai_session_new(
     _ instructions: UnsafePointer<CChar>?, _ tools: UnsafePointer<CChar>?, _ toolCb: NimbleAIToolCallback?
@@ -80,7 +81,13 @@ private func makeTools(_ json: String, session: UInt64, cb: NimbleAIToolCallback
         let description = spec["description"] as? String ?? ""
         let params = (spec["params"] as? [[String: Any]] ?? []).compactMap { p -> DynamicGenerationSchema.Property? in
             guard let pname = p["name"] as? String else { return nil }
-            return .init(name: pname, description: p["description"] as? String, schema: DynamicGenerationSchema(type: String.self))
+            let choices = p["choices"] as? [String] ?? []
+            let schema = choices.isEmpty
+                ? DynamicGenerationSchema(type: String.self)
+                : DynamicGenerationSchema(name: name + "." + pname, anyOf: choices)
+            return .init(
+                name: pname, description: p["description"] as? String, schema: schema,
+                isOptional: p["optional"] as? Bool ?? false)
         }
         let root = DynamicGenerationSchema(name: name, description: description, properties: params)
         guard let schema = try? GenerationSchema(root: root, dependencies: []) else { return nil }

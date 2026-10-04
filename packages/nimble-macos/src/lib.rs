@@ -21,6 +21,7 @@ mod fslive;
 mod history;
 #[cfg(target_os = "macos")]
 mod http;
+mod prefs;
 mod index;
 #[cfg(target_os = "macos")]
 mod keychain;
@@ -40,6 +41,10 @@ mod remote;
 mod shell;
 #[cfg(unix)]
 mod shortcuts;
+#[cfg(target_os = "macos")]
+mod sysinfo;
+#[cfg(target_os = "macos")]
+mod theme;
 mod vmplug;
 #[cfg(target_os = "macos")]
 mod watch;
@@ -79,6 +84,8 @@ fn field(v: Option<&Value>, key: &str) -> Option<Value> {
 
 fn native_reindex(_args: &[Value]) -> Value {
     let (count, ms) = index::reindex();
+    #[cfg(target_os = "macos")]
+    mac::warm_app_icons();
     obj(vec![("count", Value::Number(count as f64)), ("ms", Value::Number(ms))])
 }
 
@@ -160,6 +167,17 @@ fn native_clear_search_history(_args: &[Value]) -> Value {
     Value::Null
 }
 
+/// `getPref(key)` -> the remembered value, or "".
+fn native_get_pref(args: &[Value]) -> Value {
+    Value::String(prefs::get(&str_arg(args, 0)).as_str().into())
+}
+
+/// `setPref(key, value)`: remember `value` between runs.
+fn native_set_pref(args: &[Value]) -> Value {
+    prefs::set(&str_arg(args, 0), &str_arg(args, 1));
+    Value::Null
+}
+
 fn native_app_count(_args: &[Value]) -> Value {
     Value::Number(index::app_count() as f64)
 }
@@ -216,12 +234,37 @@ mod natives {
         Value::Null
     }
 
+    /// `setTheme(theme)`: the panel's colours, radius, margins, position and motion (see
+    /// app/src/theme.tish). Call before `setup`; calling it again restyles the open panel.
+    pub fn set_theme(args: &[Value]) -> Value {
+        if let Some(t) = args.first() {
+            crate::theme::set(t);
+            mac::theme_changed();
+        }
+        Value::Null
+    }
+
+    /// `setArrowKeys(on)`: while on, ← and → go to `onKey` as "left" / "right" (moving through a
+    /// grid) instead of moving the search field's cursor.
+    pub fn set_arrow_keys(args: &[Value]) -> Value {
+        mac::set_arrow_keys(matches!(args.first(), Some(Value::Bool(true))));
+        Value::Null
+    }
+
+    /// `typeText(text)`: test hook behind `nimble type`; inserts `text` into the focused field.
+    pub fn type_text(args: &[Value]) -> Value {
+        let text = str_arg(args, 0);
+        dispatch2::DispatchQueue::main().exec_async(move || mac::type_text(text));
+        Value::Null
+    }
+
     /// `setPanelShape(height, segments)`: resize the panel (its top edge stays put) and cut it into
-    /// rounded pieces, each `[x, width, radius]` spanning the full height (Spotlight's idle bar is
-    /// a field capsule plus round buttons). The layout keeps its full size and is clipped.
+    /// rounded glass pieces, each `[x, width, radius]` spanning the full height (Spotlight's idle
+    /// bar is a field capsule plus round buttons). The pieces are only the backdrop; the Tish view
+    /// draws everything on them. The layout keeps its full size and is clipped.
     pub fn set_panel_shape(args: &[Value]) -> Value {
         let h = num_arg(args, 0, 0.0);
-        let segs: Vec<(f64, f64, f64)> = match args.get(1) {
+        let segs: Vec<mac::Piece> = match args.get(1) {
             Some(Value::Array(a)) => a
                 .borrow()
                 .iter()
@@ -229,7 +272,7 @@ mod natives {
                     Value::Array(p) => {
                         let p = p.borrow();
                         let n = |i: usize| p.get(i).and_then(|v| v.as_number());
-                        Some((n(0)?, n(1)?, n(2).unwrap_or(0.0)))
+                        Some(mac::Piece { x: n(0)?, width: n(1)?, radius: n(2).unwrap_or(0.0) })
                     }
                     _ => None,
                 })
@@ -466,7 +509,7 @@ mod natives {
 
     fn config_changed() {
         let Some(Value::Function(f)) = ON_CONFIG.with(|c| c.borrow().clone()) else { return };
-        tishlang_ui::runtime::run_with_current_root(tishlang_ui::runtime::LEGACY_ROOT_ID, || {
+        crate::mac::with_ui(|| {
             let _ = f.call(&[]);
         });
     }
@@ -524,7 +567,7 @@ mod natives {
                     return;
                 };
                 let argv = arr(req.args.iter().map(|a| s(a)).collect());
-                tishlang_ui::runtime::run_with_current_root(tishlang_ui::runtime::LEGACY_ROOT_ID, || {
+                crate::mac::with_ui(|| {
                     let _ = f.call(&[argv, s(&req.cwd), Value::Number(req.token as f64)]);
                 });
             });
@@ -621,6 +664,100 @@ mod natives {
         file_rows(fslive::recent(limit), limit)
     }
 
+    /// `queryFiles({ name, kind, minBytes, maxBytes, createdSecs, modifiedSecs, openedSecs, folder,
+    /// sort, limit })` -> `{ results: [{ name, path, icon, kind, detail, bytes, created, modified,
+    /// opened }], total, ms }`. Spotlight metadata search, synchronous; dates are Unix ms (0: none).
+    pub fn query_files(args: &[Value]) -> Value {
+        let f = args.first();
+        let text = |k| match field(f, k) {
+            Some(Value::String(s)) => s.to_string(),
+            _ => String::new(),
+        };
+        let num = |k| field(f, k).and_then(|v| v.as_number()).unwrap_or(0.0).max(0.0);
+        let filter = files::Filter {
+            name: text("name"),
+            kind: text("kind"),
+            min_bytes: num("minBytes") as u64,
+            max_bytes: num("maxBytes") as u64,
+            created_secs: num("createdSecs"),
+            modified_secs: num("modifiedSecs"),
+            opened_secs: num("openedSecs"),
+            folder: text("folder"),
+            sort: text("sort"),
+            limit: (num("limit") as usize).clamp(1, 50),
+        };
+        let r = files::find(&filter);
+        let ms = |t: f64| Value::Number((t * 1000.0).round());
+        let rows: Vec<Value> = r
+            .hits
+            .into_iter()
+            .map(|h| {
+                obj(vec![
+                    ("name", Value::String(h.name.as_str().into())),
+                    ("icon", Value::String(mac::icon_name(&h.path).as_str().into())),
+                    ("kind", Value::String(if h.is_dir { "Folder" } else { "File" }.into())),
+                    ("detail", Value::String(h.detail.as_str().into())),
+                    ("bytes", Value::Number(h.bytes as f64)),
+                    ("created", ms(h.created)),
+                    ("modified", ms(h.modified)),
+                    ("opened", ms(h.opened)),
+                    ("path", Value::String(h.path.as_str().into())),
+                ])
+            })
+            .collect();
+        obj(vec![
+            ("results", Value::Array(VmRef::new(rows))),
+            ("total", Value::Number(r.total as f64)),
+            ("ms", Value::Number(r.ms)),
+        ])
+    }
+
+    /// `runningApps()` -> `[{ name, path, icon, pid, active, hidden }]`: apps with a Dock icon.
+    pub fn running_apps(_a: &[Value]) -> Value {
+        let rows: Vec<Value> = crate::sysinfo::running_apps()
+            .into_iter()
+            .map(|a| {
+                obj(vec![
+                    ("name", Value::String(a.name.as_str().into())),
+                    ("icon", Value::String(mac::icon_name(&a.path).as_str().into())),
+                    ("path", Value::String(a.path.as_str().into())),
+                    ("pid", Value::Number(a.pid as f64)),
+                    ("active", Value::Bool(a.active)),
+                    ("hidden", Value::Bool(a.hidden)),
+                ])
+            })
+            .collect();
+        Value::Array(VmRef::new(rows))
+    }
+
+    /// `systemInfo()` -> `{ os, model, chip, cores, memoryBytes, uptimeSecs, diskTotal, diskFree,
+    /// battery: { percent, charging, onAC, minutesToEmpty, minutesToFull } | null }`.
+    pub fn system_info(_a: &[Value]) -> Value {
+        let i = crate::sysinfo::info();
+        let n = |x: f64| Value::Number(x);
+        let battery = match i.battery {
+            Some(b) => obj(vec![
+                ("percent", n(b.percent)),
+                ("charging", Value::Bool(b.charging)),
+                ("onAC", Value::Bool(b.on_ac)),
+                ("minutesToEmpty", n(b.minutes_to_empty)),
+                ("minutesToFull", n(b.minutes_to_full)),
+            ]),
+            None => Value::Null,
+        };
+        obj(vec![
+            ("os", Value::String(i.os.as_str().into())),
+            ("model", Value::String(i.model.as_str().into())),
+            ("chip", Value::String(i.chip.as_str().into())),
+            ("cores", n(i.cores as f64)),
+            ("memoryBytes", n(i.memory_bytes as f64)),
+            ("uptimeSecs", n(i.uptime_secs)),
+            ("diskTotal", n(i.disk_total as f64)),
+            ("diskFree", n(i.disk_free as f64)),
+            ("battery", battery),
+        ])
+    }
+
     /// `fileIcon(path)` -> image name for an `<image src>`.
     pub fn file_icon(args: &[Value]) -> Value {
         Value::String(mac::icon_name(&str_arg(args, 0)).as_str().into())
@@ -654,9 +791,9 @@ mod natives {
         Value::Bool(mac::watch_apps())
     }
 
-    /// `statusItem(hotkey)`: menu bar icon with Show / Quit.
+    /// `statusItem(hotkey, symbol)`: menu bar icon (an SF Symbol name) with Show / Quit.
     pub fn status_item(args: &[Value]) -> Value {
-        Value::Bool(mac::status_item(&str_arg(args, 0)))
+        Value::Bool(mac::status_item(&str_arg(args, 0), &str_arg(args, 1)))
     }
 
     /// `watchClipboard()`: start recording text clipboard history (in memory only).
@@ -743,6 +880,9 @@ mod natives {
     pub fn copy_text(_a: &[Value]) -> Value { Value::Bool(false) }
     pub fn setup(_a: &[Value]) -> Value { Value::Null }
     pub fn set_panel_shape(_a: &[Value]) -> Value { Value::Null }
+    pub fn set_arrow_keys(_a: &[Value]) -> Value { Value::Null }
+    pub fn set_theme(_a: &[Value]) -> Value { Value::Null }
+    pub fn type_text(_a: &[Value]) -> Value { Value::Null }
     pub fn register_hotkey(_a: &[Value]) -> Value {
         obj(vec![("ok", Value::Bool(false)), ("error", Value::String("macOS only".into()))])
     }
@@ -779,6 +919,11 @@ mod natives {
         obj(vec![("ready", Value::Bool(false)), ("results", Value::Array(VmRef::new(vec![]))), ("ms", Value::Number(0.0))])
     }
     pub fn recent_files(_a: &[Value]) -> Value { Value::Array(VmRef::new(vec![])) }
+    pub fn query_files(_a: &[Value]) -> Value {
+        obj(vec![("results", Value::Array(VmRef::new(vec![]))), ("total", Value::Number(0.0)), ("ms", Value::Number(0.0))])
+    }
+    pub fn running_apps(_a: &[Value]) -> Value { Value::Array(VmRef::new(vec![])) }
+    pub fn system_info(_a: &[Value]) -> Value { Value::Null }
     pub fn file_icon(_a: &[Value]) -> Value { Value::String("".into()) }
     pub fn reveal_file(_a: &[Value]) -> Value { Value::Bool(false) }
     pub fn file_index_status(_a: &[Value]) -> Value { obj(vec![("state", Value::String("idle".into()))]) }
@@ -806,6 +951,11 @@ pub fn nimble_object() -> Value {
     m.insert(Arc::from("searchHistory"), Value::native(native_search_history));
     m.insert(Arc::from("addSearchHistory"), Value::native(native_add_search_history));
     m.insert(Arc::from("clearSearchHistory"), Value::native(native_clear_search_history));
+    m.insert(Arc::from("getPref"), Value::native(native_get_pref));
+    m.insert(Arc::from("setPref"), Value::native(native_set_pref));
+    m.insert(Arc::from("setArrowKeys"), Value::native(natives::set_arrow_keys));
+    m.insert(Arc::from("typeText"), Value::native(natives::type_text));
+    m.insert(Arc::from("setTheme"), Value::native(natives::set_theme));
     m.insert(Arc::from("registerHotkey"), Value::native(natives::register_hotkey));
     m.insert(Arc::from("unregisterHotkey"), Value::native(natives::unregister_hotkey));
     m.insert(Arc::from("checkHotkey"), Value::native(natives::check_hotkey));
@@ -840,6 +990,9 @@ pub fn nimble_object() -> Value {
     m.insert(Arc::from("fileIndexStart"), Value::native(natives::file_index_start));
     m.insert(Arc::from("findFiles"), Value::native(natives::find_files));
     m.insert(Arc::from("recentFiles"), Value::native(natives::recent_files));
+    m.insert(Arc::from("queryFiles"), Value::native(natives::query_files));
+    m.insert(Arc::from("runningApps"), Value::native(natives::running_apps));
+    m.insert(Arc::from("systemInfo"), Value::native(natives::system_info));
     m.insert(Arc::from("fileIcon"), Value::native(natives::file_icon));
     m.insert(Arc::from("revealFile"), Value::native(natives::reveal_file));
     m.insert(Arc::from("fileIndexStatus"), Value::native(natives::file_index_status));

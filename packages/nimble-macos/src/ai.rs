@@ -10,8 +10,6 @@ use std::sync::{Arc, Mutex};
 
 use dispatch2::DispatchQueue;
 use tishlang_core::Value;
-use tishlang_ui::runtime::{run_with_current_root, LEGACY_ROOT_ID};
-
 type Callback = extern "C" fn(u64, i32, *const c_char);
 type ToolCallback = extern "C" fn(u64, *const c_char, *const c_char) -> *mut c_char;
 
@@ -81,7 +79,8 @@ pub fn availability() -> Result<(), String> {
     if s == "available" { Ok(()) } else { Err(s) }
 }
 
-/// `tools_json`: `[{ name, description, params: [{ name, description }] }]`. When the model calls a
+/// `tools_json`: `[{ name, description, params: [{ name, description, optional?, choices? }] }]`
+/// (string parameters). When the model calls a
 /// tool, `on_tool(name, argsJson)` runs on the main thread and its return value (as text) goes back
 /// to the model.
 pub fn session(instructions: &str, tools_json: &str, on_tool: Option<Value>) -> u64 {
@@ -111,11 +110,13 @@ extern "C" fn on_swift_tool(session: u64, name: *const c_char, args: *const c_ch
     }
     let out = Arc::new(Mutex::new(String::new()));
     let slot = out.clone();
+    let call = format!("{name} {args}");
     DispatchQueue::main().exec_sync(move || {
         let reply = run_tool(session, &name, &args);
         *slot.lock().unwrap() = reply;
     });
     let reply = std::mem::take(&mut *out.lock().unwrap());
+    eprintln!("nimble: AI tool {call} -> {}", reply.lines().next().unwrap_or(""));
     let c = CString::new(reply.replace('\0', "")).unwrap();
     unsafe { strdup(c.as_ptr()) }
 }
@@ -124,7 +125,7 @@ fn run_tool(session: u64, name: &str, args: &str) -> String {
     let Some(Value::Function(f)) = TOOL_HANDLERS.with(|h| h.borrow().get(&session).cloned()) else {
         return format!("Tool {name} is not available.");
     };
-    run_with_current_root(LEGACY_ROOT_ID, || {
+    crate::mac::with_ui(|| {
         let r = f.call(&[Value::String(name.into()), Value::String(args.into())]);
         match tishlang_core::take_pending_throw() {
             Some(e) => format!("Tool {name} failed: {}", error_text(&e)),
@@ -186,7 +187,7 @@ fn flush() {
     if events.is_empty() {
         return;
     }
-    run_with_current_root(LEGACY_ROOT_ID, || {
+    crate::mac::with_ui(|| {
         for (request, kind, text) in events {
             let cb = CALLBACKS.with(|c| {
                 let mut c = c.borrow_mut();
