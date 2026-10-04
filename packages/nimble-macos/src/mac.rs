@@ -17,7 +17,7 @@ use objc2::{define_class, msg_send, sel, ClassType, MainThreadMarker, MainThread
 use objc2_app_kit::{
     NSAppearanceCustomization, NSAppearanceNameAqua, NSAppearanceNameDarkAqua, NSApplication, NSApplicationActivationPolicy,
     NSAutoresizingMaskOptions, NSBackingStoreType, NSColor, NSGlassEffectContainerView, NSGlassEffectView,
-    NSEvent, NSEventMask, NSEventModifierFlags, NSMenu, NSMenuItem,
+    NSEvent, NSEventMask, NSEventModifierFlags, NSEventType, NSMenu, NSMenuItem,
     NSPanel, NSResponder, NSScreen, NSStatusBar, NSStatusItem, NSTextField, NSView, NSVisualEffectBlendingMode,
     NSVisualEffectState, NSVisualEffectView, NSWindow, NSWindowButton, NSWindowCollectionBehavior,
     NSWindowDidBecomeKeyNotification, NSWindowDidResignKeyNotification, NSWindowStyleMask,
@@ -958,6 +958,72 @@ fn install_key_monitor() {
     let monitor =
         unsafe { NSEvent::addLocalMonitorForEventsMatchingMask_handler(NSEventMask::KeyDown, &block) };
     MONITOR.with(|m| *m.borrow_mut() = monitor);
+}
+
+// ── Snippet keywords typed in other apps ────────────────────────────────────
+
+thread_local! {
+    static TYPED: RefCell<crate::snippets::Typed> = RefCell::new(Default::default());
+    static TYPED_MONITOR: RefCell<Option<Retained<AnyObject>>> = const { RefCell::new(None) };
+    static ON_SNIPPET: RefCell<Option<Value>> = const { RefCell::new(None) };
+}
+
+/// Watch what is typed in other apps for `keywords`; `cb(keyword)` runs once the app has inserted
+/// the keyword's last character. No keywords stops watching. Other apps' key events only arrive
+/// with Accessibility, and none arrive while a password field has focus.
+pub fn watch_snippets(keywords: Vec<String>, cb: Value) {
+    TYPED.with(|t| t.borrow_mut().set_keywords(keywords));
+    ON_SNIPPET.with(|c| *c.borrow_mut() = Some(cb));
+    let watching = !TYPED.with(|t| t.borrow().is_empty());
+    let monitor = TYPED_MONITOR.with(|m| m.borrow_mut().take());
+    if !watching {
+        if let Some(m) = monitor {
+            unsafe { NSEvent::removeMonitor(&m) };
+        }
+        return;
+    }
+    if monitor.is_some() {
+        TYPED_MONITOR.with(|m| *m.borrow_mut() = monitor);
+        return;
+    }
+    let block = RcBlock::new(|ev: NonNull<NSEvent>| {
+        if let Some(keyword) = typed_keyword(unsafe { ev.as_ref() }) {
+            let when = DispatchTime::try_from(std::time::Duration::from_millis(40)).unwrap_or(DispatchTime::NOW);
+            let _ = DispatchQueue::main().after(when, move || {
+                let Some(Value::Function(f)) = ON_SNIPPET.with(|c| c.borrow().clone()) else { return };
+                with_ui(|| {
+                    let _ = f.call(&[Value::String(keyword.as_str().into())]);
+                });
+            });
+        }
+    });
+    let mask = NSEventMask::KeyDown | NSEventMask::LeftMouseDown | NSEventMask::RightMouseDown | NSEventMask::OtherMouseDown;
+    let monitor = unsafe { NSEvent::addGlobalMonitorForEventsMatchingMask_handler(mask, &block) };
+    TYPED_MONITOR.with(|m| *m.borrow_mut() = monitor);
+}
+
+/// Feed one event to the typed-text buffer; a click, a shortcut or a key that moves the cursor
+/// starts it over.
+fn typed_keyword(e: &NSEvent) -> Option<String> {
+    TYPED.with(|t| {
+        let mut t = t.borrow_mut();
+        let flags = e.modifierFlags();
+        if e.r#type() != NSEventType::KeyDown || flags.intersects(NSEventModifierFlags::Command | NSEventModifierFlags::Control) {
+            t.reset();
+            return None;
+        }
+        match e.keyCode() {
+            51 => {
+                t.backspace();
+                None
+            }
+            36 | 48 | 53 | 76 | 115 | 116 | 117 | 119 | 121 | 123..=126 => {
+                t.reset();
+                None
+            }
+            _ => t.push(&e.characters().map(|c| c.to_string()).unwrap_or_default()),
+        }
+    })
 }
 
 // ── Setup once the run loop is live ─────────────────────────────────────────

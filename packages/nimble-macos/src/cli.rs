@@ -49,8 +49,9 @@ usage: nimble [command] [args]
   dark-mode [on|off]           toggle or set dark mode
   clipboard [-n N]             clipboard history, newest first
   list [shortcuts|commands|hotkeys]
-  shortcut add <keyword> <kind> <target> [--name N] [--hotkey K] [--output show|copy|none] [--input T]
-                               kinds: url, open, command, shell, text
+  shortcut add <keyword> <kind> <target> [--name N] [--hotkey K] [--output show|copy|none] [--input T] [--expand]
+                               kinds: url, open, command, shell, text; --expand makes a text
+                               shortcut a snippet, replaced wherever its keyword is typed
   shortcut rm <keyword>
   hotkey add <keys> <keyword|id> [text]
   hotkey rm <keys>

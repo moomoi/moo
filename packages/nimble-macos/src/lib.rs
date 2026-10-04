@@ -44,6 +44,7 @@ mod remote;
 mod shell;
 #[cfg(unix)]
 mod shortcuts;
+mod snippets;
 #[cfg(target_os = "macos")]
 mod sysinfo;
 #[cfg(target_os = "macos")]
@@ -365,6 +366,7 @@ mod natives {
                     ("input", s(&x.input)),
                     ("output", s(&x.output)),
                     ("hotkey", s(&x.hotkey)),
+                    ("expand", Value::Bool(x.kind == shortcuts::Kind::Text && x.expand)),
                     ("needsQuery", Value::Bool(shortcuts::needs_query(if x.kind == shortcuts::Kind::Command { &x.input } else { &x.target }))),
                 ])
             })
@@ -818,6 +820,31 @@ mod natives {
         obj(vec![("ok", Value::Bool(ok)), ("message", s(&message))])
     }
 
+    /// `watchSnippets(keywords, cb)` -> `{ ok, error }`: call `cb(keyword)` when one of the
+    /// keywords is typed in another app. Asks for Accessibility when there are keywords to watch.
+    pub fn watch_snippets(args: &[Value]) -> Value {
+        let keywords: Vec<String> = match args.first() {
+            Some(Value::Array(a)) => a.borrow().iter().filter_map(|v| if let Value::String(k) = v { Some(k.to_string()) } else { None }).collect(),
+            _ => Vec::new(),
+        };
+        let watching = !keywords.is_empty();
+        mac::watch_snippets(keywords, args.get(1).cloned().unwrap_or(Value::Null));
+        if watching && !crate::ax::trusted(false) {
+            crate::ax::trusted(true);
+            return obj(vec![("ok", Value::Bool(false)), ("error", s(crate::ax::NEEDS_PERMISSION))]);
+        }
+        obj(vec![("ok", Value::Bool(true))])
+    }
+
+    /// `replaceTyped(keyword, text)` -> `{ ok, error }`: replace the keyword just typed before the
+    /// cursor in the focused app with the text.
+    pub fn replace_typed(args: &[Value]) -> Value {
+        match crate::ax::replace_typed(&str_arg(args, 0), &str_arg(args, 1)) {
+            Ok(()) => obj(vec![("ok", Value::Bool(true))]),
+            Err(e) => obj(vec![("ok", Value::Bool(false)), ("error", s(&e))]),
+        }
+    }
+
     /// `selectedText()` -> the selected text in the focused app, or null.
     pub fn selected_text(_a: &[Value]) -> Value {
         crate::ax::selected_text().map(|t| s(&t)).unwrap_or(Value::Null)
@@ -1046,6 +1073,8 @@ mod natives {
     pub fn system_command(_a: &[Value]) -> Value { Value::Null }
     pub fn volume(_a: &[Value]) -> Value { Value::Null }
     pub use unsupported as arrange_window;
+    pub use unsupported as watch_snippets;
+    pub use unsupported as replace_typed;
     pub fn selected_text(_a: &[Value]) -> Value { Value::Null }
     pub fn accessibility_trusted(_a: &[Value]) -> Value { Value::Bool(false) }
     pub fn dark_mode(_a: &[Value]) -> Value { Value::Null }
@@ -1124,6 +1153,8 @@ pub fn nimble_object() -> Value {
     m.insert(Arc::from("volume"), Value::native(natives::volume));
     m.insert(Arc::from("arrangeWindow"), Value::native(natives::arrange_window));
     m.insert(Arc::from("selectedText"), Value::native(natives::selected_text));
+    m.insert(Arc::from("watchSnippets"), Value::native(natives::watch_snippets));
+    m.insert(Arc::from("replaceTyped"), Value::native(natives::replace_typed));
     m.insert(Arc::from("accessibilityTrusted"), Value::native(natives::accessibility_trusted));
     m.insert(Arc::from("darkMode"), Value::native(natives::dark_mode));
     m.insert(Arc::from("fileIcon"), Value::native(natives::file_icon));

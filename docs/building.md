@@ -86,6 +86,7 @@ nimble clipboard -n 5                   # clipboard history
 nimble shortcut add g url 'https://www.google.com/search?q={query}'
 nimble shortcut add proj open .         # relative paths resolve against your folder
 nimble shortcut add ip shell 'curl -s ifconfig.me' --output copy --hotkey ctrl+alt+i
+nimble shortcut add ';sig' text 'Best,\nA' --expand   # typing ;sig in any app becomes the text
 nimble shortcut rm ip
 nimble hotkey add cmd+shift+v nimble:clipboard
 nimble hotkey add f5 g weather          # a hotkey can carry the text too
@@ -148,11 +149,18 @@ it. Without `NIMBLE_SYSTEM_DRY_RUN=1`, Restart, Shut Down and the other system c
 check with `nimble system restart`, which must print `dry run: restart`, before pressing Return in
 the panel. The clipboard is not isolated: AI answers that call `copyText` change it.
 
-Window commands and `{selection}` use Accessibility. macOS grants it to the app that started the
-process: Nimble started from a terminal or editor uses that app's permission, and Nimble started
-from Finder or at login needs its own entry in System Settings › Privacy & Security ›
-Accessibility (the first window command asks). With `NIMBLE_SYSTEM_DRY_RUN=1`, `nimble window
-<layout>` prints the window's frame and where it would go without moving it.
+Window commands, `{selection}` and snippet expansion use Accessibility. macOS grants it to the
+app that started the process: Nimble started from a terminal or editor uses that app's
+permission, and Nimble started from Finder or at login needs its own entry in System Settings ›
+Privacy & Security › Accessibility (the first window command, or the first expanding snippet,
+asks). With `NIMBLE_SYSTEM_DRY_RUN=1`, `nimble window <layout>` prints the window's frame and
+where it would go without moving it. A test instance watches for its own snippet keywords in
+every app, so give test snippets keywords you would never type.
+
+Two ignored tests act on real apps they open themselves, and skip when that app is already open:
+`cargo test --lib -- --ignored acts_on_an_app_it_started` (launches and quits Chess) and
+`replaces_a_keyword_in_textedit` (expands a keyword in a temporary file in TextEdit, then quits
+it without saving).
 
 The `scripts/drive-*.sh` scripts drive a running Nimble with System Events keystrokes and take
 screenshots into `/tmp`. They need Accessibility permission for the terminal running them, expect

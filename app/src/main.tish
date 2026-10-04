@@ -8,7 +8,7 @@
 
 import { loadModule } from "tish:ffi"
 import { macos, useState } from "tish:macos"
-import { reindex, search, launch, setup, setPanelShape, setArrowKeys, setTheme, typeText, getPref, setPref, searchHistory, addSearchHistory, clearSearchHistory, registerHotkey, quit, hide, appCount, searchFiles, watchApps, fuzzy, pluginPaths, copyText, loadBytecodePlugin, bundleResources, recordUse, frecency, statusItem, watchClipboard, clipboardHistory, clearClipboardHistory, aiAvailability, aiSession, aiEndSession, aiPrewarm, aiAsk, aiCancel, symbolIcon, fileIndexStart, findFiles, recentFiles, queryFiles, runningApps, systemInfo, calculate, systemCommand, appAction, arrangeWindow, selectedText, accessibilityTrusted, fileIcon, revealFile, fileIndexStatus, show, toggle, unregisterHotkey, checkHotkey, hotkeyDisplay, recordHotkey, loadShortcuts, saveShortcut, checkKeyword, ensureShortcutsFile, removeShortcut, bindHotkey, unbindHotkey, expandTemplate, watchShortcuts, runShell, cliMain, cliServe, cliWrite, cliEnd, cliUsage } from "tish:nimble"
+import { reindex, search, launch, setup, setPanelShape, setArrowKeys, setTheme, typeText, getPref, setPref, searchHistory, addSearchHistory, clearSearchHistory, registerHotkey, quit, hide, appCount, searchFiles, watchApps, fuzzy, pluginPaths, copyText, loadBytecodePlugin, bundleResources, recordUse, frecency, statusItem, watchClipboard, clipboardHistory, clearClipboardHistory, aiAvailability, aiSession, aiEndSession, aiPrewarm, aiAsk, aiCancel, symbolIcon, fileIndexStart, findFiles, recentFiles, queryFiles, runningApps, systemInfo, calculate, systemCommand, appAction, arrangeWindow, selectedText, watchSnippets, replaceTyped, accessibilityTrusted, fileIcon, revealFile, fileIndexStatus, show, toggle, unregisterHotkey, checkHotkey, hotkeyDisplay, recordHotkey, loadShortcuts, saveShortcut, checkKeyword, ensureShortcutsFile, removeShortcut, bindHotkey, unbindHotkey, expandTemplate, watchShortcuts, runShell, cliMain, cliServe, cliWrite, cliEnd, cliUsage } from "tish:nimble"
 import { env } from "tish:process"
 import { THEME } from "./theme.tish"
 
@@ -346,8 +346,14 @@ let KINDS = [
   { kind: "open", title: "Open an app, file or folder", hint: "Pick what to open", icon: "NSFolder" },
   { kind: "command", title: "Run a Nimble command", hint: "Starts the command with the text you type", icon: "NSActionTemplate" },
   { kind: "shell", title: "Run a shell command", hint: "{query} is inserted single-quoted; the output is shown", icon: symbolIcon("terminal") },
-  { kind: "text", title: "Copy text", hint: "{query}, {clipboard}, {date} and {time} are filled in; \\n is a new line", icon: symbolIcon("text.quote") }
+  { kind: "text", title: "Copy text", hint: "{query}, {clipboard}, {date} and {time} are filled in; \\n is a new line", icon: symbolIcon("text.quote") },
+  { kind: "snippet", title: "Expand a snippet as you type", hint: "Typing the keyword in any app replaces it; {clipboard}, {date} and {time} are filled in; \\n is a new line", icon: symbolIcon("text.insert") }
 ]
+
+// The wizard's "snippet" is a text shortcut with expand on.
+fn wizKindOf(s) {
+  return s.expand ? "snippet" : s.kind
+}
 
 fn kindInfo(kind) {
   for (let i = 0; i < KINDS.length; i = i + 1) {
@@ -363,7 +369,7 @@ fn shortcutIcon(s) {
     let icon = fileIcon(expandTemplate(s.target, "", "open"))
     return icon !== "" ? icon : kindInfo(s.kind).icon
   }
-  return kindInfo(s.kind).icon
+  return kindInfo(wizKindOf(s)).icon
 }
 
 fn findShortcut(keyword) {
@@ -388,7 +394,7 @@ fn findCommand(id) {
 }
 
 fn shortcutKind(s) {
-  let label = "Shortcut · " + s.keyword
+  let label = (s.expand ? "Snippet · " : "Shortcut · ") + s.keyword
   return s.hotkey !== "" ? label + " · " + hotkeyDisplay(s.hotkey) : label
 }
 
@@ -482,6 +488,43 @@ fn reloadShortcuts() {
   }
   syncShortcutCommands()
   bindHotkeys()
+  syncSnippets()
+}
+
+// Text shortcuts with "expand": true replace their keyword wherever it is typed.
+fn syncSnippets() {
+  let keywords = []
+  for (let i = 0; i < config.shortcuts.length; i = i + 1) {
+    if (config.shortcuts[i].expand) {
+      keywords.push(config.shortcuts[i].keyword)
+    }
+  }
+  let r = watchSnippets(keywords, onSnippetTyped)
+  if (!r.ok) {
+    console.log("nimble: snippets: " + r.error)
+  }
+}
+
+fn snippetText(s) {
+  return expandTemplate(s.target, "", "text").split("\\n").join("\n")
+}
+
+fn onSnippetTyped(keyword) {
+  let s = null
+  for (let i = 0; i < config.shortcuts.length; i = i + 1) {
+    if (config.shortcuts[i].expand && config.shortcuts[i].keyword === keyword) {
+      s = config.shortcuts[i]
+    }
+  }
+  if (s === null) {
+    return
+  }
+  let r = replaceTyped(keyword, snippetText(s))
+  if (r.ok) {
+    recordUse("shortcut:" + s.keyword)
+  } else {
+    console.log("nimble: snippet " + keyword + ": " + r.error)
+  }
 }
 
 // A global hotkey: run its target; a shortcut that needs text opens the launcher to ask for it.
@@ -1022,7 +1065,7 @@ fn startWizard(edit) {
   wiz = { step: "kind", kind: "url", target: "", keyword: "", name: "", hotkey: "", check: null, editing: "", original: "" }
   shell.mode = findCommand("nimble:create-shortcut")
   if (edit !== null) {
-    wiz.kind = edit.kind
+    wiz.kind = wizKindOf(edit)
     wiz.target = edit.target
     wiz.keyword = edit.keyword
     wiz.name = edit.name
@@ -1152,7 +1195,7 @@ fn wizardResults(text) {
       }
       return rows
     }
-    let prompt = { url: "Type a URL such as https://www.google.com/search?q={query}", shell: "Type a shell command such as open -a Terminal {query}", text: "Type the text to copy" }
+    let prompt = { url: "Type a URL such as https://www.google.com/search?q={query}", shell: "Type a shell command such as open -a Terminal {query}", text: "Type the text to copy", snippet: "Type the text the keyword becomes" }
     let t = text.trim()
     return [wizRow(t === "" ? prompt[wiz.kind] : t, info.hint, info.icon, null)]
   }
@@ -1162,7 +1205,7 @@ fn wizardResults(text) {
       return [wizRow("Type the keyword you will type to run it", "", info.icon, null)]
     }
     let r = checkKeyword(k, wiz.editing)
-    return [wizRow(k, r.ok ? "free · type " + k + " then text" : r.error, info.icon, null)]
+    return [wizRow(k, r.ok ? "free · type " + k + (wiz.kind === "snippet" ? " in any app" : " then text") : r.error, info.icon, null)]
   }
   if (wiz.step === "name") {
     return [wizRow(text.trim() === "" ? "Name it" : text.trim(), "shown in results", info.icon, null)]
@@ -1245,7 +1288,8 @@ fn wizSave() {
     refresh()
     return
   }
-  let r = saveShortcut({ keyword: wiz.keyword, name: wiz.name, kind: wiz.kind, target: wiz.target, hotkey: wiz.hotkey }, wiz.editing)
+  let snippet = wiz.kind === "snippet"
+  let r = saveShortcut({ keyword: wiz.keyword, name: wiz.name, kind: snippet ? "text" : wiz.kind, target: wiz.target, hotkey: wiz.hotkey, expand: snippet }, wiz.editing)
   if (!r.ok) {
     shell.hud = r.error
     refresh()
@@ -1256,7 +1300,7 @@ fn wizSave() {
   let keyword = wiz.keyword
   let s = findShortcut(keyword)
   leaveList()
-  shell.hud = "Saved “" + wiz.name + "”" + (s !== null && s.needsQuery ? ": type " + keyword + " and some text" : ": type " + keyword)
+  shell.hud = "Saved “" + wiz.name + "”: type " + keyword + (snippet ? " in any app" : (s !== null && s.needsQuery ? " and some text" : ""))
   refresh()
 }
 
@@ -1270,7 +1314,7 @@ fn shortcutsResults(text) {
   for (let i = 0; i < config.shortcuts.length; i = i + 1) {
     let s = config.shortcuts[i]
     if (needle === "" || s.name.toLowerCase().indexOf(needle) >= 0 || s.keyword.toLowerCase().indexOf(needle) >= 0) {
-      rows.push({ name: s.name, kind: s.keyword + " · " + s.kind + (s.hotkey !== "" ? " · " + hotkeyDisplay(s.hotkey) : ""), icon: shortcutIcon(s), action: null, shortcut: s })
+      rows.push({ name: s.name, kind: s.keyword + " · " + wizKindOf(s) + (s.hotkey !== "" ? " · " + hotkeyDisplay(s.hotkey) : ""), icon: shortcutIcon(s), action: null, shortcut: s })
     }
   }
   for (let i = 0; i < hotkeyStatus.length; i = i + 1) {
@@ -2774,6 +2818,9 @@ fn primaryAction(r) {
   if (r.mode === "calc") {
     return "Copy Answer"
   }
+  if (r.mode === "shortcut" && r.shortcut.kind === "text") {
+    return "Copy Text"
+  }
   return "Open"
 }
 
@@ -3043,14 +3090,16 @@ fn cliFail(token, message) {
   cliEnd(token, 1)
 }
 
-// Words plus flags: --json, -n N, --name N, --hotkey K, --output O, --input T.
+// Words plus flags: --json, --expand, -n N, --name N, --hotkey K, --output O, --input T.
 fn cliParse(argv) {
   let words = []
-  let flags = { json: false, n: 0, name: "", hotkey: "", output: "", input: "" }
+  let flags = { json: false, expand: false, n: 0, name: "", hotkey: "", output: "", input: "" }
   for (let i = 0; i < argv.length; i = i + 1) {
     let a = argv[i]
     if (a === "--json") {
       flags.json = true
+    } else if (a === "--expand") {
+      flags.expand = true
     } else if ((a === "-n" || a === "--limit") && i + 1 < argv.length) {
       flags.n = Number(argv[i + 1])
       i = i + 1
@@ -3181,7 +3230,11 @@ fn cliList(token, what, json) {
 fn cliShortcut(token, words, flags, cwd) {
   let sub = words.length > 1 ? words[1] : ""
   if (sub === "add" && words.length >= 5) {
-    let s = { keyword: words[2], kind: words[3], target: words.slice(4).join(" "), name: flags.name, hotkey: flags.hotkey, output: flags.output, input: flags.input }
+    let s = { keyword: words[2], kind: words[3], target: words.slice(4).join(" "), name: flags.name, hotkey: flags.hotkey, output: flags.output, input: flags.input, expand: flags.expand }
+    if (s.expand && s.kind !== "text") {
+      cliFail(token, "--expand is for text shortcuts")
+      return
+    }
     if (s.kind === "open" && (s.target === "." || s.target === ".." || s.target.indexOf("./") === 0 || s.target.indexOf("../") === 0)) {
       s.target = cliPath(s.target, cwd)
     }
@@ -3208,7 +3261,7 @@ fn cliShortcut(token, words, flags, cwd) {
         hk = hotkeyStatus[i]
       }
     }
-    cliOut(token, "Added “" + saved.name + "”: type " + saved.keyword + (saved.needsQuery ? " and some text" : "") + "\n")
+    cliOut(token, "Added “" + saved.name + "”: type " + saved.keyword + (saved.expand ? " in any app to expand it" : (saved.needsQuery ? " and some text" : "")) + "\n")
     if (hk !== null && hk.error !== "") {
       cliWrite(token, "nimble: hotkey not active: " + hk.error + "\n", "err")
     }
@@ -3222,7 +3275,7 @@ fn cliShortcut(token, words, flags, cwd) {
     reloadShortcuts()
     cliEnd(token, 0)
   } else {
-    cliFail(token, "usage: nimble shortcut add <keyword> <kind> <target> [--name N] [--hotkey K] | shortcut rm <keyword>")
+    cliFail(token, "usage: nimble shortcut add <keyword> <kind> <target> [--name N] [--hotkey K] [--expand] | shortcut rm <keyword>")
   }
 }
 
@@ -3545,4 +3598,5 @@ compose()
 syncShape()
 setTheme(THEME)
 setup({ width: PANEL_W, height: PANEL_H, onKey: onKey, onShow: onShow, onHotkey: onHotkey, hidden: env.NIMBLE_START_HIDDEN === "1" })
+syncSnippets()
 macos.run(App)
