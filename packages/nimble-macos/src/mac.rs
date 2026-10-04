@@ -41,6 +41,9 @@ thread_local! {
     static START_HIDDEN: Cell<bool> = const { Cell::new(false) };
     static PENDING: RefCell<Vec<(&'static str, String)>> = const { RefCell::new(Vec::new()) };
     static MONITOR: RefCell<Option<Retained<AnyObject>>> = const { RefCell::new(None) };
+    static SCROLL_MONITOR: RefCell<Option<Retained<AnyObject>>> = const { RefCell::new(None) };
+    /// Scrolling not yet worth a whole row, carried into the next event.
+    static SCROLL_REST: Cell<f64> = const { Cell::new(0.0) };
     static PANEL_SIZE: Cell<(f64, f64)> = const { Cell::new((720.0, 440.0)) };
     static ICONS: RefCell<HashMap<String, String>> = RefCell::new(HashMap::new());
     static HOTKEY_HANDLER: Cell<bool> = const { Cell::new(false) };
@@ -981,6 +984,10 @@ pub fn hide() {
     if let Some(w) = main_window(mtm) {
         w.orderOut(None);
     }
+    // A hidden window gets no mouseExited, so the hovered row would still be lit when it shows.
+    if let Some(cls) = AnyClass::get(c"TishHoverButton") {
+        let _: () = unsafe { msg_send![cls, clearHover] };
+    }
 }
 
 fn panel_has_keys() -> bool {
@@ -1104,6 +1111,34 @@ fn install_key_monitor() {
     let monitor =
         unsafe { NSEvent::addLocalMonitorForEventsMatchingMask_handler(NSEventMask::KeyDown, &block) };
     MONITOR.with(|m| *m.borrow_mut() = monitor);
+    install_scroll_monitor();
+}
+
+/// Trackpad points that make one row; a mouse wheel moves a row per line.
+const SCROLL_POINTS: f64 = 18.0;
+
+/// Trackpad and mouse wheel scrolling arrive as `onKey("scroll:<rows>")`, positive towards the end
+/// of the list. The lists are drawn by Tish, so there is no scroll view to hand them to.
+fn install_scroll_monitor() {
+    if SCROLL_MONITOR.with(|m| m.borrow().is_some()) {
+        return;
+    }
+    let block = RcBlock::new(|ev: NonNull<NSEvent>| -> *mut NSEvent {
+        let e = unsafe { ev.as_ref() };
+        let per_row = if e.hasPreciseScrollingDeltas() { SCROLL_POINTS } else { 1.0 };
+        // scrollingDeltaY follows the natural-scrolling setting: positive moves the content down,
+        // which shows earlier rows.
+        let total = SCROLL_REST.with(|r| r.get()) - e.scrollingDeltaY() / per_row;
+        let rows = total.trunc();
+        SCROLL_REST.with(|r| r.set(total - rows));
+        if rows != 0.0 {
+            defer_callback("key", format!("scroll:{}", rows as i64));
+        }
+        ev.as_ptr()
+    });
+    let monitor =
+        unsafe { NSEvent::addLocalMonitorForEventsMatchingMask_handler(NSEventMask::ScrollWheel, &block) };
+    SCROLL_MONITOR.with(|m| *m.borrow_mut() = monitor);
 }
 
 // ── Snippet keywords typed in other apps ────────────────────────────────────
@@ -1535,7 +1570,13 @@ pub struct StatusItem {
 /// `hotkey` goes in the tooltip as a reminder.
 pub fn status_item(hotkey: &str, symbol: &str, on_menu: Box<dyn Fn(&str)>) -> bool {
     if STATUS.with(|s| s.borrow().is_some()) {
-        return false;
+        let Some(mtm) = MainThreadMarker::new() else { return false };
+        STATUS.with(|s| {
+            if let Some(button) = s.borrow().as_ref().and_then(|st| st.item.button(mtm)) {
+                set_status_tooltip(&button, hotkey);
+            }
+        });
+        return true;
     }
     STATUS_MENU.with(|h| *h.borrow_mut() = Some(on_menu));
     let (hotkey, symbol) = (hotkey.to_string(), symbol.to_string());
@@ -1562,8 +1603,7 @@ fn install_status_item(hotkey: &str, symbol: &str) {
     }
     let target = MenuTarget::new(mtm);
     if let Some(button) = item.button(mtm) {
-        let tip = if hotkey.is_empty() { "Nimble".to_string() } else { format!("Nimble  ({hotkey})") };
-        button.setToolTip(Some(&NSString::from_str(&tip)));
+        set_status_tooltip(&button, hotkey);
         unsafe {
             button.setTarget(Some(&target));
             button.setAction(Some(sel!(statusClicked:)));
@@ -1584,6 +1624,11 @@ fn install_status_item(hotkey: &str, symbol: &str) {
         menu.addItem(&mi);
     }
     STATUS.with(|s| *s.borrow_mut() = Some(StatusItem { item, menu, _target: target }));
+}
+
+fn set_status_tooltip(button: &NSView, hotkey: &str) {
+    let tip = if hotkey.is_empty() { "Nimble".to_string() } else { format!("Nimble  ({hotkey})") };
+    button.setToolTip(Some(&NSString::from_str(&tip)));
 }
 
 /// Register SF Symbol `symbol` as a named image (once) and return the name.

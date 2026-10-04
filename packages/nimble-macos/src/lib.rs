@@ -499,6 +499,21 @@ mod natives {
         edit_config(|cfg| if shortcuts::unbind(cfg, &k) { Ok(()) } else { Err(format!("no hotkey `{k}`")) })
     }
 
+    /// `setLauncherHotkey(keys)`: save the launcher hotkey as `"launcher"` in the file ("" removes
+    /// it). Registering it is up to the caller.
+    pub fn set_launcher_hotkey(args: &[Value]) -> Value {
+        let keys_spec = str_arg(args, 0);
+        if !keys_spec.is_empty() {
+            if let Err(e) = keys::parse(&keys_spec) {
+                return obj(vec![("ok", Value::Bool(false)), ("error", s(&e))]);
+            }
+        }
+        edit_config(|cfg| {
+            cfg.launcher = keys_spec;
+            Ok(())
+        })
+    }
+
     /// `expandTemplate(template, query, kind)`: fill `{query}` (encoded for the kind),
     /// `{clipboard}`, `{date}` and `{time}`; `~/` at the start becomes the home folder for `open`.
     pub fn expand_template(args: &[Value]) -> Value {
@@ -1385,6 +1400,7 @@ mod natives {
     pub use unsupported as remove_shortcut;
     pub use unsupported as bind_hotkey;
     pub use unsupported as unbind_hotkey;
+    pub use unsupported as set_launcher_hotkey;
     pub use unsupported as cli_serve;
     pub fn hotkey_display(a: &[Value]) -> Value { Value::String(str_arg(a, 0).as_str().into()) }
     pub fn ensure_shortcuts_file(_a: &[Value]) -> Value { Value::String("".into()) }
@@ -1493,6 +1509,7 @@ pub fn nimble_object() -> Value {
     m.insert(Arc::from("removeShortcut"), Value::native(natives::remove_shortcut));
     m.insert(Arc::from("bindHotkey"), Value::native(natives::bind_hotkey));
     m.insert(Arc::from("unbindHotkey"), Value::native(natives::unbind_hotkey));
+    m.insert(Arc::from("setLauncherHotkey"), Value::native(natives::set_launcher_hotkey));
     m.insert(Arc::from("expandTemplate"), Value::native(natives::expand_template));
     m.insert(Arc::from("watchShortcuts"), Value::native(natives::watch_shortcuts));
     m.insert(Arc::from("runShell"), Value::native(natives::run_shell));

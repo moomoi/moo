@@ -45,8 +45,9 @@ open dist/Nimble.app             # the bundle
 | `NIMBLE_START_HIDDEN` | `1`: start without showing the panel (set by the CLI when it starts Nimble) |
 | `NIMBLE_SYSTEM_DRY_RUN` | Set: system commands (restart, lock, volume, …) only report what they would do |
 
-The launcher hotkey can also be set as `"launcher"` in `shortcuts.json`; `NIMBLE_HOTKEY` wins
-over it.
+The launcher hotkey is changed in Settings › Launcher Hotkey: press the new keys and Return. It
+switches right away and is saved as `"launcher"` in `shortcuts.json` (which can also be edited by
+hand; that takes effect at the next start). `NIMBLE_HOTKEY` wins over it.
 
 Hotkeys name keys as printed on the keyboard. System Settings › Keyboard › Modifier Keys remaps
 them per keyboard below the event system (with Command and Control swapped, the Command key sends

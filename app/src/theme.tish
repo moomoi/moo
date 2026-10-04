@@ -16,8 +16,24 @@ export const THEME = {
     // Selected row, grid cell and key-cap backgrounds.
     selection: "quaternaryLabel",
     keycap: "quaternaryLabel",
+    // Under the pointer: rows, grid cells, category buttons and scroll bar thumb; key caps. Fainter
+    // than the selection, which keeps its colour when hovered.
+    hover: "#8080801F",
+    keycapHover: "tertiaryLabel",
+    scrollThumbHover: "secondaryLabel",
     // Layer colours need alpha hex: "#00000000" keeps a row's layer, so its shape never changes.
     clear: "#00000000",
+    // Scroll bar beside lists and the grid: the thumb, and the track behind it.
+    scrollThumb: "tertiaryLabel",
+    scrollTrack: "#00000000",
+  },
+  // Shown only when there is more than fits. width: the bar; gap: space left of it; inset: space
+  // above and below the track; minThumb: the shortest thumb.
+  scrollbar: {
+    width: 6,
+    gap: 4,
+    inset: 6,
+    minThumb: 28,
   },
   type: {
     field: 22,

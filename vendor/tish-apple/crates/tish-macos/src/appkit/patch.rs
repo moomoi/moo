@@ -442,6 +442,8 @@ fn patch_vnode(
                         if shell.subviews().count() as usize != expected {
                             return Err(());
                         }
+                        let content_h = max_h.max(1.0);
+                        let row_h = row_shell_outer_height(pt, pb, content_h, &props);
                         if click_overlay {
                             let ov = shell.subviews().objectAtIndex(inner);
                             if !ov.isKindOfClass(NSButton::class()) {
@@ -450,9 +452,11 @@ fn patch_vnode(
                             let btn: &NSButton =
                                 unsafe { &*(std::ptr::from_ref(&*ov).cast::<NSButton>()) };
                             wire_on_click_patch(&props, btn, ctx, btn.tag());
+                            // The row may have grown or shrunk since it was built; the overlay
+                            // must cover it all or clicks miss.
+                            place(btn, 0.0, 0.0, avail_w, row_h);
+                            super::hover::sync_hover(btn, &props);
                         }
-                        let content_h = max_h.max(1.0);
-                        let row_h = row_shell_outer_height(pt, pb, content_h, &props);
                         let inner_h = (row_h - pt - pb).max(0.0);
                         row_shell_reposition_children(
                             &*shell,

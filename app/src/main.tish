@@ -8,7 +8,7 @@
 
 import { loadModule } from "tish:ffi"
 import { macos, useState } from "tish:macos"
-import { reindex, search, launch, setup, setPanelShape, setArrowKeys, setTheme, typeText, getPref, setPref, searchHistory, addSearchHistory, clearSearchHistory, registerHotkey, quit, hide, appCount, searchFiles, watchApps, fuzzy, pluginPaths, copyText, loadBytecodePlugin, bundleResources, recordUse, frecency, statusItem, watchClipboard, clipboardHistory, clearClipboardHistory, aiAvailability, aiSession, aiEndSession, aiPrewarm, aiAsk, aiCancel, aiProviders, aiModels, aiChat, aiChatCancel, aiSetKey, aiLogin, aiCancelLogin, aiLogout, aiAccount, aiSetModel, aiSetClientId, symbolIcon, fileIndexStart, findFiles, recentFiles, queryFiles, runningApps, systemInfo, calculate, define, dictionaryWarm, webSuggest, contactsAccess, contactsRequest, searchContacts, systemCommand, appAction, arrangeWindow, selectedText, watchSnippets, replaceTyped, trashFile, appsFor, openWith, quickLook, quickLookVisible, searchContents, accessibilityTrusted, fileIcon, revealFile, fileIndexStatus, show, toggle, unregisterHotkey, checkHotkey, hotkeyDisplay, recordHotkey, loadShortcuts, saveShortcut, checkKeyword, ensureShortcutsFile, removeShortcut, bindHotkey, unbindHotkey, expandTemplate, watchShortcuts, runShell, cliMain, cliServe, cliWrite, cliEnd, cliUsage } from "tish:nimble"
+import { reindex, search, launch, setup, setPanelShape, setArrowKeys, setTheme, typeText, getPref, setPref, searchHistory, addSearchHistory, clearSearchHistory, registerHotkey, quit, hide, appCount, searchFiles, watchApps, fuzzy, pluginPaths, copyText, loadBytecodePlugin, bundleResources, recordUse, frecency, statusItem, watchClipboard, clipboardHistory, clearClipboardHistory, aiAvailability, aiSession, aiEndSession, aiPrewarm, aiAsk, aiCancel, aiProviders, aiModels, aiChat, aiChatCancel, aiSetKey, aiLogin, aiCancelLogin, aiLogout, aiAccount, aiSetModel, aiSetClientId, symbolIcon, fileIndexStart, findFiles, recentFiles, queryFiles, runningApps, systemInfo, calculate, define, dictionaryWarm, webSuggest, contactsAccess, contactsRequest, searchContacts, systemCommand, appAction, arrangeWindow, selectedText, watchSnippets, replaceTyped, trashFile, appsFor, openWith, quickLook, quickLookVisible, searchContents, accessibilityTrusted, fileIcon, revealFile, fileIndexStatus, show, toggle, unregisterHotkey, checkHotkey, hotkeyDisplay, recordHotkey, loadShortcuts, saveShortcut, checkKeyword, ensureShortcutsFile, removeShortcut, bindHotkey, unbindHotkey, setLauncherHotkey, expandTemplate, watchShortcuts, runShell, cliMain, cliServe, cliWrite, cliEnd, cliUsage } from "tish:nimble"
 import { env } from "tish:process"
 import { THEME } from "./theme.tish"
 
@@ -25,12 +25,14 @@ const AI_WRAP = 92
 const AI_TITLE = "Apple Intelligence"
 let HOME = env.HOME ? env.HOME : ""
 let AI_INSTRUCTIONS = "You are the assistant inside Nimble, a macOS launcher. Answer briefly and plainly in a few short sentences. Do not use Markdown. "
-  + "Use the tools to look things up on this Mac (files, apps, clipboard history, system facts) instead of guessing, and never say you searched without calling a tool. "
+  + "Most questions, such as how to do something, general facts, advice or writing, need no tool: answer them from what you know. "
+  + "Use a tool only when the question is about this Mac (its files, apps, clipboard history, settings or system facts) or is exactly what a tool does, call it once, then answer from its reply. Never say you searched without calling a tool. "
   + "When a tool lists results, the user also sees them as rows they can open, so summarise instead of repeating every path. "
-  + "For any arithmetic, unit or currency conversion, or the time in another place, call the calculate tool and give its answer; you do not know today's exchange rates or the current time. "
-  + "When asked what a word means or how it is said, call the define tool and answer from its reply in a sentence or two. "
+  + "For arithmetic on numbers, a unit or currency conversion, or the time in another place, call the calculate tool with just that expression; you do not know today's exchange rates or the current time. "
+  + "Only when the user asks what a particular word means or how it is said, call the define tool with that word and answer from its reply in a sentence or two. "
   + "Only say a setting was changed when a tool reply says so, and pass on what the reply says. "
   + "When the user asks to open an app, file, folder or website, call the open tool; when they ask to copy text, call the copyText tool. "
+  + "Never open anything, run a shortcut or change a setting unless the user asks for exactly that. "
   + "The user's home folder is " + HOME + "."
 let FILE_KINDS = ["any", "image", "video", "audio", "pdf", "document", "text", "spreadsheet", "presentation", "archive", "diskimage", "folder"]
 // The AI's controlMac actions as systemCommand id and arg. Restart, shut down, log out, quit all
@@ -82,7 +84,7 @@ fn aiTools() {
   ]
   let list = config.shortcuts.slice(0, 30).map((s) => s.keyword + " (" + s.name + ")")
   if (list.length > 0) {
-    tools.push({ name: "runShortcut", description: "Run one of the user's Nimble shortcuts. Available: " + list.join(", ") + ".", params: [
+    tools.push({ name: "runShortcut", description: "Run one of the user's Nimble shortcuts, only when the user asks to run or use it by name. Available: " + list.join(", ") + ".", params: [
       { name: "keyword", description: "The shortcut's keyword" },
       opt("input", "Text the shortcut needs, if any")
     ] })
@@ -109,11 +111,13 @@ fileIndexStart()
 dictionaryWarm()
 let hotkey = ""
 let hotkeyLabel = ""
+let hotkeyId = 0
 for (let i = 0; i < HOTKEYS.length && hotkey === ""; i = i + 1) {
   let r = registerHotkey(HOTKEYS[i])
   if (r.ok) {
     hotkey = HOTKEYS[i]
     hotkeyLabel = r.display
+    hotkeyId = r.id
     console.log("nimble: hotkey " + r.display + " (registered as " + r.registered.join(", ") + ")")
   } else {
     console.log("nimble: hotkey " + r.error)
@@ -900,13 +904,18 @@ fn webRows(text) {
 fn webResults(text) {
   let t = text.trim()
   if (t !== "" && shell.mode.suggested !== t) {
+    pending.web = t
     webSuggest(expandTemplate(webEngine().suggest, t, "url"), t, onWebSuggest)
   }
   return webRows(text)
 }
 
 fn onWebSuggest(r) {
+  if (r.query === pending.web) {
+    pending.web = ""
+  }
   if (!modeIs("web") || r.query !== shell.query.trim()) {
+    refresh()
     return
   }
   shell.mode.suggestions = r.results
@@ -1046,7 +1055,7 @@ fn contactsAccessLabel() {
 fn settingsResults(text) {
   let t = text.trim().toLowerCase()
   let rows = [
-    { name: "Launcher Hotkey", kind: hotkeyLabel !== "" ? hotkeyLabel : "None", icon: symbolIcon("keyboard"), act: "shortcuts", group: "General" },
+    { name: "Launcher Hotkey", kind: hotkeyLabel !== "" ? hotkeyLabel : "None", icon: symbolIcon("keyboard"), act: "launcher", group: "General" },
     { name: "Shortcuts", kind: config.shortcuts.length + (config.shortcuts.length === 1 ? " shortcut" : " shortcuts"), icon: symbolIcon("command.square"), act: "shortcuts", group: "General" },
     { name: "Edit shortcuts.json", kind: "", icon: "NSActionTemplate", act: "edit", group: "General" },
     { name: "Search Engine", kind: webEngine().name, icon: webIcon, act: "engine", group: "Search" },
@@ -1060,7 +1069,10 @@ fn settingsResults(text) {
 }
 
 fn openSetting(r) {
-  if (r.act === "shortcuts") {
+  if (r.act === "launcher") {
+    enterSub({ name: "Launcher Hotkey", mode: "assign-hotkey", pluginTitle: "Nimble", icon: symbolIcon("keyboard"), row: null, launcher: true, keys: "", check: null, current: hotkey })
+    recordHotkey(true)
+  } else if (r.act === "shortcuts") {
     openCommand(commandAt("nimble:shortcuts"), "")
   } else if (r.act === "edit") {
     runBuiltin(commandAt("nimble:edit-shortcuts"))
@@ -1954,6 +1966,7 @@ fn listResults(text) {
   }
   if (m.mode === "files") {
     if (text.trim().length >= CONTENT_MIN_CHARS) {
+      pending.contents = text
       searchContents(text, CONTENT_MAX, onContents)
     }
     return fileResults(text, FILE_LIST_MAX, 0)
@@ -2412,13 +2425,32 @@ fn saveRowHotkey(r, keys, current) {
 
 fn assignHotkeyResults(text) {
   let m = shell.mode
-  let label = targetLabel(hotkeyTarget(m.row))
+  let label = m.launcher ? "the Nimble launcher" : targetLabel(hotkeyTarget(m.row))
   if (m.keys === "") {
-    let now = m.current !== "" ? "now " + hotkeyDisplay(m.current) + " · ⌫ removes it" : ""
+    let now = m.current === "" ? "" : "now " + hotkeyDisplay(m.current) + (m.launcher ? "" : " · ⌫ removes it")
     return [{ name: "Press the keys for " + label, kind: now, icon: symbolIcon("keyboard"), mode: "hotkey-prompt" }]
   }
   let ok = m.check === null || m.check.ok
   return [{ name: hotkeyDisplay(m.keys) + "  →  " + label, kind: ok ? "free · Return saves" : m.check.error, icon: symbolIcon(ok ? "keyboard" : "exclamationmark.triangle"), mode: "hotkey-prompt" }]
+}
+
+// Switch the launcher to `keys` now and save it as "launcher" in shortcuts.json. The old hotkey
+// stays registered until the new one is. Returns an error, or "".
+fn changeLauncherHotkey(keys) {
+  let r = registerHotkey(keys)
+  if (!r.ok) {
+    return r.error
+  }
+  if (hotkeyId > 0) {
+    unregisterHotkey(hotkeyId)
+  }
+  hotkey = keys
+  hotkeyId = r.id
+  hotkeyLabel = r.display
+  statusItem(hotkeyLabel, THEME.statusIcon, (what) => onStatusMenu(what))
+  let saved = setLauncherHotkey(keys)
+  reloadShortcuts()
+  return saved.ok ? "" : hotkeyLabel + " works until Nimble quits; saving it failed: " + saved.error
 }
 
 // Keys pressed while Assign Hotkey records.
@@ -2430,7 +2462,7 @@ fn assignRecord(spec) {
     return
   }
   if (spec === "delete") {
-    if (m.keys === "" && m.current !== "") {
+    if (m.keys === "" && m.current !== "" && !m.launcher) {
       recordHotkey(false)
       let err = saveRowHotkey(m.row, "", m.current)
       leaveSub()
@@ -2444,6 +2476,15 @@ fn assignRecord(spec) {
       return
     }
     recordHotkey(false)
+    if (m.launcher) {
+      let failed = changeLauncherHotkey(m.keys)
+      leaveSub()
+      shell.apps = settingsResults(shell.query)
+      compose()
+      shell.hud = failed !== "" ? failed : hotkeyLabel + " now opens Nimble"
+      refresh()
+      return
+    }
     let err = saveRowHotkey(m.row, m.keys, m.current)
     let msg = err !== "" ? err : hotkeyDisplay(m.keys) + " now opens " + targetLabel(hotkeyTarget(m.row))
     leaveSub()
@@ -2461,6 +2502,18 @@ fn assignRecord(spec) {
   setQuery("")
 }
 
+// The text of each asynchronous search still out (files, contents, web), "" when none.
+let pending = { files: "", contents: "", web: "" }
+
+// Something is on its way: the header shows a spinner in place of the search icon.
+fn busy() {
+  if ((inAi() && ai.request !== 0) || aiCatalog.loading || hyperyState.loading || hyperyState.signingIn) {
+    return true
+  }
+  let q = shell.query
+  return (pending.files !== "" && pending.files === q) || (pending.contents !== "" && pending.contents === q) || (modeIs("web") && pending.web !== "" && pending.web === q.trim())
+}
+
 // The file index answers synchronously; while it builds (or is busy applying changes), Spotlight
 // answers asynchronously through onFiles. An empty query in Search Files lists recent files.
 fn fileResults(text, limit, icons) {
@@ -2473,6 +2526,7 @@ fn fileResults(text, limit, icons) {
     shell.fileMs = f.ms
     return f.results
   }
+  pending.files = text
   searchFiles(text, limit, onFiles)
   return []
 }
@@ -2569,7 +2623,98 @@ fn follow() {
   }
 }
 
+fn clampTo(n, lo, hi) {
+  return Math.max(lo, Math.min(n, hi))
+}
+
+// Where the view is, in rows: grid rows in the grid, answer lines (or tool results once the
+// answer fits) in Ask AI, results elsewhere. { total, first, shown }; `lay` is the list's layout.
+fn scrollState(lay) {
+  if (isGrid()) {
+    return { total: Math.ceil(shell.results.length / GRID_COLS), first: Math.floor(shell.offset / GRID_COLS), shown: GRID_ROWS }
+  }
+  if (inAi()) {
+    let a = aiLayout()
+    if (a.lines.length > a.shown) {
+      return { total: a.lines.length, first: ai.scroll, shown: a.shown }
+    }
+    return { total: ai.items.length, first: ai.itemOff, shown: a.room }
+  }
+  let shown = 0
+  for (let i = 0; i < lay.slots.length; i = i + 1) {
+    if (lay.slots[i].kind === "row") {
+      shown = shown + 1
+    }
+  }
+  return { total: shell.results.length, first: shell.offset, shown: shown }
+}
+
+// The first result that still fills the list to its last row.
+fn lastOffset() {
+  let end = shell.results.length - 1
+  let o = Math.max(0, end)
+  while (o > 0 && lastVisible(o - 1) === end) {
+    o = o - 1
+  }
+  return o
+}
+
+// Trackpad, mouse wheel and scroll bar clicks: move the view `n` rows (negative: up). The
+// selection stays on screen, moving with the edge it would leave by.
+fn scrollBy(n) {
+  if (isCompact() || n === 0) {
+    return
+  }
+  if (inAi()) {
+    let a = aiLayout()
+    if (a.lines.length > a.shown) {
+      ai.scroll = clampTo(ai.scroll + n, 0, a.lines.length - a.shown)
+    } else if (ai.items.length > a.room) {
+      ai.itemOff = clampTo(ai.itemOff + n, 0, ai.items.length - a.room)
+      if (ai.pick >= 0) {
+        ai.pick = clampTo(ai.pick, ai.itemOff, ai.itemOff + a.room - 1)
+      }
+    }
+    showAi()
+    return
+  }
+  if (isGrid()) {
+    let rows = Math.ceil(shell.results.length / GRID_COLS)
+    let top = clampTo(Math.floor(shell.offset / GRID_COLS) + n, 0, Math.max(0, rows - GRID_ROWS))
+    shell.offset = top * GRID_COLS
+    let col = shell.selected % GRID_COLS
+    let row = clampTo(Math.floor(shell.selected / GRID_COLS), top, top + GRID_ROWS - 1)
+    shell.selected = Math.min(row * GRID_COLS + col, shell.results.length - 1)
+  } else {
+    shell.offset = clampTo(shell.offset + n, 0, lastOffset())
+    shell.selected = clampTo(shell.selected, shell.offset, lastVisible(shell.offset))
+  }
+  refresh()
+}
+
+// A thin bar at the right of the list: the thumb is the share of the rows on screen, placed where
+// they are. Clicking above or below the thumb pages. Clear when everything fits.
+fn ScrollBar(props) {
+  let S = THEME.scrollbar
+  let s = props.scroll
+  let track = props.height - 2 * S.inset
+  let on = s.shown > 0 && s.total > s.shown
+  let thumb = on ? clampTo(Math.round(track * s.shown / s.total), S.minThumb, track) : 1
+  let top = on ? Math.round((track - thumb) * Math.min(1, s.first / (s.total - s.shown))) : 0
+  let page = Math.max(1, s.shown - 1)
+  return (
+    <div paddingLeft={S.gap}
+      ><row height={S.inset + top} onClick={() => scrollBy(-page)} backgroundColor={CLEAR}
+      /><row height={thumb} onClick={() => scrollBy(0)} borderRadius={S.width / 2} backgroundColor={on ? C.scrollThumb : CLEAR} hoverBackgroundColor={on ? C.scrollThumbHover : CLEAR}
+      /><row height={Math.max(1, track - top - thumb) + S.inset} onClick={() => scrollBy(page)} backgroundColor={CLEAR} /></div>
+  )
+}
+
 fn onFiles(r) {
+  if (r.query === pending.files) {
+    pending.files = ""
+    refresh()
+  }
   if ((shell.mode !== null && !inFiles()) || r.query !== shell.query) {
     return
   }
@@ -2583,6 +2728,10 @@ let CONTENT_MIN_CHARS = 3
 let CONTENT_MAX = 8
 
 fn onContents(r) {
+  if (r.query === pending.contents) {
+    pending.contents = ""
+    refresh()
+  }
   if (!inFiles() || r.query !== shell.query) {
     return
   }
@@ -2600,7 +2749,7 @@ fn onContents(r) {
 // model: what this visit asks ("apple" or provider:model). With a remote model, messages is the
 // conversation so far, turnStart where the current question's messages begin and turnId its turn.
 fn freshAi() {
-  return { session: 0, request: 0, question: "", answer: "", error: "", scroll: 0, t0: 0, ms: 0, stopped: false, items: [], itemsTitle: "", pick: -1, itemOff: 0, model: "", messages: [], turnStart: 0, turnId: 0 }
+  return { session: 0, request: 0, question: "", answer: "", error: "", scroll: 0, t0: 0, ms: 0, stopped: false, items: [], itemsTitle: "", pick: -1, itemOff: 0, model: "", messages: [], turnStart: 0, turnId: 0, gate: null, activity: "", retried: false }
 }
 
 let ai = freshAi()
@@ -2936,6 +3085,8 @@ fn remoteAsk(question) {
   ai.error = ""
   ai.stopped = false
   ai.scroll = 0
+  ai.gate = freshToolGate(ai.model, ai.question)
+  ai.activity = ""
   ai.t0 = Date.now()
   if (ai.messages.length === 0) {
     ai.messages.push({ role: "system", content: AI_INSTRUCTIONS })
@@ -3180,6 +3331,14 @@ fn wrapText(text, width) {
   return out
 }
 
+// Shown in place of the answer until its first words arrive.
+fn aiWaiting() {
+  if (ai.activity !== "") {
+    return ai.activity + "…"
+  }
+  return isRemote(ai.model) ? "Asking " + modelName(ai.model) + "…" : "Thinking…"
+}
+
 fn aiLines() {
   return wrapText(ai.answer.split("**").join("").trim(), AI_WRAP)
 }
@@ -3187,7 +3346,7 @@ fn aiLines() {
 // How the list splits between answer lines and tool results: { lines, shown (answer lines on
 // screen), room (result rows on screen) }. With results the answer keeps at most AI_ANSWER_ROWS lines.
 fn aiLayout() {
-  let lines = ai.answer === "" ? [] : aiLines()
+  let lines = ai.answer !== "" ? aiLines() : (ai.request !== 0 ? [aiWaiting()] : (ai.error !== "" ? wrapText(ai.error, AI_WRAP) : []))
   if (ai.items.length === 0) {
     return { lines: lines, shown: Math.min(lines.length, ROWS), room: 0 }
   }
@@ -3200,7 +3359,8 @@ fn aiLayout() {
 fn aiRows() {
   let lay = aiLayout()
   let action = { copy: ai.answer, hud: "Copied answer" }
-  let rows = lay.lines.slice(ai.scroll, ai.scroll + lay.shown).map((l) => ({ name: l, kind: "", icon: "", item: false, line: true, action: action }))
+  let waiting = ai.answer === "" && ai.request !== 0
+  let rows = lay.lines.slice(ai.scroll, ai.scroll + lay.shown).map((l) => ({ name: l, kind: "", icon: "", item: false, line: true, dim: waiting, action: action }))
   return rows.concat(ai.items.slice(ai.itemOff, ai.itemOff + lay.room))
 }
 
@@ -3254,6 +3414,19 @@ fn aiErrorText(raw) {
 
 fn onAiEvent(e) {
   if (e.request !== ai.request) {
+    return
+  }
+  // The on-device model's context is small; when a conversation fills it, ask again once in a
+  // new one rather than give up.
+  if (e.kind === "error" && e.text.indexOf("exceededContextWindowSize") >= 0 && !ai.retried) {
+    let q = ai.question
+    aiEndSession(ai.session)
+    ai.session = aiSession(AI_INSTRUCTIONS, aiTools(), onAiTool)
+    ai.request = 0
+    askAi(q)
+    ai.retried = true
+    shell.hud = "Started a new conversation: the on-device model's memory was full"
+    refresh()
     return
   }
   if (e.kind === "error") {
@@ -3672,9 +3845,163 @@ fn runAiTool(name, argsJson) {
   return toolReply("Unknown tool " + name, "", [])
 }
 
+// Tool calls per question, and the longest reply the on-device model gets (its context holds about
+// 4,000 tokens, instructions and tools included).
+const AI_TOOL_CALLS = 3
+const AI_TOOL_TEXT = 700
+const REMOTE_TOOL_TEXT = 6000
+
+// One question's tool calls: { calls, seen, cap }. The on-device model sometimes calls tools in a
+// loop (define "tie", "knot", "loop", …) until its context is full; a repeat or a call past the
+// limit gets told to answer instead.
+fn freshToolGate(model, question) {
+  return { calls: 0, seen: {}, cap: isRemote(model) ? REMOTE_TOOL_TEXT : AI_TOOL_TEXT, words: questionWords(question) }
+}
+
+// Tools that do something on this Mac run only when the question asks for that kind of thing: the
+// on-device model otherwise reaches for them unasked (runShortcut "hypery" for "how to tie a tie").
+const AI_ACTION_WORDS = {
+  open: ["open", "launch", "start", "show", "visit", "go", "load", "browse", "bring"],
+  copyText: ["copy", "clipboard"],
+  revealFile: ["reveal", "show", "finder", "where"],
+  controlMac: ["dark", "light", "volume", "mute", "unmute", "louder", "quieter", "sound", "lock", "sleep", "screen", "screensaver", "saver", "hide", "eject", "restart", "reboot", "shut", "shutdown", "log", "logout", "quit", "trash", "turn", "set"],
+  arrangeWindow: ["window", "move", "resize", "maximize", "maximise", "center", "centre", "snap", "half", "left", "right", "display", "restore"],
+  runShortcut: ["run", "open", "use", "start", "launch", "search", "go", "do", "trigger", "look"]
+}
+
+// The question's words, lower case, as a set.
+fn questionWords(q) {
+  let words = {}
+  let w = ""
+  let s = (q === null ? "" : String(q)).toLowerCase() + " "
+  for (let i = 0; i < s.length; i = i + 1) {
+    let c = s[i]
+    if ((c >= "a" && c <= "z") || (c >= "0" && c <= "9")) {
+      w = w + c
+    } else {
+      if (w !== "") {
+        words[w] = true
+      }
+      w = ""
+    }
+  }
+  return words
+}
+
+fn hasAnyWord(words, list) {
+  for (let i = 0; i < list.length; i = i + 1) {
+    if (words[list[i]] === true) {
+      return true
+    }
+  }
+  return false
+}
+
+// "" when the question asks for what this tool does, else why it may not run.
+fn actionRefusal(gate, name, argsJson) {
+  let verbs = AI_ACTION_WORDS[name]
+  if (verbs === null) {
+    return ""
+  }
+  let refuse = "The user did not ask for that. Do not call " + name + " for this question; answer it in words."
+  if (!hasAnyWord(gate.words, verbs)) {
+    return refuse
+  }
+  if (name === "runShortcut") {
+    let args = {}
+    try {
+      args = JSON.parse(argsJson)
+    } catch (err) {
+      args = {}
+    }
+    let keyword = argText(args, "keyword").toLowerCase()
+    let named = gate.words[keyword] === true
+    for (let i = 0; i < config.shortcuts.length && !named; i = i + 1) {
+      let s = config.shortcuts[i]
+      if (s.keyword.toLowerCase() === keyword) {
+        let parts = s.name.toLowerCase().split(" ")
+        for (let j = 0; j < parts.length; j = j + 1) {
+          if (parts[j].length >= 3 && verbs.indexOf(parts[j]) < 0 && gate.words[parts[j]] === true) {
+            named = true
+          }
+        }
+      }
+    }
+    if (!named) {
+      return refuse
+    }
+  }
+  return ""
+}
+
+fn gatedTool(gate, name, argsJson) {
+  let key = name + " " + argsJson
+  if (gate.seen[key] === true) {
+    return toolReply("You already have this result. Answer the user now without calling more tools.", "", [])
+  }
+  let refusal = actionRefusal(gate, name, argsJson)
+  if (refusal !== "") {
+    gate.calls = gate.calls + 1
+    gate.seen[key] = true
+    return toolReply(refusal, "", [])
+  }
+  if (gate.calls >= AI_TOOL_CALLS) {
+    return toolReply("No more tool calls for this question. Answer the user now from what you have.", "", [])
+  }
+  gate.calls = gate.calls + 1
+  gate.seen[key] = true
+  let r = runAiTool(name, argsJson)
+  if (r.text.length > gate.cap) {
+    r.text = r.text.slice(0, gate.cap) + "…"
+  }
+  return r
+}
+
+// What Ask AI shows while a tool runs.
+fn toolActivity(name, argsJson) {
+  let args = {}
+  try {
+    args = JSON.parse(argsJson)
+  } catch (err) {
+    args = {}
+  }
+  if (name === "define") {
+    return "Looking up “" + argText(args, "word") + "” in the dictionary"
+  }
+  if (name === "calculate") {
+    return "Calculating " + argText(args, "expression")
+  }
+  if (name === "findFiles") {
+    return "Searching files"
+  }
+  if (name === "findApps") {
+    return "Searching apps"
+  }
+  if (name === "runningApps") {
+    return "Checking open apps"
+  }
+  if (name === "clipboardHistory") {
+    return "Reading clipboard history"
+  }
+  if (name === "systemInfo") {
+    return "Checking this Mac"
+  }
+  if (name === "open") {
+    return "Opening " + argText(args, "target")
+  }
+  return "Working"
+}
+
 // The Ask AI view's tools: results become rows under the answer.
 fn onAiTool(name, argsJson) {
-  let r = runAiTool(name, argsJson)
+  if (inAi()) {
+    ai.activity = toolActivity(name, argsJson)
+    showAi()
+  }
+  if (ai.gate === null) {
+    ai.gate = freshToolGate(ai.model, ai.question)
+  }
+  let r = gatedTool(ai.gate, name, argsJson)
   if (r.items.length > 0 && inAi()) {
     ai.items = r.items
     ai.itemsTitle = r.title
@@ -3685,8 +4012,8 @@ fn onAiTool(name, argsJson) {
   return r.text
 }
 
-fn cliAiTool(name, argsJson) {
-  return runAiTool(name, argsJson).text
+fn cliAiTool(gate) {
+  return (name, argsJson) => gatedTool(gate, name, argsJson).text
 }
 
 fn askAi(question) {
@@ -3714,6 +4041,9 @@ fn askAi(question) {
   ai.error = ""
   ai.stopped = false
   ai.scroll = 0
+  ai.gate = freshToolGate(ai.model, ai.question)
+  ai.activity = ""
+  ai.retried = false
   ai.t0 = Date.now()
   ai.request = aiAsk(ai.session, ai.question, onAiEvent)
   if (ai.request === 0) {
@@ -4159,6 +4489,10 @@ fn onKey(name) {
     refresh()
     return
   }
+  if (name.indexOf("scroll:") === 0) {
+    scrollBy(Number(name.slice(7)))
+    return
+  }
   if (name.indexOf("record:") === 0) {
     if (modeIs("create")) {
       wizRecord(name.slice(7))
@@ -4365,11 +4699,13 @@ fn SlotRow(props) {
   let header = slot.kind === "header"
   let icons = row && !props.wide
   let textH = row || header ? 0 : 1
+  let bg = props.selected ? SELECTED : CLEAR
   return (
     <row
       onClick={() => open(slot.index)}
       borderRadius={THEME.radius.row}
-      backgroundColor={props.selected ? SELECTED : CLEAR}
+      backgroundColor={bg}
+      hoverBackgroundColor={props.selected ? SELECTED : (row && r !== null && r.line !== true ? C.hover : bg)}
       columnWidths={icons ? [38, "flex", 240] : [1, "flex", 1]}
       alignItems="center"
       height={slot.height}
@@ -4392,7 +4728,7 @@ fn GridCell(props) {
   let r = props.result
   let big = props.height > 1
   return (
-    <row onClick={() => open(props.index)} backgroundColor={props.selected ? SELECTED : CLEAR} borderRadius={THEME.radius.gridCell} columnWidths={["flex"]} alignItems="center" height={props.height} paddingLeft={4} paddingRight={4}
+    <row onClick={() => open(props.index)} backgroundColor={props.selected ? SELECTED : CLEAR} hoverBackgroundColor={props.selected ? SELECTED : (r !== null && big ? C.hover : CLEAR)} borderRadius={THEME.radius.gridCell} columnWidths={["flex"]} alignItems="center" height={props.height} paddingLeft={4} paddingRight={4}
     ><div><image src={r !== null ? r.icon : ""} height={big ? THEME.icon.grid : 0} /><text
       fontSize={T.gridLabel} color={C.text} textAlign="center" paddingTop={big ? 6 : 0} height={big ? 0 : 1}
     >{r !== null ? shortName(r.name) : ""}</text></div></row>
@@ -4418,7 +4754,7 @@ fn CategoryButton(props) {
   let c = props.category
   let on = props.compact && props.selected
   return (
-    <row onClick={() => openCategory(c, "")} backgroundColor={on ? C.accent : CLEAR} borderRadius={CAT_W / 2} columnWidths={["flex"]} alignItems="center" height={HEADER_H}
+    <row onClick={() => openCategory(c, "")} backgroundColor={on ? C.accent : CLEAR} hoverBackgroundColor={on ? C.accent : (props.compact ? C.hover : CLEAR)} borderRadius={CAT_W / 2} columnWidths={["flex"]} alignItems="center" height={HEADER_H}
     ><image src={props.compact ? c.symbol : ""} symbol={true} symbolScale={THEME.icon.symbolScale} tint={on ? C.onAccent : C.secondaryText} height={THEME.icon.category} /></row>
   )
 }
@@ -4460,7 +4796,7 @@ fn clickHint(h) {
 fn HintKey(props) {
   let h = props.hint
   return (
-    <row onClick={() => clickHint(h)} backgroundColor={h !== null ? C.keycap : CLEAR} borderRadius={THEME.radius.keycap} alignItems="center" height={20} paddingLeft={4} paddingRight={4}
+    <row onClick={() => clickHint(h)} backgroundColor={h !== null ? C.keycap : CLEAR} hoverBackgroundColor={h !== null ? C.keycapHover : CLEAR} borderRadius={THEME.radius.keycap} alignItems="center" height={20} paddingLeft={4} paddingRight={4}
     ><text fontSize={T.keycap} fontWeight={THEME.weight.keycap} color={C.secondaryText} textAlign="center">{h !== null ? h[1] : ""}</text></row>
   )
 }
@@ -4540,7 +4876,7 @@ fn footerHints() {
     return [["Run", "↵"], ["Back", "esc"]]
   }
   if (modeIs("assign-hotkey")) {
-    return [["Save", "↵"], [shell.mode.current !== "" && shell.mode.keys === "" ? "Remove" : "Clear", "⌫"], ["Back", "esc"]]
+    return [["Save", "↵"], [shell.mode.current !== "" && shell.mode.keys === "" && !shell.mode.launcher ? "Remove" : "Clear", "⌫"], ["Back", "esc"]]
   }
   if (modeIs("openwith")) {
     return [["Open", "↵"], ["Back", "esc"]]
@@ -4810,10 +5146,14 @@ fn App() {
   // Header: search icon (the category's symbol inside a category), field, 4 category buttons.
   let cat = categoryIndex()
   let inset = 14
-  // Gaps are their own columns, so each button's row is exactly its circle.
+  // Gaps are their own columns, so each button's row is exactly its circle. The spinner is always
+  // there (changing the tree's shape would rebuild the field); while busy it takes the icon's width.
+  let spin = busy()
+  let iconW = spin ? 1 : 52
+  let spinW = spin ? 52 : 1
   let headerWidths = compact
-    ? [52, FIELD_W - 52 - inset, inset + CAT_GAP, CAT_W, CAT_GAP, CAT_W, CAT_GAP, CAT_W, CAT_GAP, CAT_W]
-    : [52, "flex", inset, 1, 1, 1, 1, 1, 1, 1]
+    ? [iconW, spinW, FIELD_W - 53 - inset, inset + CAT_GAP, CAT_W, CAT_GAP, CAT_W, CAT_GAP, CAT_W, CAT_GAP, CAT_W]
+    : [iconW, spinW, "flex", inset, 1, 1, 1, 1, 1, 1, 1]
   let buttons = []
   for (let i = 0; i < 4; i = i + 1) {
     buttons.push(<space />)
@@ -4821,14 +5161,18 @@ fn App() {
   }
   let header = (
     <row columnWidths={headerWidths} alignItems="center" height={HEADER_H} backgroundColor={CLEAR}
-    ><image src={cat >= 0 ? CATEGORIES[cat].symbol : THEME.icon.search} symbol={true} symbolScale={THEME.icon.symbolScale} tint={cat >= 0 ? C.accent : C.secondaryText} height={THEME.icon.field} /><textinput value={shell.query} onChange={onFieldChange} bezeled={false} fontSize={T.field} placeholder={placeholder()} />{buttons}</row>
+    ><image src={cat >= 0 ? CATEGORIES[cat].symbol : THEME.icon.search} symbol={true} symbolScale={THEME.icon.symbolScale} tint={cat >= 0 ? C.accent : C.secondaryText} height={spin ? 1 : THEME.icon.field} /><progress_bar indeterminate={true} /><textinput value={shell.query} onChange={onFieldChange} bezeled={false} fontSize={T.field} placeholder={placeholder()} />{buttons}</row>
   )
   let footer = (
     <row columnWidths={widths} alignItems="center" height={FOOTER_H} paddingLeft={18} paddingRight={12} backgroundColor={CLEAR}
     ><text fontSize={T.status} color={C.secondaryText}>{statusText()}</text>{cells}</row>
   )
+  // The list's height: SLOTS slots and GRID_ROWS grid rows, with the 1 px ones, in either view.
+  let listH = LIST_H + total + GRID_ROWS
+  let bar = THEME.scrollbar
   return (
-    <div>{header}<rule /><div paddingLeft={8} paddingRight={8} paddingTop={LIST_PAD} paddingBottom={LIST_PAD}>{rows}</div><rule />{footer}</div>
+    <div>{header}<rule /><div paddingLeft={8} paddingRight={2} paddingTop={LIST_PAD} paddingBottom={LIST_PAD}
+    ><row columnWidths={["flex", bar.gap + bar.width]} height={listH}><div>{rows}</div><ScrollBar scroll={scrollState(lay)} height={listH} /></row></div><rule />{footer}</div>
   )
 }
 
@@ -4975,7 +5319,7 @@ fn cliAsk(token, question, model) {
   }
   let m = model !== "" ? model : currentModel()
   if (isRemote(m)) {
-    let t = newTurn(m, [{ role: "system", content: AI_INSTRUCTIONS }, { role: "user", content: question.trim() }], cliAiTool, onCliTurn)
+    let t = newTurn(m, [{ role: "system", content: AI_INSTRUCTIONS }, { role: "user", content: question.trim() }], cliAiTool(freshToolGate(m, question)), onCliTurn)
     t.token = token
     t.printed = 0
     turnSend(t)
@@ -4986,7 +5330,7 @@ fn cliAsk(token, question, model) {
     cliFail(token, AI_TITLE + " is unavailable: " + why)
     return
   }
-  let session = aiSession(AI_INSTRUCTIONS, aiTools(), cliAiTool)
+  let session = aiSession(AI_INSTRUCTIONS, aiTools(), cliAiTool(freshToolGate(APPLE_MODEL, question)))
   let printed = { n: 0 }
   let request = aiAsk(session, question, (e) => {
     if (e.kind === "error") {
