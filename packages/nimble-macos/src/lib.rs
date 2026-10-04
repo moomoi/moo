@@ -4,6 +4,11 @@
 #[cfg(target_os = "macos")]
 mod ai;
 #[cfg(target_os = "macos")]
+mod bridge;
+mod calc;
+#[cfg(target_os = "macos")]
+mod chats;
+#[cfg(target_os = "macos")]
 mod cli;
 #[cfg(target_os = "macos")]
 mod clip;
@@ -13,13 +18,24 @@ mod frecency;
 mod fsindex;
 #[cfg(target_os = "macos")]
 mod fslive;
+mod history;
+#[cfg(target_os = "macos")]
+mod http;
 mod index;
+#[cfg(target_os = "macos")]
+mod keychain;
 #[cfg(target_os = "macos")]
 mod keymap;
 #[cfg(target_os = "macos")]
 mod keys;
 #[cfg(target_os = "macos")]
 mod mac;
+#[cfg(target_os = "macos")]
+mod oauth;
+#[cfg(target_os = "macos")]
+mod rates;
+#[cfg(target_os = "macos")]
+mod remote;
 #[cfg(target_os = "macos")]
 mod shell;
 #[cfg(unix)]
@@ -127,6 +143,23 @@ fn native_frecency(args: &[Value]) -> Value {
     Value::Number(frecency::boost(&str_arg(args, 0)) as f64)
 }
 
+/// `searchHistory(limit)` -> recent queries, newest first.
+fn native_search_history(args: &[Value]) -> Value {
+    let limit = num_arg(args, 0, 20.0).max(0.0) as usize;
+    Value::Array(VmRef::new(history::list(limit).into_iter().map(|q| Value::String(q.as_str().into())).collect()))
+}
+
+/// `addSearchHistory(query)`: move `query` to the top of the search history.
+fn native_add_search_history(args: &[Value]) -> Value {
+    history::add(&str_arg(args, 0));
+    Value::Null
+}
+
+fn native_clear_search_history(_args: &[Value]) -> Value {
+    history::clear();
+    Value::Null
+}
+
 fn native_app_count(_args: &[Value]) -> Value {
     Value::Number(index::app_count() as f64)
 }
@@ -180,6 +213,32 @@ mod natives {
         mac::set_callbacks(field(opts, "onKey"), field(opts, "onShow"), field(opts, "onHotkey"));
         mac::set_start_hidden(matches!(field(opts, "hidden"), Some(Value::Bool(true))));
         mac::schedule_setup();
+        Value::Null
+    }
+
+    /// `setPanelShape(height, segments)`: resize the panel (its top edge stays put) and cut it into
+    /// rounded pieces, each `[x, width, radius]` spanning the full height (Spotlight's idle bar is
+    /// a field capsule plus round buttons). The layout keeps its full size and is clipped.
+    pub fn set_panel_shape(args: &[Value]) -> Value {
+        let h = num_arg(args, 0, 0.0);
+        let segs: Vec<(f64, f64, f64)> = match args.get(1) {
+            Some(Value::Array(a)) => a
+                .borrow()
+                .iter()
+                .filter_map(|s| match s {
+                    Value::Array(p) => {
+                        let p = p.borrow();
+                        let n = |i: usize| p.get(i).and_then(|v| v.as_number());
+                        Some((n(0)?, n(1)?, n(2).unwrap_or(0.0)))
+                    }
+                    _ => None,
+                })
+                .collect(),
+            _ => Vec::new(),
+        };
+        if h > 0.0 {
+            mac::set_panel_shape(h, segs);
+        }
         Value::Null
     }
 
@@ -327,6 +386,8 @@ mod natives {
             input: text_field(v, "input"),
             output: text_field(v, "output"),
             hotkey,
+            model: text_field(v, "model"),
+            expand: matches!(field(v, "expand"), Some(Value::Bool(true))),
         };
         let replacing = match args.get(1) {
             Some(Value::String(r)) if !r.is_empty() => Some(r.to_string()),
@@ -681,6 +742,7 @@ mod natives {
     pub fn launch(_a: &[Value]) -> Value { Value::Bool(false) }
     pub fn copy_text(_a: &[Value]) -> Value { Value::Bool(false) }
     pub fn setup(_a: &[Value]) -> Value { Value::Null }
+    pub fn set_panel_shape(_a: &[Value]) -> Value { Value::Null }
     pub fn register_hotkey(_a: &[Value]) -> Value {
         obj(vec![("ok", Value::Bool(false)), ("error", Value::String("macOS only".into()))])
     }
@@ -740,6 +802,10 @@ pub fn nimble_object() -> Value {
     m.insert(Arc::from("search"), Value::native(native_search));
     m.insert(Arc::from("launch"), Value::native(natives::launch));
     m.insert(Arc::from("setup"), Value::native(natives::setup));
+    m.insert(Arc::from("setPanelShape"), Value::native(natives::set_panel_shape));
+    m.insert(Arc::from("searchHistory"), Value::native(native_search_history));
+    m.insert(Arc::from("addSearchHistory"), Value::native(native_add_search_history));
+    m.insert(Arc::from("clearSearchHistory"), Value::native(native_clear_search_history));
     m.insert(Arc::from("registerHotkey"), Value::native(natives::register_hotkey));
     m.insert(Arc::from("unregisterHotkey"), Value::native(natives::unregister_hotkey));
     m.insert(Arc::from("checkHotkey"), Value::native(natives::check_hotkey));

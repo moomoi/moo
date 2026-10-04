@@ -8,15 +8,19 @@
 //!     { "keyword": "g", "name": "Google", "kind": "url", "target": "https://www.google.com/search?q={query}" },
 //!     { "keyword": "dl", "name": "Downloads", "kind": "open", "target": "~/Downloads", "hotkey": "ctrl+alt+d" }
 //!   ],
-//!   "hotkeys": [{ "keys": "cmd+shift+v", "run": "nimble:clipboard" }]
+//!   "hotkeys": [{ "keys": "cmd+shift+v", "run": "nimble:clipboard" }],
+//!   "search": "https://duckduckgo.com/?q={query}",
+//!   "ai": { "model": "hypery:gpt-5-mini", "providers": { "work": { "url": "https://llm.example/v1", "keyEnv": "WORK_KEY" } } }
 //! }
 //! ```
 //!
 //! Type a keyword, a space and some text: the text fills `{query}`. Kinds: `url` opens the
 //! expanded URL (query percent-encoded), `open` opens an app, file or folder, `command` runs a
 //! Nimble or plugin command with `input` as its search text, `shell` runs `/bin/sh -c` (query
-//! single-quoted) and shows, copies or discards the output, `text` copies the expanded text.
-//! Templates also take `{clipboard}`, `{date}` (2026-10-03) and `{time}` (17:20).
+//! single-quoted) and shows, copies or discards the output, `text` copies the expanded text (or,
+//! with `"expand": true`, replaces the keyword wherever it is typed), `ai` sends the expanded
+//! prompt to `model` (or the default model). Templates also take `{clipboard}`, `{selection}` (the
+//! text selected in the frontmost app), `{date}` (2026-10-03) and `{time}` (17:20).
 
 use std::path::{Path, PathBuf};
 
@@ -29,9 +33,10 @@ pub enum Kind {
     Command,
     Shell,
     Text,
+    Ai,
 }
 
-pub const KINDS: [Kind; 5] = [Kind::Url, Kind::Open, Kind::Command, Kind::Shell, Kind::Text];
+pub const KINDS: [Kind; 6] = [Kind::Url, Kind::Open, Kind::Command, Kind::Shell, Kind::Text, Kind::Ai];
 
 impl Kind {
     pub fn name(self) -> &'static str {
@@ -41,6 +46,7 @@ impl Kind {
             Kind::Command => "command",
             Kind::Shell => "shell",
             Kind::Text => "text",
+            Kind::Ai => "ai",
         }
     }
 
@@ -61,6 +67,10 @@ pub struct Shortcut {
     pub output: String,
     /// Optional global hotkey that runs the shortcut without opening the launcher.
     pub hotkey: String,
+    /// `ai` only: `provider:model`; empty uses the default model.
+    pub model: String,
+    /// `text` only: expand the keyword as a snippet wherever it is typed.
+    pub expand: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -79,6 +89,29 @@ pub struct Config {
     pub launcher: String,
     pub shortcuts: Vec<Shortcut>,
     pub hotkeys: Vec<HotkeyBinding>,
+    /// Web search URL with `{query}`; empty means Google.
+    pub search: String,
+    pub ai: AiConfig,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct AiConfig {
+    /// Default model, `provider:model` or `apple`; empty means Apple's on-device model.
+    pub model: String,
+    /// Added providers, or overrides of built-in ones, by id.
+    pub providers: Vec<ProviderConfig>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct ProviderConfig {
+    pub id: String,
+    pub title: String,
+    /// OpenAI-compatible base URL (ends before `/chat/completions`).
+    pub url: String,
+    /// Environment variable holding the API key.
+    pub key_env: String,
+    /// OAuth client id, for providers with browser sign-in.
+    pub client_id: String,
 }
 
 pub const OUTPUTS: [&str; 3] = ["show", "copy", "none"];
@@ -126,12 +159,27 @@ pub fn parse(json: &str) -> Result<(Config, Vec<String>), String> {
     if !matches!(root, Value::Object(_)) {
         return Err("the file must contain a JSON object".into());
     }
-    let mut cfg = Config { launcher: text(&root, "launcher"), ..Config::default() };
+    let mut cfg = Config { launcher: text(&root, "launcher"), search: text(&root, "search"), ..Config::default() };
+    if let Some(ai) = field(&root, "ai") {
+        cfg.ai.model = text(&ai, "model");
+        if let Some(Value::Object(p)) = field(&ai, "providers") {
+            for (id, v) in p.borrow().strings.iter() {
+                cfg.ai.providers.push(ProviderConfig {
+                    id: id.to_string(),
+                    title: text(v, "title"),
+                    url: text(v, "url"),
+                    key_env: text(v, "keyEnv"),
+                    client_id: text(v, "clientId"),
+                });
+            }
+        }
+        cfg.ai.providers.sort_by(|a, b| a.id.cmp(&b.id));
+    }
     let mut warnings = Vec::new();
     for (i, s) in items(&root, "shortcuts").iter().enumerate() {
         let kind_name = text(s, "kind");
         let Some(kind) = Kind::parse(&kind_name) else {
-            warnings.push(format!("shortcut {}: unknown kind `{kind_name}` (url, open, command, shell, text)", i + 1));
+            warnings.push(format!("shortcut {}: unknown kind `{kind_name}` (url, open, command, shell, text, ai)", i + 1));
             continue;
         };
         let sc = Shortcut {
@@ -142,6 +190,8 @@ pub fn parse(json: &str) -> Result<(Config, Vec<String>), String> {
             input: text(s, "input"),
             output: text(s, "output"),
             hotkey: text(s, "hotkey"),
+            model: text(s, "model"),
+            expand: matches!(field(s, "expand"), Some(Value::Bool(true))),
         };
         match check(&cfg, &sc, None) {
             Ok(()) => cfg.shortcuts.push(normalize(sc)),
@@ -270,6 +320,9 @@ pub fn to_json(cfg: &Config) -> String {
         if !s.hotkey.is_empty() {
             fields.push(("hotkey", &s.hotkey));
         }
+        if s.kind == Kind::Ai && !s.model.is_empty() {
+            fields.push(("model", &s.model));
+        }
         for (j, (k, v)) in fields.iter().enumerate() {
             if j > 0 {
                 out.push_str(", ");
@@ -277,6 +330,9 @@ pub fn to_json(cfg: &Config) -> String {
             json_str(&mut out, k);
             out.push_str(": ");
             json_str(&mut out, v);
+        }
+        if s.kind == Kind::Text && s.expand {
+            out.push_str(", \"expand\": true");
         }
         out.push_str(" }");
     }
@@ -293,8 +349,46 @@ pub fn to_json(cfg: &Config) -> String {
         }
         out.push_str(" }");
     }
-    out.push_str(if cfg.hotkeys.is_empty() { "]\n}\n" } else { "\n  ]\n}\n" });
+    out.push_str(if cfg.hotkeys.is_empty() { "]" } else { "\n  ]" });
+    if !cfg.search.is_empty() {
+        out.push_str(",\n  \"search\": ");
+        json_str(&mut out, &cfg.search);
+    }
+    if cfg.ai != AiConfig::default() {
+        out.push_str(",\n  \"ai\": { \"model\": ");
+        json_str(&mut out, &cfg.ai.model);
+        if !cfg.ai.providers.is_empty() {
+            out.push_str(", \"providers\": {");
+            for (i, p) in cfg.ai.providers.iter().enumerate() {
+                out.push_str(if i == 0 { "\n    " } else { ",\n    " });
+                json_str(&mut out, &p.id);
+                out.push_str(": {");
+                let fields = [("title", &p.title), ("url", &p.url), ("keyEnv", &p.key_env), ("clientId", &p.client_id)];
+                let mut first = true;
+                for (k, v) in fields.iter().filter(|f| !f.1.is_empty()) {
+                    out.push_str(if first { " " } else { ", " });
+                    first = false;
+                    json_str(&mut out, k);
+                    out.push_str(": ");
+                    json_str(&mut out, v);
+                }
+                out.push_str(" }");
+            }
+            out.push_str("\n  }");
+        }
+        out.push_str(" }");
+    }
+    out.push_str("\n}\n");
     out
+}
+
+/// Add or replace a provider by id.
+pub fn set_provider(cfg: &mut Config, p: ProviderConfig) {
+    match cfg.ai.providers.iter().position(|x| x.id == p.id) {
+        Some(i) => cfg.ai.providers[i] = p,
+        None => cfg.ai.providers.push(p),
+    }
+    cfg.ai.providers.sort_by(|a, b| a.id.cmp(&b.id));
 }
 
 /// Missing file: an empty config.
@@ -341,6 +435,7 @@ impl Encoding {
 pub struct Vars {
     pub query: String,
     pub clipboard: String,
+    pub selection: String,
     pub date: String,
     pub time: String,
 }
@@ -382,6 +477,8 @@ pub fn expand(template: &str, vars: &Vars, enc: Encoding) -> String {
             (Some(put(&vars.query)), 2)
         } else if tail.starts_with("{clipboard}") {
             (Some(put(&vars.clipboard)), 11)
+        } else if tail.starts_with("{selection}") {
+            (Some(put(&vars.selection)), 11)
         } else if tail.starts_with("{date}") {
             (Some(vars.date.clone()), 6)
         } else if tail.starts_with("{time}") {
@@ -441,7 +538,35 @@ mod tests {
             input: String::new(),
             output: String::new(),
             hotkey: String::new(),
+            model: String::new(),
+            expand: false,
         }
+    }
+
+    #[test]
+    fn ai_snippets_and_search_round_trip() {
+        let json = r#"{
+          "shortcuts": [
+            { "keyword": "fix", "kind": "ai", "target": "Fix the grammar: {selection}", "model": "hypery:gpt-5-mini" },
+            { "keyword": ";sig", "kind": "text", "target": "Best,\nA", "expand": true }
+          ],
+          "hotkeys": [],
+          "search": "https://duckduckgo.com/?q={query}",
+          "ai": { "model": "ollama:llama3.2", "providers": { "work": { "url": "https://llm.example/v1", "keyEnv": "WORK_KEY" }, "hypery": { "clientId": "abc" } } }
+        }"#;
+        let (cfg, w) = parse(json).unwrap();
+        assert!(w.is_empty(), "{w:?}");
+        assert_eq!(cfg.shortcuts[0].kind, Kind::Ai);
+        assert_eq!(cfg.shortcuts[0].model, "hypery:gpt-5-mini");
+        assert!(cfg.shortcuts[1].expand);
+        assert_eq!(cfg.ai.model, "ollama:llama3.2");
+        assert_eq!(cfg.ai.providers.iter().map(|p| p.id.as_str()).collect::<Vec<_>>(), ["hypery", "work"]);
+        assert_eq!(cfg.ai.providers[1].key_env, "WORK_KEY");
+        let written = to_json(&cfg);
+        assert_eq!(parse(&written).unwrap().0, cfg, "{written}");
+        assert!(written.contains("\"expand\": true"));
+        let v = Vars { selection: "teh cat".into(), ..Default::default() };
+        assert_eq!(expand(&cfg.shortcuts[0].target, &v, Encoding::Plain), "Fix the grammar: teh cat");
     }
 
     #[test]
@@ -521,7 +646,7 @@ mod tests {
 
     #[test]
     fn templates_encode_per_kind() {
-        let v = Vars { query: "rust & 'tish'".into(), clipboard: "a b".into(), date: "2026-10-03".into(), time: "17:20".into() };
+        let v = Vars { query: "rust & 'tish'".into(), clipboard: "a b".into(), date: "2026-10-03".into(), time: "17:20".into(), ..Default::default() };
         assert_eq!(expand("https://g.com/?q={query}", &v, Encoding::Url), "https://g.com/?q=rust%20%26%20%27tish%27");
         assert_eq!(expand("echo {query}", &v, Encoding::Shell), r"echo 'rust & '\''tish'\'''");
         assert_eq!(expand("{} | {clipboard} | {date} {time} | {other}", &v, Encoding::Plain), "rust & 'tish' | a b | 2026-10-03 17:20 | {other}");

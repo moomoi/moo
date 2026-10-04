@@ -57,6 +57,31 @@ expansion), window management, calculator, emoji, system commands and script com
 | AI with BYOK and Ollama | Planned: Hypery remote, local Uzu, any OpenAI-compatible local server |
 | Reviewed source store | Planned: signed `.nimbleplugin` packages; third-party code runs as Tier A or in a sandboxed helper |
 
+## Spotlight patterns
+
+The panel follows the macOS 26 (Tahoe) Spotlight wherever it fits a launcher (reference:
+[PCMag, "Apple's improved Spotlight feature in macOS is a real game changer"](https://www.pcmag.com/how-to/apples-improved-spotlight-feature-in-macos-is-a-real-game-changer)).
+Apps and files are already indexed when the panel first opens, so there is no onboarding screen.
+
+| Spotlight | Nimble |
+| --- | --- |
+| Opens as a compact search pill with Applications, Files, Actions and Clipboard buttons beside it | Done: a 52 pt bar, field capsule plus four circles, each with its own blur and edge |
+| Typing expands into results grouped by category, best match first | Done: Top Hit, then Applications, Files, Actions and Ask AI headings |
+| ⌘1–⌘4 (or a button) narrow to Applications, Files, Actions, Clipboard | Done: the field shows the category's symbol and "Search Files" etc.; the same key, ⌫ in an empty field, or esc goes back. Text already typed carries over |
+| "/" to filter the search | Done: "/" lists the categories; "/files report" opens Files searching "report" |
+| ↑ shows previous searches | Done: ↑ in the empty bar lists recent searches (`history.txt`, newest first); a query is recorded when something is opened from it |
+| ↓/↑ move, Return opens | Done; headings are skipped and the list scrolls by slots |
+| ⌘R (or ⌘ double-click) shows the item in Finder | Done for files, folders and apps |
+| Esc clears the query, then closes | Done |
+| Actions with quick keys ("ac", "sp") and an "Add quick keys" button | Shortcut keywords are the quick keys, listed under Quick Keys in Actions; "Create Shortcut" adds one |
+| Actions with parameter fields that run in the background | Planned, with AI Commands and system actions |
+| → cycles categories inside results; Space opens Quick Look | Planned (Space cannot be taken from the focused field; Quick Look will be a key with a modifier) |
+| ⌥⌘Space opens a Finder search window | Not planned |
+| Calendar, Mail, Messages, Contacts, Music, web results | Planned: definitions, contacts, mail and web suggestions |
+
+The CLI drives the same states for scripts and tests: `nimble search <text>`,
+`nimble category applications|files|actions|clipboard|recent [text]` and `nimble history [--clear]`.
+
 The main bet is that the expensive part of Raycast, a JavaScript runtime per extension, can be
 replaced by small Tish VMs and compiled modules while keeping native rendering. The measured cost
 so far is 31 MB of memory with two plugins loaded (see [architecture.md](architecture.md)).

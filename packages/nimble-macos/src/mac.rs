@@ -12,12 +12,13 @@ use std::ptr::NonNull;
 use block2::RcBlock;
 use dispatch2::DispatchQueue;
 use objc2::rc::Retained;
-use objc2::runtime::AnyObject;
+use objc2::runtime::{AnyObject, Bool};
 use objc2::{define_class, msg_send, sel, MainThreadMarker, MainThreadOnly};
 use objc2_app_kit::{
-    NSAppearanceCustomization, NSApplication, NSApplicationActivationPolicy, NSBackingStoreType, NSEvent, NSEventMask,
-    NSEventModifierFlags, NSMenu, NSMenuItem, NSPanel, NSScreen, NSStatusBar, NSStatusItem, NSTextField, NSView,
-    NSWindow, NSWindowButton, NSWindowCollectionBehavior,
+    NSAppearanceCustomization, NSAppearanceNameAqua, NSAppearanceNameDarkAqua, NSApplication, NSApplicationActivationPolicy,
+    NSAutoresizingMaskOptions, NSBackingStoreType, NSBezierPath, NSColor, NSEvent, NSEventMask, NSEventModifierFlags, NSMenu, NSMenuItem,
+    NSPanel, NSResponder, NSScreen, NSStatusBar, NSStatusItem, NSTextField, NSView, NSVisualEffectBlendingMode,
+    NSVisualEffectMaterial, NSVisualEffectState, NSVisualEffectView, NSWindow, NSWindowButton, NSWindowCollectionBehavior,
     NSWindowDidBecomeKeyNotification, NSWindowDidResignKeyNotification, NSWindowStyleMask,
     NSImage, NSPasteboard, NSPasteboardTypeString, NSWindowTitleVisibility, NSWorkspace,
 };
@@ -47,6 +48,10 @@ thread_local! {
     static ON_FILES: RefCell<Option<Value>> = const { RefCell::new(None) };
     static ICON_RING: RefCell<(usize, Vec<String>)> = const { RefCell::new((0, Vec::new())) };
     static STATUS: RefCell<Option<(Retained<NSStatusItem>, Retained<MenuTarget>)>> = const { RefCell::new(None) };
+    /// Panel height and its rounded pieces `(x, width, radius)`; empty means one full rounded rect.
+    static SHAPE: RefCell<(f64, Vec<(f64, f64, f64)>)> = const { RefCell::new((0.0, Vec::new())) };
+    /// Holds one tinted, bordered view per shape piece, behind the layout.
+    static BACKING: RefCell<Option<Retained<NSView>>> = const { RefCell::new(None) };
 }
 
 pub fn set_callbacks(on_key: Option<Value>, on_show: Option<Value>, on_hotkey: Option<Value>) {
@@ -120,10 +125,52 @@ fn position_panel(w: &NSWindow, mtm: MainThreadMarker) {
     w.setFrameOrigin(NSPoint::new(x, top - f.size.height));
 }
 
+const PANEL_RADIUS: f64 = 22.0;
+
+define_class!(
+    /// A borderless panel that can still take keys (AppKit refuses key status to borderless
+    /// windows by default).
+    #[unsafe(super(NSPanel, NSWindow, NSResponder, NSObject))]
+    #[thread_kind = MainThreadOnly]
+    #[name = "NimbleLauncherPanel"]
+    struct LauncherPanel;
+
+    impl LauncherPanel {
+        #[unsafe(method(canBecomeKeyWindow))]
+        fn can_become_key(&self) -> bool {
+            true
+        }
+
+        #[unsafe(method(canBecomeMainWindow))]
+        fn can_become_main(&self) -> bool {
+            false
+        }
+    }
+);
+
+define_class!(
+    /// Top-left origin: the layout keeps its full height, so when the panel is shorter (the idle
+    /// bar) the header stays at the top and the rest is clipped below.
+    #[unsafe(super(NSView, NSResponder, NSObject))]
+    #[thread_kind = MainThreadOnly]
+    #[name = "NimbleTopAnchoredView"]
+    struct TopAnchoredView;
+
+    impl TopAnchoredView {
+        #[unsafe(method(isFlipped))]
+        fn is_flipped(&self) -> bool {
+            true
+        }
+    }
+);
+
 /// macOS 14+ refuses activation requests from background apps, so the launcher must take keys
 /// without activating, and only an NSPanel honours `NonactivatingPanel`. tish-macos creates a plain
 /// NSWindow (re-classing it breaks AppKit's KVO), so its root view moves into our own panel. The
 /// host keeps measuring its window's content view, so that window keeps a same-size placeholder.
+///
+/// The panel is borderless and clear; its content is a vibrancy view (the blurred desktop behind,
+/// like Spotlight) masked to the panel shape, over tinted pieces of that shape, under the root view.
 fn adopt_into_panel(host_window: &NSWindow, mtm: MainThreadMarker) -> Option<Retained<NSWindow>> {
     let root = host_window.contentView()?;
     let (pw, ph) = PANEL_SIZE.with(|c| c.get());
@@ -134,23 +181,124 @@ fn adopt_into_panel(host_window: &NSWindow, mtm: MainThreadMarker) -> Option<Ret
     host_window.setContentSize(NSSize::new(pw, ph));
     host_window.orderOut(None);
 
-    let panel = NSPanel::initWithContentRect_styleMask_backing_defer(
-        NSPanel::alloc(mtm),
-        rect,
-        NSWindowStyleMask::Titled
-            | NSWindowStyleMask::FullSizeContentView
-            | NSWindowStyleMask::NonactivatingPanel,
-        NSBackingStoreType::Buffered,
-        false,
-    );
+    let panel: Retained<LauncherPanel> = unsafe {
+        msg_send![
+            LauncherPanel::alloc(mtm),
+            initWithContentRect: rect,
+            styleMask: NSWindowStyleMask::Borderless | NSWindowStyleMask::NonactivatingPanel,
+            backing: NSBackingStoreType::Buffered,
+            defer: false
+        ]
+    };
+    let panel: Retained<NSPanel> = Retained::into_super(panel);
     unsafe { panel.setReleasedWhenClosed(false) };
     panel.setFloatingPanel(true);
     panel.setBecomesKeyOnlyIfNeeded(false);
     panel.setHidesOnDeactivate(false);
     panel.setAppearance(host_window.appearance().as_deref());
-    panel.setBackgroundColor(Some(&host_window.backgroundColor()));
-    panel.setContentView(Some(&root));
+    panel.setOpaque(false);
+    panel.setBackgroundColor(Some(&NSColor::clearColor()));
+    panel.setHasShadow(true);
+
+    let fx = NSVisualEffectView::initWithFrame(NSVisualEffectView::alloc(mtm), rect);
+    fx.setMaterial(NSVisualEffectMaterial::Popover);
+    fx.setBlendingMode(NSVisualEffectBlendingMode::BehindWindow);
+    fx.setState(NSVisualEffectState::Active);
+    fx.setWantsLayer(true);
+    let sizable = NSAutoresizingMaskOptions::ViewWidthSizable | NSAutoresizingMaskOptions::ViewHeightSizable;
+    // Raw vibrancy lets busy windows behind show through; a dense tint keeps text readable.
+    let backing = NSView::initWithFrame(NSView::alloc(mtm), rect);
+    backing.setAutoresizingMask(sizable);
+    fx.addSubview(&backing);
+    let content: Retained<TopAnchoredView> = unsafe { msg_send![TopAnchoredView::alloc(mtm), initWithFrame: rect] };
+    content.setAutoresizingMask(sizable);
+    root.setFrame(rect);
+    root.setAutoresizingMask(NSAutoresizingMaskOptions::ViewNotSizable);
+    content.addSubview(&root);
+    fx.addSubview(&content);
+    panel.setContentView(Some(&fx));
+    BACKING.with(|b| *b.borrow_mut() = Some(backing));
     Some(Retained::into_super(panel))
+}
+
+fn current_shape() -> (f64, Vec<(f64, f64, f64)>) {
+    let (pw, ph) = PANEL_SIZE.with(|c| c.get());
+    let (h, segs) = SHAPE.with(|s| s.borrow().clone());
+    let h = if h > 0.0 { h.min(ph) } else { ph };
+    let segs = if segs.is_empty() { vec![(0.0, pw, PANEL_RADIUS)] } else { segs };
+    (h, segs)
+}
+
+/// The blur's alpha mask: the shape pieces as filled rounded rects.
+fn shape_mask(w: f64, h: f64, segs: &[(f64, f64, f64)]) -> Retained<NSImage> {
+    let segs = segs.to_vec();
+    let draw = RcBlock::new(move |_r: NSRect| -> Bool {
+        NSColor::blackColor().set();
+        for &(x, sw, r) in &segs {
+            let rect = NSRect::new(NSPoint::new(x, 0.0), NSSize::new(sw, h));
+            NSBezierPath::bezierPathWithRoundedRect_xRadius_yRadius(rect, r, r).fill();
+        }
+        Bool::YES
+    });
+    NSImage::imageWithSize_flipped_drawingHandler(NSSize::new(w, h), false, &draw)
+}
+
+/// Size the panel to the current shape (keeping its top edge) and rebuild the mask and pieces.
+fn apply_shape(w: &NSWindow, mtm: MainThreadMarker) {
+    let (pw, _) = PANEL_SIZE.with(|c| c.get());
+    let (h, segs) = current_shape();
+    let f = w.frame();
+    if (f.size.height - h).abs() > 0.5 || (f.size.width - pw).abs() > 0.5 {
+        let top = f.origin.y + f.size.height;
+        w.setFrame_display(NSRect::new(NSPoint::new(f.origin.x, top - h), NSSize::new(pw, h)), true);
+    }
+    let Some(fx) = w.contentView().and_then(|v| v.downcast::<NSVisualEffectView>().ok()) else { return };
+    fx.setMaskImage(Some(&shape_mask(pw, h, &segs)));
+    if let Some(backing) = BACKING.with(|b| b.borrow().clone()) {
+        let old = backing.subviews();
+        for i in (0..old.count()).rev() {
+            old.objectAtIndex(i).removeFromSuperview();
+        }
+        for &(x, sw, r) in &segs {
+            let piece = NSView::initWithFrame(NSView::alloc(mtm), NSRect::new(NSPoint::new(x, 0.0), NSSize::new(sw, h)));
+            piece.setWantsLayer(true);
+            piece.setAutoresizingMask(NSAutoresizingMaskOptions::ViewHeightSizable);
+            if let Some(layer) = piece.layer() {
+                layer.setCornerRadius(r);
+                layer.setBorderWidth(1.0);
+            }
+            backing.addSubview(&piece);
+        }
+    }
+    refresh_edge(w);
+}
+
+pub fn set_panel_shape(h: f64, segs: Vec<(f64, f64, f64)>) {
+    SHAPE.with(|s| *s.borrow_mut() = (h, segs));
+    let Some(mtm) = MainThreadMarker::new() else { return };
+    if let Some(w) = PANEL.with(|p| p.borrow().clone()) {
+        apply_shape(&w, mtm);
+    }
+}
+
+/// The tint and hairline edge follow light / dark mode; layer colours do not update by themselves.
+fn refresh_edge(w: &NSWindow) {
+    let appearance = w.effectiveAppearance();
+    let dark = appearance
+        .bestMatchFromAppearancesWithNames(&NSArray::from_slice(&[unsafe { NSAppearanceNameAqua }, unsafe { NSAppearanceNameDarkAqua }]))
+        .is_some_and(|n| n.to_string().contains("Dark"));
+    let rgba = |r, g, b, a| NSColor::colorWithSRGBRed_green_blue_alpha(r, g, b, a);
+    let (edge, tint) = if dark { (rgba(1.0, 1.0, 1.0, 0.14), rgba(0.10, 0.10, 0.11, 0.78)) } else { (rgba(0.0, 0.0, 0.0, 0.12), rgba(0.98, 0.98, 0.99, 0.78)) };
+    if let Some(backing) = BACKING.with(|b| b.borrow().clone()) {
+        let pieces = backing.subviews();
+        for i in 0..pieces.count() {
+            if let Some(layer) = pieces.objectAtIndex(i).layer() {
+                layer.setBackgroundColor(Some(&tint.CGColor()));
+                layer.setBorderColor(Some(&edge.CGColor()));
+            }
+        }
+    }
+    w.invalidateShadow();
 }
 
 fn debug_log(msg: &str) {
@@ -226,6 +374,15 @@ fn first_editable_text_field(v: &NSView) -> Option<Retained<NSTextField>> {
     None
 }
 
+/// ⌫ in an empty field leaves the category, as in Spotlight.
+fn search_field_empty() -> bool {
+    MainThreadMarker::new()
+        .and_then(main_window)
+        .and_then(|w| w.contentView())
+        .and_then(|c| first_editable_text_field(&c))
+        .is_some_and(|tf| tf.stringValue().length() == 0)
+}
+
 fn focus_search(w: &NSWindow) {
     let Some(content) = w.contentView() else { return };
     if let Some(tf) = first_editable_text_field(&content) {
@@ -238,6 +395,7 @@ pub fn show() {
     let Some(mtm) = MainThreadMarker::new() else { return };
     if let Some(w) = main_window(mtm) {
         position_panel(&w, mtm);
+        refresh_edge(&w);
         w.orderFrontRegardless();
         w.makeKeyWindow();
         focus_search(&w);
@@ -320,6 +478,21 @@ fn install_key_monitor() {
         let ctrl = flags.contains(NSEventModifierFlags::Control);
         let cmd = flags.contains(NSEventModifierFlags::Command);
         let alt = flags.contains(NSEventModifierFlags::Option);
+        if cmd && !ctrl && !alt {
+            let chars = e.charactersIgnoringModifiers().map(|c| c.to_string().to_lowercase()).unwrap_or_default();
+            let named = match chars.as_str() {
+                "1" => Some("cmd+1"),
+                "2" => Some("cmd+2"),
+                "3" => Some("cmd+3"),
+                "4" => Some("cmd+4"),
+                "r" => Some("cmd+r"),
+                _ => None,
+            };
+            if let Some(n) = named {
+                defer_callback("key", n);
+                return std::ptr::null_mut();
+            }
+        }
         let name = match (e.keyCode(), ctrl) {
             (125, _) | (45, true) => Some("down"),
             (126, _) | (35, true) => Some("up"),
@@ -327,6 +500,7 @@ fn install_key_monitor() {
             (36, _) | (76, _) if alt => Some("alt+enter"),
             (36, _) | (76, _) => Some("enter"),
             (51, _) if cmd => Some("cmd+delete"),
+            (51, false) if !alt && search_field_empty() => Some("delete-empty"),
             (53, _) => Some("escape"),
             (48, _) => Some("tab"),
             _ => None,
@@ -363,6 +537,7 @@ fn finish_setup(attempt: u32) {
     PANEL.with(|p| *p.borrow_mut() = Some(w.clone()));
     app(mtm).setActivationPolicy(NSApplicationActivationPolicy::Accessory);
     style_panel(&w, mtm);
+    apply_shape(&w, mtm);
     hide_on_resign_key(&w);
     install_key_monitor();
     if !START_HIDDEN.with(|c| c.get()) {

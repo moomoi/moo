@@ -1,12 +1,13 @@
 // Nimble launcher shell: Lattish-style JSX on tish-macos (`tish:macos`), launcher services from
 // packages/nimble-macos (`tish:nimble`), plugins loaded at runtime as native modules (`tish:ffi`).
-// Hotkey toggles the panel; type to search apps, plugin commands and files; up/down select;
-// enter (or click) opens; esc leaves a plugin list, otherwise hides. tab (or "Ask AI") asks Apple's
-// on-device model; the answer streams into the rows.
+// Follows macOS Spotlight: the hotkey opens a compact bar (search field plus Applications, Files,
+// Actions and Clipboard buttons, ⌘1–⌘4); typing expands it into results grouped under a Top Hit;
+// ↑ in the empty bar lists recent searches; "/" filters to a category; ⌘R shows in Finder; ⌫ in an
+// empty field or esc leaves a category. tab (or "Ask AI") asks Apple's on-device model.
 
 import { loadModule } from "tish:ffi"
 import { macos, useState } from "tish:macos"
-import { reindex, search, launch, setup, registerHotkey, quit, hide, appCount, searchFiles, watchApps, fuzzy, pluginPaths, copyText, loadBytecodePlugin, bundleResources, recordUse, frecency, statusItem, watchClipboard, clipboardHistory, clearClipboardHistory, aiAvailability, aiSession, aiEndSession, aiPrewarm, aiAsk, aiCancel, symbolIcon, fileIndexStart, findFiles, recentFiles, fileIcon, revealFile, fileIndexStatus, show, toggle, unregisterHotkey, checkHotkey, hotkeyDisplay, recordHotkey, loadShortcuts, saveShortcut, checkKeyword, ensureShortcutsFile, removeShortcut, bindHotkey, unbindHotkey, expandTemplate, watchShortcuts, runShell, cliMain, cliServe, cliWrite, cliEnd, cliUsage } from "tish:nimble"
+import { reindex, search, launch, setup, setPanelShape, searchHistory, addSearchHistory, clearSearchHistory, registerHotkey, quit, hide, appCount, searchFiles, watchApps, fuzzy, pluginPaths, copyText, loadBytecodePlugin, bundleResources, recordUse, frecency, statusItem, watchClipboard, clipboardHistory, clearClipboardHistory, aiAvailability, aiSession, aiEndSession, aiPrewarm, aiAsk, aiCancel, symbolIcon, fileIndexStart, findFiles, recentFiles, fileIcon, revealFile, fileIndexStatus, show, toggle, unregisterHotkey, checkHotkey, hotkeyDisplay, recordHotkey, loadShortcuts, saveShortcut, checkKeyword, ensureShortcutsFile, removeShortcut, bindHotkey, unbindHotkey, expandTemplate, watchShortcuts, runShell, cliMain, cliServe, cliWrite, cliEnd, cliUsage } from "tish:nimble"
 import { env } from "tish:process"
 
 // `nimble <command>` (or launching while Nimble already runs) makes this process a client of the
@@ -64,10 +65,24 @@ watchClipboard()
 // ── Plugins: every module in PLUGIN_DIR contributes its manifest's commands to root search ──
 
 let aiIcon = symbolIcon("sparkles")
+let APPS = { name: "Applications", path: "nimble:apps", icon: symbolIcon("square.grid.2x2"), kind: "Command", mode: "apps", pluginTitle: "Nimble" }
+let FILES = { name: "Search Files", path: "nimble:files", icon: symbolIcon("doc.text.magnifyingglass"), kind: "Command", mode: "files", pluginTitle: "Nimble" }
+let ACTIONS = { name: "Actions", path: "nimble:actions", icon: symbolIcon("square.2.layers.3d"), kind: "Command", mode: "actions", pluginTitle: "Nimble" }
+let CLIPBOARD = { name: "Clipboard History", path: "nimble:clipboard", icon: "NSMultipleDocuments", kind: "Command", mode: "clipboard", pluginTitle: "Nimble" }
+let HISTORY = { name: "Recent Searches", path: "nimble:history", icon: symbolIcon("clock.arrow.circlepath"), kind: "Command", mode: "history", pluginTitle: "Nimble" }
+// Spotlight's four category buttons, in ⌘1–⌘4 order. `symbol` is the SF Symbol on the button.
+let CATEGORIES = [
+  { title: "Applications", command: APPS, symbol: "square.grid.2x2", key: "1" },
+  { title: "Files", command: FILES, symbol: "folder", key: "2" },
+  { title: "Actions", command: ACTIONS, symbol: "square.2.layers.3d", key: "3" },
+  { title: "Clipboard", command: CLIPBOARD, symbol: "doc.on.clipboard", key: "4" }
+]
 let commands = [
   { name: "Ask AI", path: "nimble:ai", icon: aiIcon, kind: AI_TITLE, mode: "ai", pluginTitle: AI_TITLE, question: "" },
-  { name: "Search Files", path: "nimble:files", icon: symbolIcon("doc.text.magnifyingglass"), kind: "Command", mode: "files", pluginTitle: "Nimble" },
-  { name: "Clipboard History", path: "nimble:clipboard", icon: "NSMultipleDocuments", kind: "Command", mode: "clipboard", pluginTitle: "Nimble" },
+  APPS,
+  FILES,
+  ACTIONS,
+  CLIPBOARD,
   { name: "Clear Clipboard History", path: "nimble:clipboard-clear", icon: "NSTrashEmpty", kind: "Command", mode: "builtin" },
   { name: "Create Shortcut", path: "nimble:create-shortcut", icon: symbolIcon("plus.square"), kind: "Command", mode: "create", pluginTitle: "Nimble" },
   { name: "Shortcuts", path: "nimble:shortcuts", icon: symbolIcon("command.square"), kind: "Command", mode: "shortcuts", pluginTitle: "Nimble" },
@@ -134,11 +149,58 @@ console.log("nimble: indexed " + index.count + " apps in " + index.ms.toFixed(1)
 // Native key and show callbacks are registered once, so state lives outside the component.
 // `apps` holds the synchronous rows (apps + commands, or a plugin's list); `files` arrives later
 // from Spotlight for the same query. `mode` is the open plugin list command, or null at root.
-// `offset` is the first visible row when a view has more than ROWS items; `view` is the open
-// plugin view ({ id, tree, list }).
-let shell = { query: "", selected: 0, offset: 0, apps: [], files: [], results: [], rowCount: ROWS, mode: null, view: null, hud: "", fileMs: -1, version: 0, rerender: null }
+// `offset` is the first visible result when they do not all fit; `groups[i]` is the section
+// heading of `results[i]`; `view` is the open plugin view ({ id, tree, list }).
+let shell = { query: "", selected: 0, offset: 0, apps: [], files: [], results: [], groups: [], mode: null, view: null, hud: "", fileMs: -1, version: 0, rerender: null }
+
+// Layout. The tree keeps the same shape in every state (header with 4 category buttons, SLOTS list
+// rows, footer with HINT_SLOTS hints): a different shape rebuilds the views and the field loses
+// focus. The idle bar is the same tree in a shorter panel cut into a field capsule and 4 circles.
+const PANEL_W = 750
+const HEADER_H = 52
+const CAT_W = 52
+const CAT_GAP = 8
+const FIELD_W = PANEL_W - 4 * (CAT_W + CAT_GAP)
+const SECTION_H = 28
+const ROW_H = 40
+const LINE_H = 32
+const LIST_PAD = 6
+const FOOTER_H = 40
+// Section headings and results share the list's height; filler rows take what is left.
+const SLOTS = ROWS + 5
+const LIST_H = ROWS * ROW_H + 4 * SECTION_H
+const PANEL_H = HEADER_H + 1 + LIST_PAD + LIST_H + SLOTS + LIST_PAD + 1 + FOOTER_H
+const HINT_SLOTS = 3
+// Layer colours need alpha hex ("#00000000" keeps the row's layer, so its shape never changes).
+const CLEAR = "#00000000"
+const SELECTED = "quaternaryLabel"
+
+// Spotlight opens as a bare search bar; anything to show (results, a category, a message) expands it.
+fn isCompact() {
+  return shell.mode === null && shell.query === "" && shell.hud === ""
+}
+
+let shapeCompact = null
+
+fn syncShape() {
+  let c = isCompact()
+  if (c === shapeCompact) {
+    return
+  }
+  shapeCompact = c
+  if (!c) {
+    setPanelShape(PANEL_H, [])
+    return
+  }
+  let segs = [[0, FIELD_W, HEADER_H / 2]]
+  for (let i = 0; i < 4; i = i + 1) {
+    segs.push([FIELD_W + CAT_GAP + i * (CAT_W + CAT_GAP), CAT_W, CAT_W / 2])
+  }
+  setPanelShape(HEADER_H, segs)
+}
 
 fn refresh() {
+  syncShape()
   shell.version = shell.version + 1
   if (shell.rerender !== null) {
     shell.rerender(shell.version)
@@ -509,6 +571,12 @@ fn commandHits(text) {
 // Apps and commands share one scale (match + frecency), so merge them by score.
 // A typed shortcut keyword comes first: "g rust" → "Google: rust".
 fn rootResults(text) {
+  if (text.trim() === "") {
+    return []
+  }
+  if (text.indexOf("/") === 0) {
+    return filterResults(text.slice(1))
+  }
   let apps = search(text, ROWS)
   let hits = commandHits(text)
   let out = []
@@ -539,6 +607,130 @@ fn rootResults(text) {
     out.push({ name: "Ask AI “" + text.trim() + "”", path: ASK_AI.path, icon: ASK_AI.icon, kind: AI_TITLE, mode: "ai", pluginTitle: AI_TITLE, question: text })
   }
   return out
+}
+
+// "/" lists the categories; "/files report" opens Files searching "report".
+fn filterResults(text) {
+  let space = text.indexOf(" ")
+  let word = (space >= 0 ? text.slice(0, space) : text).toLowerCase()
+  let rest = space >= 0 ? text.slice(space + 1).trim() : ""
+  let out = []
+  for (let i = 0; i < CATEGORIES.length; i = i + 1) {
+    let c = CATEGORIES[i]
+    if (word === "" || c.title.toLowerCase().indexOf(word) === 0) {
+      out.push({ name: rest !== "" ? c.title + ": " + rest : c.title, path: c.command.path, icon: c.command.icon, kind: "⌘" + c.key, mode: "filter", category: c, query: rest })
+    }
+  }
+  return out
+}
+
+fn categoryIndex() {
+  if (shell.mode === null) {
+    return -1
+  }
+  for (let i = 0; i < CATEGORIES.length; i = i + 1) {
+    if (CATEGORIES[i].command.path === shell.mode.path) {
+      return i
+    }
+  }
+  return -1
+}
+
+// Pressing the open category's button (or key) again goes back to the bar.
+fn openCategory(c, query) {
+  if (shell.mode !== null && shell.mode.path === c.command.path) {
+    leaveList()
+    return
+  }
+  leaveToRoot()
+  enterList(c.command)
+  if (query !== "") {
+    setQuery(query)
+  }
+}
+
+fn appResults(text) {
+  return search(text, FILE_LIST_MAX)
+}
+
+// Every command and shortcut; with no text the most used first. Shortcut keywords are the quick keys.
+fn actionResults(text) {
+  let hits = []
+  if (text.trim() === "") {
+    for (let i = 0; i < commands.length; i = i + 1) {
+      hits.push({ index: i, score: frecency(commands[i].path) })
+    }
+    hits.sort((a, b) => b.score - a.score)
+  } else {
+    hits = commandHits(text)
+  }
+  let out = []
+  for (let i = 0; i < hits.length; i = i + 1) {
+    let c = commands[hits[i].index]
+    if (c.mode !== "apps" && c.mode !== "actions") {
+      out.push(c)
+    }
+  }
+  return groupInOrder(out, (r) => r.mode === "shortcut" ? "Quick Keys" : "Actions", 0, ["Quick Keys", "Actions"])
+}
+
+fn historyResults(text) {
+  let t = text.trim().toLowerCase()
+  let matches = searchHistory(20).filter((q) => t === "" || q.toLowerCase().indexOf(t) >= 0)
+  return matches.map((q) => ({ name: q, kind: "", icon: HISTORY.icon, query: q, action: null }))
+}
+
+fn openHistory() {
+  if (searchHistory(1).length > 0) {
+    enterList(HISTORY)
+  }
+}
+
+// Spotlight's groups for a root search; the first result is the Top Hit.
+fn rootGroup(r) {
+  if (r.mode === "filter") {
+    return "Filter Search"
+  }
+  if (r.mode === "ai" && r.question !== "") {
+    return "Ask AI"
+  }
+  if (isFile(r)) {
+    return "Files"
+  }
+  return r.kind === "Application" ? "Applications" : "Actions"
+}
+
+let ROOT_GROUPS = ["Filter Search", "Applications", "Files", "Actions", "Ask AI"]
+
+// Keeps list[0..from) in place and gathers the rest by group: groups named in `ranked` first, in
+// that order, then any others in order of first appearance.
+fn groupInOrder(list, groupOf, from, ranked) {
+  let out = list.slice(0, from)
+  let order = ranked.slice(0)
+  for (let i = from; i < list.length; i = i + 1) {
+    let g = groupOf(list[i])
+    if (order.indexOf(g) < 0) {
+      order.push(g)
+    }
+  }
+  for (let k = 0; k < order.length; k = k + 1) {
+    for (let i = from; i < list.length; i = i + 1) {
+      if (groupOf(list[i]) === order[k]) {
+        out.push(list[i])
+      }
+    }
+  }
+  return out
+}
+
+fn groupAt(r, i) {
+  if (shell.mode === null) {
+    return i === 0 && r.mode !== "filter" ? "Top Hit" : rootGroup(r)
+  }
+  if (modeIs("actions")) {
+    return r.mode === "shortcut" ? "Quick Keys" : "Actions"
+  }
+  return sectionTitle()
 }
 
 fn clipboardResults(text) {
@@ -987,6 +1179,15 @@ fn openShortcutsRow(row, key) {
 
 fn listResults(text) {
   let m = shell.mode
+  if (m.mode === "apps") {
+    return appResults(text)
+  }
+  if (m.mode === "actions") {
+    return actionResults(text)
+  }
+  if (m.mode === "history") {
+    return historyResults(text)
+  }
   if (m.mode === "clipboard") {
     return clipboardResults(text)
   }
@@ -1041,32 +1242,74 @@ fn inFiles() {
   return shell.mode !== null && shell.mode.mode === "files"
 }
 
-// Synchronous rows first; once files arrive they get at least FILE_ROWS_WITH_APPS rows.
+// Synchronous rows first; once files arrive they get at least FILE_ROWS_WITH_APPS rows. At root the
+// best match stays first (Top Hit) and the rest are gathered by group.
 fn compose() {
-  if (shell.mode !== null && shell.mode.mode === "view") {
-    shell.results = shell.apps
+  if (shell.mode === null) {
+    let keepApps = shell.files.length > 0 ? ROWS - Math.min(shell.files.length, FILE_ROWS_WITH_APPS) : ROWS
+    let merged = shell.apps.slice(0, keepApps).concat(shell.files).slice(0, ROWS)
+    shell.results = groupInOrder(merged, rootGroup, merged.length > 0 && merged[0].mode !== "filter" ? 1 : 0, ROOT_GROUPS)
   } else if (inFiles()) {
     shell.results = shell.apps.concat(shell.files)
-  } else if (shell.mode !== null && (shell.mode.mode === "output" || shell.mode.mode === "shortcuts")) {
-    shell.results = shell.apps
   } else {
-    let keepApps = shell.files.length > 0 ? ROWS - Math.min(shell.files.length, FILE_ROWS_WITH_APPS) : ROWS
-    shell.results = shell.apps.slice(0, keepApps).concat(shell.files).slice(0, ROWS)
+    shell.results = shell.apps
   }
+  let groups = []
+  for (let i = 0; i < shell.results.length; i = i + 1) {
+    groups.push(groupAt(shell.results[i], i))
+  }
+  shell.groups = groups
   if (shell.selected >= shell.results.length) {
     shell.selected = 0
   }
   follow()
 }
 
+fn wideRows() {
+  return inAi() || modeIs("output")
+}
+
+// The list from result `offset` on: a heading wherever the group changes (and above the first
+// row), then rows, while they fit in LIST_H. Returns { slots: [{ kind, index, title, height }], used }.
+fn layoutSlots(offset) {
+  let rowH = wideRows() ? LINE_H : ROW_H
+  let budget = LIST_H
+  let slots = []
+  let used = 0
+  let prev = ""
+  let full = false
+  for (let i = offset; i < shell.results.length && !full; i = i + 1) {
+    let g = i < shell.groups.length ? shell.groups[i] : ""
+    let head = g !== "" && (i === offset || g !== prev)
+    let need = rowH + (head ? SECTION_H : 0)
+    if (used + need > budget) {
+      full = true
+    } else {
+      if (head) {
+        slots.push({ kind: "header", index: -1, title: g, height: SECTION_H })
+      }
+      slots.push({ kind: "row", index: i, title: "", height: rowH })
+      used = used + need
+      prev = g
+    }
+  }
+  return { slots: slots, used: used }
+}
+
+fn lastVisible(offset) {
+  let slots = layoutSlots(offset).slots
+  return slots.length > 0 ? slots[slots.length - 1].index : offset - 1
+}
+
 // Keep the selected row inside the visible window.
 fn follow() {
+  shell.offset = Math.max(0, Math.min(shell.offset, shell.results.length - 1))
   if (shell.selected < shell.offset) {
     shell.offset = shell.selected
-  } else if (shell.selected >= shell.offset + ROWS) {
-    shell.offset = shell.selected - ROWS + 1
   }
-  shell.offset = Math.max(0, Math.min(shell.offset, shell.results.length - ROWS))
+  while (shell.offset < shell.selected && lastVisible(shell.offset) < shell.selected) {
+    shell.offset = shell.offset + 1
+  }
 }
 
 fn onFiles(r) {
@@ -1262,7 +1505,7 @@ fn setQuery(text) {
   } else {
     shell.apps = rootResults(text)
     let sc = shortcutMatch(text)
-    if (text.trim().length >= FILE_MIN_CHARS && (sc === null || sc.query === "")) {
+    if (text.trim().length >= FILE_MIN_CHARS && text.indexOf("/") !== 0 && (sc === null || sc.query === "")) {
       shell.files = fileResults(text, ROWS, ROWS)
     }
   }
@@ -1354,10 +1597,22 @@ fn runCommand(c) {
 }
 
 fn open(i) {
-  if (i >= shell.results.length) {
+  if (i < 0 || i >= shell.results.length) {
     return
   }
   let target = shell.results[i]
+  if (modeIs("history")) {
+    leaveList()
+    setQuery(target.query)
+    return
+  }
+  if (target.mode === "filter") {
+    openCategory(target.category, target.query)
+    return
+  }
+  if (shell.query.trim() !== "" && (shell.mode === null || categoryIndex() >= 0)) {
+    addSearchHistory(shell.query)
+  }
   if (shell.mode !== null && shell.mode.mode === "view") {
     shell.selected = i
     openViewRow(target)
@@ -1378,7 +1633,7 @@ fn open(i) {
     openShortcutsRow(target, "enter")
     return
   }
-  if (shell.mode !== null) {
+  if (shell.mode !== null && !modeIs("apps") && !modeIs("actions")) {
     perform(target.action)
     return
   }
@@ -1403,9 +1658,15 @@ fn open(i) {
     enterView(target)
   } else if (target.mode === "no-view") {
     runCommand(target)
+  } else if (target.mode === "apps" || target.mode === "actions") {
+    openCategory(CATEGORIES[target.mode === "apps" ? 0 : 2], "")
   } else {
     launch(target.path)
-    setQuery("")
+    if (shell.mode !== null) {
+      leaveList()
+    } else {
+      setQuery("")
+    }
   }
 }
 
@@ -1465,6 +1726,16 @@ fn onKey(name) {
     }
     return
   }
+  if (name.indexOf("cmd+") === 0 && name.length === 5 && name[4] >= "1" && name[4] <= "4") {
+    openCategory(CATEGORIES[Number(name[4]) - 1], shell.mode === null ? shell.query : "")
+    return
+  }
+  if (name === "delete-empty") {
+    if (shell.mode !== null && !modeIs("create")) {
+      leaveList()
+    }
+    return
+  }
   if (inAi()) {
     onAiKey(name === "cmd+enter" || name === "alt+enter" ? "enter" : name)
     return
@@ -1491,12 +1762,23 @@ fn onKey(name) {
     onFileKey(name)
     return
   }
+  if (name === "cmd+r") {
+    if (row !== null && row.path && row.path[0] === "/") {
+      recordUse(row.path)
+      revealFile(row.path)
+      leaveToRoot()
+      setQuery("")
+    }
+    return
+  }
   let n = shell.results.length
   if (name === "tab") {
     if (shell.mode === null && shell.query.trim() !== "") {
       recordUse(ASK_AI.path)
       enterAi(ASK_AI, shell.query)
     }
+  } else if (name === "up" && n === 0 && isCompact()) {
+    openHistory()
   } else if (name === "down" && n > 0) {
     shell.selected = (shell.selected + 1) % n
     follow()
@@ -1510,9 +1792,10 @@ fn onKey(name) {
   } else if (name === "escape") {
     if (shell.mode !== null) {
       leaveList()
+    } else if (shell.query !== "") {
+      setQuery("")
     } else {
       hide()
-      setQuery("")
     }
   }
 }
@@ -1531,23 +1814,155 @@ fn kindLabel(r) {
   return r.kind === "File" || r.kind === "Folder" ? r.detail : r.kind
 }
 
-fn ResultRow(props) {
+// One list slot: a result row, a section heading or filler (1 px children, so `height` alone sizes it).
+// Answer rows and headings use the full width; 0 would mean "flex", so unused columns get 1 px.
+fn SlotRow(props) {
+  let slot = props.slot
   let r = props.result
-  let selected = props.selected
-  // Answer rows use the full width; 0 would mean "flex", so the unused columns get 1 px.
-  let wide = props.wide
+  let row = slot.kind === "row"
+  let header = slot.kind === "header"
+  let icons = row && !props.wide
+  let textH = row || header ? 0 : 1
   return (
     <row
-      onClick={() => open(props.index)}
-      borderRadius={8}
-      backgroundColor={selected ? "#0A84FF40" : "#00000000"}
-      columnWidths={wide ? [1, "flex", 1] : [40, "flex", 250]}
-      paddingTop={5}
-      paddingBottom={5}
-      paddingLeft={8}
-      paddingRight={10}
-    ><image src={r !== null ? r.icon : ""} height={26} /><text fontSize={wide ? 14 : 15}>{r !== null ? r.name : ""}</text><text fontSize={12} color="secondaryLabel" textAlign="right">{kindLabel(r)}</text></row>
+      onClick={() => open(slot.index)}
+      borderRadius={10}
+      backgroundColor={props.selected ? SELECTED : CLEAR}
+      columnWidths={icons ? [38, "flex", 240] : [1, "flex", 1]}
+      alignItems="center"
+      height={slot.height}
+      paddingLeft={icons ? 10 : 12}
+      paddingRight={12}
+    ><image src={r !== null ? r.icon : ""} height={row ? 24 : 1} /><text
+      fontSize={header ? 12 : 14} fontWeight={header ? "semibold" : "regular"} color={header ? "secondaryLabel" : "label"} paddingLeft={icons ? 4 : 0} height={textH}
+    >{header ? slot.title : (r !== null ? r.name : "")}</text><text fontSize={13} color="secondaryLabel" textAlign="right" height={textH}>{kindLabel(r)}</text></row>
   )
+}
+
+// A category button of the idle bar; collapsed to 1 px columns once the panel expands.
+fn CategoryButton(props) {
+  let c = props.category
+  return (
+    <row onClick={() => openCategory(c, "")} backgroundColor={CLEAR} columnWidths={["flex"]} alignItems="center" height={HEADER_H} paddingLeft={props.compact ? props.inset : 0}
+    ><image src={props.compact ? c.symbol : ""} symbol={true} symbolScale="large" tint="secondaryLabel" height={20} /></row>
+  )
+}
+
+// A key cap ("↵", "⌘K") after its action name, right-aligned in the footer.
+fn hintWidths(h) {
+  if (h === null) {
+    return [1, 1]
+  }
+  return [Math.ceil(h[0].length * 6.8) + 18, Math.max(22, h[1].length * 9 + 12)]
+}
+
+fn HintLabel(props) {
+  return <text fontSize={12} color="secondaryLabel" textAlign="right" paddingRight={7}>{props.hint !== null ? props.hint[0] : ""}</text>
+}
+
+fn HintKey(props) {
+  let h = props.hint
+  return (
+    <row backgroundColor={h !== null ? SELECTED : CLEAR} borderRadius={5} alignItems="center" height={20} paddingLeft={4} paddingRight={4}
+    ><text fontSize={11} fontWeight="medium" color="secondaryLabel" textAlign="center">{h !== null ? h[1] : ""}</text></row>
+  )
+}
+
+fn primaryAction(r) {
+  if (r === null) {
+    return "Open"
+  }
+  if (r.kind === "Application") {
+    return "Open Application"
+  }
+  if (r.kind === "Command") {
+    return "Run Command"
+  }
+  if (r.mode === "ai") {
+    return "Ask AI"
+  }
+  return "Open"
+}
+
+// [[action, key], ...] for the footer, most important first.
+fn footerHints() {
+  let r = shell.selected < shell.results.length ? shell.results[shell.selected] : null
+  if (modeIs("output")) {
+    return [["Copy Line", "↵"], ["Copy All", "⌘↵"], ["Back", "esc"]]
+  }
+  if (modeIs("create")) {
+    return wiz.step === "hotkey" ? [["Save", "↵"], ["Clear", "⌫"], ["Back", "esc"]] : [["Next", "↵"], ["Back", "esc"]]
+  }
+  if (modeIs("shortcuts")) {
+    return [["Run", "↵"], ["Edit", "⌘↵"], ["Delete", "⌘⌫"]]
+  }
+  if (inAi()) {
+    if (ai.request !== 0) {
+      return [["Stop", "esc"]]
+    }
+    if (ai.answer !== "" && shell.query === "") {
+      return [["Copy Answer", "↵"], ["Scroll", "↑↓"], ["Back", "esc"]]
+    }
+    return [["Ask", "↵"], ["Back", "esc"]]
+  }
+  if (inFiles() || isFile(r)) {
+    return [["Open", "↵"], ["Show in Finder", "⌘R"], ["Copy Path", "⌥↵"]]
+  }
+  if (modeIs("history")) {
+    return [["Search", "↵"], ["Back", "esc"]]
+  }
+  if (r !== null && r.kind === "Application") {
+    return [[primaryAction(r), "↵"], ["Show in Finder", "⌘R"], shell.mode !== null ? ["Back", "esc"] : ["Ask AI", "⇥"]]
+  }
+  if (shell.mode !== null && !modeIs("actions")) {
+    return [[shell.mode.mode === "clipboard" ? "Copy" : "Run", "↵"], ["Back", "esc"]]
+  }
+  if (r !== null && r.mode === "filter") {
+    return [["Filter", "↵"], ["Clear", "esc"]]
+  }
+  if (shell.mode === null && shell.query.trim() !== "") {
+    return [[primaryAction(r), "↵"], ["Ask AI", "⇥"]]
+  }
+  return [[primaryAction(r), "↵"], ["Back", "esc"]]
+}
+
+fn sectionTitle() {
+  if (inAi()) {
+    return AI_TITLE
+  }
+  if (inFiles()) {
+    return shell.query.trim() === "" ? "Recent Files" : "Files"
+  }
+  if (modeIs("create")) {
+    return wiz.editing !== "" ? "Edit Shortcut" : "Create Shortcut"
+  }
+  if (shell.mode !== null) {
+    if (shell.view !== null && shell.view.list !== null && propText(shell.view.list, "navigationTitle") !== "") {
+      return propText(shell.view.list, "navigationTitle")
+    }
+    return shell.mode.name
+  }
+  return shell.query.trim() === "" ? "Suggestions" : "Results"
+}
+
+fn placeholder() {
+  if (inAi()) {
+    return ai.answer !== "" ? "Ask a follow-up…" : "Ask anything…"
+  }
+  let cat = categoryIndex()
+  if (cat >= 0) {
+    return "Search " + CATEGORIES[cat].title
+  }
+  if (modeIs("history")) {
+    return "Search Recent Searches"
+  }
+  if (shell.view !== null && shell.view.list !== null && propText(shell.view.list, "searchBarPlaceholder") !== "") {
+    return propText(shell.view.list, "searchBarPlaceholder")
+  }
+  if (shell.mode !== null) {
+    return "Search " + shell.mode.name + "…"
+  }
+  return "Nimble Search"
 }
 
 fn aiStatusText() {
@@ -1635,42 +2050,54 @@ fn App() {
   let [version, setVersion] = useState(0)
   shell.rerender = setVersion
 
+  let compact = isCompact()
+  let wide = wideRows()
+  let lay = layoutSlots(shell.offset)
+  let slots = lay.slots
+  // Filler: the first takes the unused height, the rest 1 px each, so the list height is constant.
+  let total = SLOTS
+  let spare = LIST_H + total - lay.used - (total - slots.length - 1)
   let rows = []
-  let wide = inAi() || modeIs("output")
-  let rowCount = shell.rowCount
-  for (let i = 0; i < rowCount; i = i + 1) {
-    let at = i + shell.offset
-    let r = at < shell.results.length ? shell.results[at] : null
+  for (let i = 0; i < total; i = i + 1) {
+    let slot = i < slots.length ? slots[i] : { kind: "blank", index: -1, title: "", height: i === slots.length ? spare : 1 }
+    let r = slot.kind === "row" ? shell.results[slot.index] : null
     if (isFile(r) && r.icon === "") {
       r.icon = fileIcon(r.path)
     }
-    rows.push(<ResultRow index={at} result={r} selected={!inAi() && r !== null && at === shell.selected} wide={wide} />)
+    rows.push(<SlotRow slot={slot} result={r} selected={!inAi() && r !== null && slot.index === shell.selected} wide={wide} />)
   }
-  let hints = "↑↓ select   ↵ open   ⇥ ask AI   esc hide"
-  if (modeIs("output")) {
-    hints = "↵ copy line   ⌘↵ copy all   esc back"
-  } else if (modeIs("create")) {
-    hints = wiz.step === "hotkey" ? "press keys   ↵ save   ⌫ clear   esc back" : "↵ next   esc back"
-  } else if (modeIs("shortcuts")) {
-    hints = "↵ run   ⌘↵ edit   ⌘⌫ delete   esc back"
-  } else if (wide) {
-    if (ai.request !== 0) {
-      hints = "esc stop"
-    } else if (ai.answer !== "" && shell.query === "") {
-      hints = "↵ copy   ↑↓ scroll   esc back"
-    } else {
-      hints = "↵ ask   esc back"
-    }
-  } else if (inFiles()) {
-    hints = "↵ open   ⌘↵ reveal   ⌥↵ copy path   esc back"
-  } else if (shell.mode !== null) {
-    hints = shell.mode.mode === "clipboard" ? "↑↓ select   ↵ copy   esc back" : "↑↓ select   ↵ run   esc back"
-  } else if (isFile(shell.selected < shell.results.length ? shell.results[shell.selected] : null)) {
-    hints = "↵ open   ⌘↵ reveal   ⌥↵ copy path   esc hide"
+
+  let hints = footerHints()
+  let widths = ["flex"]
+  let cells = []
+  let slots = HINT_SLOTS
+  for (let i = 0; i < slots; i = i + 1) {
+    let h = i < hints.length ? hints[i] : null
+    let w = hintWidths(h)
+    widths.push(w[0])
+    widths.push(w[1])
+    cells.push(<HintLabel hint={h} />)
+    cells.push(<HintKey hint={h} />)
   }
-  let footer = <row columnWidths={["flex", 280]} paddingTop={6}><text fontSize={11} color="secondaryLabel">{statusText()}</text><text fontSize={11} color="secondaryLabel" textAlign="right">{hints}</text></row>
+  // Header: search icon (the category's symbol inside a category), field, 4 category buttons.
+  let cat = categoryIndex()
+  let inset = 14
+  let step = CAT_GAP + CAT_W
+  let headerWidths = compact ? [52, FIELD_W - 52 - inset, inset + step, step, step, step] : [52, "flex", inset, 1, 1, 1]
+  let buttons = []
+  for (let i = 0; i < 4; i = i + 1) {
+    buttons.push(<CategoryButton category={CATEGORIES[i]} compact={compact} inset={i === 0 ? inset + CAT_GAP : CAT_GAP} />)
+  }
+  let header = (
+    <row columnWidths={headerWidths} alignItems="center" height={HEADER_H} backgroundColor={CLEAR}
+    ><image src={cat >= 0 ? CATEGORIES[cat].symbol : "magnifyingglass"} symbol={true} symbolScale="large" tint={cat >= 0 ? "controlAccent" : "secondaryLabel"} height={22} /><textinput value={shell.query} onChange={setQuery} bezeled={false} fontSize={22} placeholder={placeholder()} />{buttons}</row>
+  )
+  let footer = (
+    <row columnWidths={widths} alignItems="center" height={FOOTER_H} paddingLeft={18} paddingRight={12} backgroundColor={CLEAR}
+    ><text fontSize={12} color="secondaryLabel">{statusText()}</text>{cells}</row>
+  )
   return (
-    <div paddingTop={18} paddingLeft={16} paddingRight={16} paddingBottom={10}><textinput value={shell.query} onChange={setQuery} /><space height={10} />{rows}<space height={6} /><rule />{footer}</div>
+    <div>{header}<rule /><div paddingLeft={8} paddingRight={8} paddingTop={LIST_PAD} paddingBottom={LIST_PAD}>{rows}</div><rule />{footer}</div>
   )
 }
 
@@ -1949,6 +2376,36 @@ fn handleCli(argv, cwd, token) {
     show()
     setQuery(rest)
     cliEnd(token, 0)
+  } else if (cmd === "category") {
+    let name = w.length > 1 ? w[1].toLowerCase() : ""
+    let text = w.slice(2).join(" ")
+    let found = null
+    for (let i = 0; i < CATEGORIES.length; i = i + 1) {
+      if (name !== "" && CATEGORIES[i].title.toLowerCase().indexOf(name) === 0) {
+        found = CATEGORIES[i]
+      }
+    }
+    if (found === null && name !== "recent") {
+      cliFail(token, "usage: nimble category applications|files|actions|clipboard|recent [text]")
+      return
+    }
+    leaveToRoot()
+    show()
+    if (found !== null) {
+      openCategory(found, text)
+    } else {
+      enterList(HISTORY)
+      setQuery(text)
+    }
+    cliEnd(token, 0)
+  } else if (cmd === "history") {
+    if (argv.indexOf("--clear") >= 0) {
+      clearSearchHistory()
+    } else {
+      let items = searchHistory(cliLimit(p.flags, 20))
+      cliOut(token, items.length > 0 ? items.join("\n") + "\n" : "")
+    }
+    cliEnd(token, 0)
   } else if (cmd === "run") {
     if (w.length < 2) {
       cliFail(token, "usage: nimble run <keyword|id> [text]")
@@ -2024,5 +2481,6 @@ console.log("nimble: " + config.shortcuts.length + " shortcuts, " + hotkeyStatus
 
 shell.apps = rootResults("")
 compose()
-setup({ width: 680, height: 372, onKey: onKey, onShow: onShow, onHotkey: onHotkey, hidden: env.NIMBLE_START_HIDDEN === "1" })
+syncShape()
+setup({ width: PANEL_W, height: PANEL_H, onKey: onKey, onShow: onShow, onHotkey: onHotkey, hidden: env.NIMBLE_START_HIDDEN === "1" })
 macos.run(App)

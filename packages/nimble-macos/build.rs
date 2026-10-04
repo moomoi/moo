@@ -7,6 +7,7 @@ use std::process::Command;
 
 fn main() {
     println!("cargo:rerun-if-changed=swift/ai.swift");
+    println!("cargo:rerun-if-changed=swift/http.swift");
     println!("cargo:rerun-if-env-changed=MACOSX_DEPLOYMENT_TARGET");
     if env::var("CARGO_CFG_TARGET_OS").as_deref() != Ok("macos") {
         return;
@@ -23,12 +24,12 @@ fn main() {
     let status = Command::new(&swiftc)
         .args(["-parse-as-library", "-emit-library", "-static", "-O", "-swift-version", "6"])
         .args(["-module-name", "NimbleAI", "-target", &format!("{arch}-apple-macos{deployment}"), "-sdk", &sdk])
-        .arg("swift/ai.swift")
+        .args(["swift/ai.swift", "swift/http.swift"])
         .arg("-o")
         .arg(out.join("libnimble_ai.a"))
         .status()
         .expect("run swiftc");
-    assert!(status.success(), "swiftc failed to build swift/ai.swift");
+    assert!(status.success(), "swiftc failed to build the Swift sources");
 
     println!("cargo:rustc-link-search=native={}", out.display());
     println!("cargo:rustc-link-lib=static=nimble_ai");

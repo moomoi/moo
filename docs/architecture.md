@@ -47,6 +47,7 @@ Tish binary) over a Unix-socket RPC. It does not exist yet.
 | `  src/files.rs` | Spotlight file search on a worker thread (fallback while indexing) |
 | `  src/watch.rs` | FSEvents on the application folders |
 | `  src/frecency.rs` | Use counts with decay, persisted as TSV (portable) |
+| `  src/history.rs` | Recent searches for Spotlight's ↑ list, newest first (portable) |
 | `  src/clip.rs` | Clipboard history |
 | `  src/vmplug.rs` | Tier A loader: runs a bytecode chunk in a VM with no capabilities |
 | `plugins/` | Example plugins (`utils` is Tier B, `convert` is Tier A) and `build.sh` |
@@ -63,21 +64,38 @@ crashes because AppKit's KVO observers are bound to the original class. So `adop
 moves tish-macos's root view into Nimble's own panel and leaves the host window offscreen with a
 same-size placeholder (tish-macos measures layout from its window's content view).
 
+The panel follows macOS Spotlight (see [raycast-overview.md](raycast-overview.md#spotlight-patterns)):
+a borderless, clear window (a small `NSPanel` subclass, since AppKit refuses key status to
+borderless windows). Its content view is a vibrancy view (the blurred desktop) holding two
+subviews: a backing view with one tinted, hairline-edged rounded view per piece of the panel's
+shape, and a top-anchored (flipped) container with the root view. `refresh_edge` recolours the
+pieces for light or dark mode on every show.
+
+`setPanelShape(height, [[x, width, radius], ...])` resizes the panel, keeping its top edge, and cuts
+it into pieces: the idle bar is 52 pt tall, made of a field capsule and four circles; the expanded
+panel is one rounded rectangle. The vibrancy view's `maskImage` is drawn from the same rounded
+rects, so the blur, the tint and the window shadow all follow the shape. tish-macos still lays the
+tree out at full height (it re-sizes the root view to the host's placeholder on every commit); the
+flipped container keeps the header at the top and the panel clips the rest.
+
+The Tish view keeps one fixed shape in every state: a header (icon, a borderless search field
+`<textinput bezeled={false} fontSize placeholder>` added to the vendored tish-macos, and four
+category buttons that collapse to 1 pt columns when expanded), 13 list slots, and a footer with up
+to three key-cap hints. Each list slot is a result row, a section heading or filler, and filler
+takes the leftover height so the list height never changes. A different shape would make
+tish-macos rebuild the views instead of patching them, and the search field would lose focus.
+
 Other consequences of being an accessory app:
 
 - There is no Edit menu, so Cmd/Ctrl+C, V, X, Z, Shift+Z and Cmd+A are sent down the responder
   chain by hand (`edit_shortcut`).
-- Up, down, enter (also ⌘↵ and ⌥↵), escape and tab are caught by a local key monitor and
-  delivered to Tish as `onKey`.
+- Up, down, enter (also ⌘↵ and ⌥↵), escape, tab, ⌘1–⌘4, ⌘R and ⌫ in an empty field are caught
+  by a local key monitor and delivered to Tish as `onKey`.
 - The panel hides when it loses key status.
 
 **Callbacks into Tish never run inside an AppKit or Carbon handler.** They are queued and flushed
 from a main-queue block under `run_with_current_root`, because a callback that calls `setState`
 re-renders the tree synchronously.
-
-**Rendering constraint.** tish-macos only patches in place when the tree shape is unchanged; a
-shape change rebuilds the window and loses search-field focus. The shell therefore always renders
-a fixed set of 8 rows, filling unused ones with empty content.
 
 ## Search
 

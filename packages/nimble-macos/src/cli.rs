@@ -25,6 +25,8 @@ usage: nimble [command] [args]
   (no command)                 show the launcher (starts Nimble if needed)
   toggle | show | hide | quit
   search <text>                show the launcher with <text> typed
+  category <name> [text]       show Applications, Files, Actions, Clipboard or Recent searches
+  history [--clear]            recent searches, newest first
   run <keyword|id> [text]      run a shortcut or command (ids: nimble list commands)
   open <path|url>              open with the default app
   files <query> [-n N]         file paths, best match first
