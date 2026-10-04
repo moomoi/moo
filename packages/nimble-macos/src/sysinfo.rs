@@ -1,4 +1,4 @@
-//! Facts about this Mac for the assistant: running apps, OS, hardware, disk and battery.
+//! Facts about this Mac for the assistant: OS, hardware, disk and battery.
 //! Plain data only; wording and formatting are the Tish side's.
 
 use std::ffi::{c_char, c_void, CStr, CString};
@@ -6,7 +6,6 @@ use std::ffi::{c_char, c_void, CStr, CString};
 use objc2::rc::Retained;
 use objc2::runtime::AnyObject;
 use objc2::msg_send;
-use objc2_app_kit::{NSApplicationActivationPolicy, NSWorkspace};
 use objc2_foundation::{NSArray, NSProcessInfo, NSString, NSURL};
 
 type CFTypeRef = *const c_void;
@@ -25,30 +24,6 @@ extern "C" {
 
 extern "C" {
     fn sysctlbyname(name: *const c_char, old: *mut c_void, oldlen: *mut usize, new: *const c_void, newlen: usize) -> i32;
-}
-
-pub struct RunningApp {
-    pub name: String,
-    pub path: String,
-    pub pid: i32,
-    pub active: bool,
-    pub hidden: bool,
-}
-
-/// Apps with a Dock icon (regular activation policy), in launch order.
-pub fn running_apps() -> Vec<RunningApp> {
-    NSWorkspace::sharedWorkspace()
-        .runningApplications()
-        .iter()
-        .filter(|a| a.activationPolicy() == NSApplicationActivationPolicy::Regular)
-        .map(|a| RunningApp {
-            name: a.localizedName().map(|s| s.to_string()).unwrap_or_default(),
-            path: a.bundleURL().and_then(|u| u.path()).map(|s| s.to_string()).unwrap_or_default(),
-            pid: a.processIdentifier(),
-            active: a.isActive(),
-            hidden: a.isHidden(),
-        })
-        .collect()
 }
 
 #[derive(Default)]

@@ -148,6 +148,12 @@ it. Without `NIMBLE_SYSTEM_DRY_RUN=1`, Restart, Shut Down and the other system c
 check with `nimble system restart`, which must print `dry run: restart`, before pressing Return in
 the panel. The clipboard is not isolated: AI answers that call `copyText` change it.
 
+Window commands and `{selection}` use Accessibility. macOS grants it to the app that started the
+process: Nimble started from a terminal or editor uses that app's permission, and Nimble started
+from Finder or at login needs its own entry in System Settings › Privacy & Security ›
+Accessibility (the first window command asks). With `NIMBLE_SYSTEM_DRY_RUN=1`, `nimble window
+<layout>` prints the window's frame and where it would go without moving it.
+
 The `scripts/drive-*.sh` scripts drive a running Nimble with System Events keystrokes and take
 screenshots into `/tmp`. They need Accessibility permission for the terminal running them, expect
 Nimble started with `NIMBLE_DEBUG=1` logging to `/tmp/nimble.log`, refuse to type unless Nimble's

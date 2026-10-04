@@ -4,6 +4,8 @@
 #[cfg(target_os = "macos")]
 mod ai;
 #[cfg(target_os = "macos")]
+mod ax;
+#[cfg(target_os = "macos")]
 mod bridge;
 mod calc;
 #[cfg(target_os = "macos")]
@@ -29,6 +31,7 @@ mod keychain;
 mod keymap;
 #[cfg(target_os = "macos")]
 mod keys;
+mod layout;
 #[cfg(target_os = "macos")]
 mod mac;
 #[cfg(target_os = "macos")]
@@ -495,6 +498,9 @@ mod natives {
         if template.contains("{clipboard}") {
             vars.clipboard = mac::clipboard_text();
         }
+        if template.contains("{selection}") {
+            vars.selection = crate::ax::selected_text().unwrap_or_default();
+        }
         if template.contains("{date}") || template.contains("{time}") {
             (vars.date, vars.time) = shortcuts::local_date_time();
         }
@@ -732,22 +738,37 @@ mod natives {
         }
     }
 
-    /// `runningApps()` -> `[{ name, path, icon, pid, active, hidden }]`: apps with a Dock icon.
+    /// `runningApps()` -> `[{ name, path, icon, pid, bundleId, active, hidden, memory, memoryText }]`:
+    /// apps with a Dock icon, Nimble left out, most memory first.
     pub fn running_apps(_a: &[Value]) -> Value {
-        let rows: Vec<Value> = crate::sysinfo::running_apps()
+        let rows: Vec<Value> = crate::system::running_apps()
             .into_iter()
             .map(|a| {
                 obj(vec![
-                    ("name", Value::String(a.name.as_str().into())),
-                    ("icon", Value::String(mac::icon_name(&a.path).as_str().into())),
-                    ("path", Value::String(a.path.as_str().into())),
+                    ("name", s(&a.name)),
+                    ("icon", s(&mac::icon_name(&a.path))),
+                    ("path", s(&a.path)),
                     ("pid", Value::Number(a.pid as f64)),
+                    ("bundleId", s(&a.bundle_id)),
                     ("active", Value::Bool(a.active)),
                     ("hidden", Value::Bool(a.hidden)),
+                    ("memory", Value::Number(a.memory as f64)),
+                    ("memoryText", s(&crate::system::bytes(a.memory))),
                 ])
             })
             .collect();
         Value::Array(VmRef::new(rows))
+    }
+
+    /// `appAction(pid, action)` -> `{ ok, message }`; action is switch, hide, unhide, quit or
+    /// force-quit.
+    pub fn app_action(args: &[Value]) -> Value {
+        let action = str_arg(args, 1);
+        let (ok, message) = match crate::system::app_action(num_arg(args, 0, 0.0) as i32, &action) {
+            Ok(m) => (true, m),
+            Err(e) => (false, e),
+        };
+        obj(vec![("ok", Value::Bool(ok)), ("message", s(&message))])
     }
 
     /// `systemCommand(id, arg, cb)`: lock, sleep, sleep-displays, restart, shut-down, log-out,
@@ -785,6 +806,27 @@ mod natives {
             reply(id, crate::system::run(&cmd, &arg));
         }
         Value::Null
+    }
+
+    /// `arrangeWindow(layout)` -> `{ ok, message }`: move the frontmost app's focused window
+    /// (left-half, right-third, maximize, next-display, restore, …).
+    pub fn arrange_window(args: &[Value]) -> Value {
+        let (ok, message) = match crate::ax::arrange(&str_arg(args, 0)) {
+            Ok(m) => (true, m),
+            Err(e) => (false, e),
+        };
+        obj(vec![("ok", Value::Bool(ok)), ("message", s(&message))])
+    }
+
+    /// `selectedText()` -> the selected text in the focused app, or null.
+    pub fn selected_text(_a: &[Value]) -> Value {
+        crate::ax::selected_text().map(|t| s(&t)).unwrap_or(Value::Null)
+    }
+
+    /// `accessibilityTrusted(prompt)` -> whether Nimble may use Accessibility; `prompt` shows the
+    /// macOS dialog.
+    pub fn accessibility_trusted(args: &[Value]) -> Value {
+        Value::Bool(crate::ax::trusted(matches!(args.first(), Some(Value::Bool(true)))))
     }
 
     /// `volume()` -> `{ percent, muted }` or null when the output device has no volume control.
@@ -993,6 +1035,7 @@ mod natives {
         obj(vec![("results", Value::Array(VmRef::new(vec![]))), ("total", Value::Number(0.0)), ("ms", Value::Number(0.0))])
     }
     pub fn running_apps(_a: &[Value]) -> Value { Value::Array(VmRef::new(vec![])) }
+    pub use unsupported as app_action;
     pub fn calculate(a: &[Value]) -> Value {
         match calc::answer(&str_arg(a, 0), None) {
             Some(x) => obj(vec![("display", Value::String(x.display.as_str().into())), ("copy", Value::String(x.copy.as_str().into())), ("detail", Value::String(x.detail.as_str().into()))]),
@@ -1002,6 +1045,9 @@ mod natives {
     pub fn system_info(_a: &[Value]) -> Value { Value::Null }
     pub fn system_command(_a: &[Value]) -> Value { Value::Null }
     pub fn volume(_a: &[Value]) -> Value { Value::Null }
+    pub use unsupported as arrange_window;
+    pub fn selected_text(_a: &[Value]) -> Value { Value::Null }
+    pub fn accessibility_trusted(_a: &[Value]) -> Value { Value::Bool(false) }
     pub fn dark_mode(_a: &[Value]) -> Value { Value::Null }
     pub fn file_icon(_a: &[Value]) -> Value { Value::String("".into()) }
     pub fn reveal_file(_a: &[Value]) -> Value { Value::Bool(false) }
@@ -1071,10 +1117,14 @@ pub fn nimble_object() -> Value {
     m.insert(Arc::from("recentFiles"), Value::native(natives::recent_files));
     m.insert(Arc::from("queryFiles"), Value::native(natives::query_files));
     m.insert(Arc::from("runningApps"), Value::native(natives::running_apps));
+    m.insert(Arc::from("appAction"), Value::native(natives::app_action));
     m.insert(Arc::from("calculate"), Value::native(natives::calculate));
     m.insert(Arc::from("systemInfo"), Value::native(natives::system_info));
     m.insert(Arc::from("systemCommand"), Value::native(natives::system_command));
     m.insert(Arc::from("volume"), Value::native(natives::volume));
+    m.insert(Arc::from("arrangeWindow"), Value::native(natives::arrange_window));
+    m.insert(Arc::from("selectedText"), Value::native(natives::selected_text));
+    m.insert(Arc::from("accessibilityTrusted"), Value::native(natives::accessibility_trusted));
     m.insert(Arc::from("darkMode"), Value::native(natives::dark_mode));
     m.insert(Arc::from("fileIcon"), Value::native(natives::file_icon));
     m.insert(Arc::from("revealFile"), Value::native(natives::reveal_file));

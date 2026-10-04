@@ -8,7 +8,7 @@
 
 import { loadModule } from "tish:ffi"
 import { macos, useState } from "tish:macos"
-import { reindex, search, launch, setup, setPanelShape, setArrowKeys, setTheme, typeText, getPref, setPref, searchHistory, addSearchHistory, clearSearchHistory, registerHotkey, quit, hide, appCount, searchFiles, watchApps, fuzzy, pluginPaths, copyText, loadBytecodePlugin, bundleResources, recordUse, frecency, statusItem, watchClipboard, clipboardHistory, clearClipboardHistory, aiAvailability, aiSession, aiEndSession, aiPrewarm, aiAsk, aiCancel, symbolIcon, fileIndexStart, findFiles, recentFiles, queryFiles, runningApps, systemInfo, calculate, systemCommand, fileIcon, revealFile, fileIndexStatus, show, toggle, unregisterHotkey, checkHotkey, hotkeyDisplay, recordHotkey, loadShortcuts, saveShortcut, checkKeyword, ensureShortcutsFile, removeShortcut, bindHotkey, unbindHotkey, expandTemplate, watchShortcuts, runShell, cliMain, cliServe, cliWrite, cliEnd, cliUsage } from "tish:nimble"
+import { reindex, search, launch, setup, setPanelShape, setArrowKeys, setTheme, typeText, getPref, setPref, searchHistory, addSearchHistory, clearSearchHistory, registerHotkey, quit, hide, appCount, searchFiles, watchApps, fuzzy, pluginPaths, copyText, loadBytecodePlugin, bundleResources, recordUse, frecency, statusItem, watchClipboard, clipboardHistory, clearClipboardHistory, aiAvailability, aiSession, aiEndSession, aiPrewarm, aiAsk, aiCancel, symbolIcon, fileIndexStart, findFiles, recentFiles, queryFiles, runningApps, systemInfo, calculate, systemCommand, appAction, arrangeWindow, selectedText, accessibilityTrusted, fileIcon, revealFile, fileIndexStatus, show, toggle, unregisterHotkey, checkHotkey, hotkeyDisplay, recordHotkey, loadShortcuts, saveShortcut, checkKeyword, ensureShortcutsFile, removeShortcut, bindHotkey, unbindHotkey, expandTemplate, watchShortcuts, runShell, cliMain, cliServe, cliWrite, cliEnd, cliUsage } from "tish:nimble"
 import { env } from "tish:process"
 import { THEME } from "./theme.tish"
 
@@ -39,6 +39,7 @@ let AI_SYSTEM = {
   setVolume: ["volume", ""], volumeUp: ["volume", "up"], volumeDown: ["volume", "down"], lockScreen: ["lock", ""],
   sleepDisplays: ["sleep-displays", ""], startScreenSaver: ["screen-saver", ""], hideAllApps: ["hide-all", ""], ejectDisks: ["eject", ""]
 }
+let AI_WINDOW_LAYOUTS = ["left-half", "right-half", "top-half", "bottom-half", "top-left", "top-right", "bottom-left", "bottom-right", "left-third", "center-third", "right-third", "left-two-thirds", "right-two-thirds", "maximize", "almost-maximize", "maximize-height", "center", "reasonable-size", "next-display", "previous-display", "restore"]
 // Offered so the model has a match for these requests; the tool refuses them and names the command.
 let AI_SYSTEM_REFUSED = { restart: "Restart", shutDown: "Shut Down", sleep: "Sleep", logOut: "Log Out", quitAllApps: "Quit All Apps", emptyTrash: "Empty Trash" }
 let AI_SYSTEM_ACTIONS = ["darkModeOn", "darkModeOff", "mute", "unmute", "setVolume", "volumeUp", "volumeDown", "lockScreen", "sleepDisplays", "startScreenSaver", "hideAllApps", "ejectDisks", "restart", "shutDown", "sleep", "logOut", "quitAllApps", "emptyTrash"]
@@ -70,6 +71,9 @@ fn aiTools() {
     { name: "controlMac", description: "Change a setting on this Mac: dark mode, sound volume and mute, lock the screen, sleep the displays, start the screen saver, hide all apps, eject disks. Also call it for restart, shut down, sleep, log out, quit all apps and empty Trash, and repeat its reply.", params: [
       { name: "action", description: "What to do", choices: AI_SYSTEM_ACTIONS },
       { name: "level", description: "Volume percentage 0 to 100, only for setVolume", optional: true }
+    ] },
+    { name: "arrangeWindow", description: "Move or resize the window the user was working in: halves, quarters, thirds, maximize, center, another display, or restore it.", params: [
+      { name: "layout", description: "Where the window goes", choices: AI_WINDOW_LAYOUTS }
     ] },
     { name: "calculate", description: "Work out arithmetic, percentages, unit and currency conversions, number bases and the time in other time zones exactly. Use it for any maths instead of calculating yourself.", params: [{ name: "expression", description: "e.g. 15% of 80, 5 km in mi, 100 usd to eur, 255 in hex, time in tokyo, 3pm pst to cet" }] }
   ]
@@ -161,6 +165,35 @@ let SYSTEM_COMMANDS = [
   { name: "Shut Down", system: "shut-down", symbol: "power", hides: true, confirm: true },
   { name: "Log Out", system: "log-out", symbol: "rectangle.portrait.and.arrow.right", hides: true, confirm: true }
 ]
+// Window layouts for arrangeWindow: id and SF Symbol. They act on the window behind the panel.
+let WINDOW_LAYOUTS = [
+  { name: "Left Half", layout: "left-half", symbol: "rectangle.lefthalf.filled" },
+  { name: "Right Half", layout: "right-half", symbol: "rectangle.righthalf.filled" },
+  { name: "Top Half", layout: "top-half", symbol: "rectangle.tophalf.filled" },
+  { name: "Bottom Half", layout: "bottom-half", symbol: "rectangle.bottomhalf.filled" },
+  { name: "Top Left Quarter", layout: "top-left", symbol: "rectangle.inset.topleft.filled" },
+  { name: "Top Right Quarter", layout: "top-right", symbol: "rectangle.inset.topright.filled" },
+  { name: "Bottom Left Quarter", layout: "bottom-left", symbol: "rectangle.inset.bottomleft.filled" },
+  { name: "Bottom Right Quarter", layout: "bottom-right", symbol: "rectangle.inset.bottomright.filled" },
+  { name: "First Third", layout: "left-third", symbol: "rectangle.leftthird.inset.filled" },
+  { name: "Center Third", layout: "center-third", symbol: "rectangle.center.inset.filled" },
+  { name: "Last Third", layout: "right-third", symbol: "rectangle.rightthird.inset.filled" },
+  { name: "First Two Thirds", layout: "left-two-thirds", symbol: "rectangle.lefthalf.inset.filled" },
+  { name: "Last Two Thirds", layout: "right-two-thirds", symbol: "rectangle.righthalf.inset.filled" },
+  { name: "Maximize Window", layout: "maximize", symbol: "macwindow" },
+  { name: "Almost Maximize", layout: "almost-maximize", symbol: "rectangle.inset.filled" },
+  { name: "Maximize Height", layout: "maximize-height", symbol: "arrow.up.and.down" },
+  { name: "Center Window", layout: "center", symbol: "rectangle.center.inset.filled" },
+  { name: "Reasonable Size", layout: "reasonable-size", symbol: "macwindow.on.rectangle" },
+  { name: "Next Display", layout: "next-display", symbol: "display.2" },
+  { name: "Previous Display", layout: "previous-display", symbol: "display.2" },
+  { name: "Restore Window", layout: "restore", symbol: "arrow.uturn.backward" }
+]
+for (let i = 0; i < WINDOW_LAYOUTS.length; i = i + 1) {
+  let d = WINDOW_LAYOUTS[i]
+  commands.push({ name: d.name, path: "nimble:window:" + d.layout, icon: symbolIcon(d.symbol), kind: "Window", mode: "window", layout: d.layout, pluginTitle: "Window" })
+}
+commands.push({ name: "Running Apps", path: "nimble:running", icon: symbolIcon("square.stack.3d.up"), kind: "Command", mode: "running", pluginTitle: "System" })
 for (let i = 0; i < SYSTEM_COMMANDS.length; i = i + 1) {
   let d = SYSTEM_COMMANDS[i]
   commands.push({ name: d.name, path: "nimble:system:" + d.system + (d.arg ? "-" + d.arg : ""), icon: symbolIcon(d.symbol), kind: "System", mode: "system", system: d.system, arg: d.arg ? d.arg : "", hides: d.hides === true, confirm: d.confirm === true, pluginTitle: "System" })
@@ -495,6 +528,10 @@ fn leaveToRoot() {
 fn openCommand(c, query) {
   if (c.mode === "system") {
     runSystem(c, query.trim() !== "" ? query.trim() : c.arg, false)
+    return
+  }
+  if (c.mode === "window") {
+    runWindow(c)
     return
   }
   leaveToRoot()
@@ -1315,6 +1352,9 @@ fn listResults(text) {
   if (m.mode === "clipboard") {
     return clipboardResults(text)
   }
+  if (m.mode === "running") {
+    return runningResults(text)
+  }
   if (m.mode === "create") {
     return wizardResults(text)
   }
@@ -1344,6 +1384,75 @@ fn listResults(text) {
 
 fn isFile(r) {
   return r !== null && (r.kind === "File" || r.kind === "Folder")
+}
+
+// ── Running Apps: ↵ switch, ⌘H hide or show, ⌘⌫ quit, ⌥↵ twice force quit ──
+
+let QUIT_HIDE_MS = 5000
+// pid → when it was asked to quit; hidden from the list for QUIT_HIDE_MS while it closes.
+let quitting = {}
+let forcing = { pid: 0, at: 0 }
+
+fn runningResults(text) {
+  let apps = runningApps()
+  let order = []
+  if (text.trim() === "") {
+    for (let i = 0; i < apps.length; i = i + 1) {
+      order.push(i)
+    }
+  } else {
+    let names = []
+    for (let i = 0; i < apps.length; i = i + 1) {
+      names.push(apps[i].name)
+    }
+    let hits = fuzzy(text, names, apps.length)
+    for (let i = 0; i < hits.length; i = i + 1) {
+      order.push(hits[i].index)
+    }
+  }
+  let rows = []
+  for (let k = 0; k < order.length; k = k + 1) {
+    let a = apps[order[k]]
+    let asked = quitting["" + a.pid]
+    if (asked === null || Date.now() - asked > QUIT_HIDE_MS) {
+      let state = a.active ? " · frontmost" : (a.hidden ? " · hidden" : "")
+      rows.push({ name: a.name, kind: a.memoryText + state, icon: a.icon, path: a.path, pid: a.pid, hidden: a.hidden, mode: "running-app" })
+    }
+  }
+  return rows
+}
+
+// The selected row while it waits for its second ⌥↵.
+fn forcingRow() {
+  let r = shell.selected < shell.results.length ? shell.results[shell.selected] : null
+  if (r === null || r.mode !== "running-app" || r.pid !== forcing.pid || Date.now() - forcing.at > CONFIRM_MS) {
+    return null
+  }
+  return r
+}
+
+fn runningAction(row, action) {
+  if (action === "force-quit" && forcingRow() === null) {
+    forcing = { pid: row.pid, at: Date.now() }
+    refresh()
+    return
+  }
+  forcing = { pid: 0, at: 0 }
+  let r = appAction(row.pid, action)
+  if (action === "switch" && r.ok) {
+    hide()
+    leaveList()
+    return
+  }
+  if (r.ok && (action === "quit" || action === "force-quit")) {
+    quitting["" + row.pid] = Date.now()
+  }
+  let sel = shell.selected
+  shell.apps = listResults(shell.query)
+  compose()
+  shell.selected = Math.min(sel, Math.max(0, shell.results.length - 1))
+  shell.hud = r.ok && action === "quit" ? r.message + " · ⌥↵ twice to force quit" : r.message
+  refresh()
 }
 
 // The file index answers synchronously; while it builds (or is busy applying changes), Spotlight
@@ -1974,6 +2083,10 @@ fn runAiTool(name, argsJson) {
   if (name === "controlMac") {
     return aiControlMac(args)
   }
+  if (name === "arrangeWindow") {
+    let r = arrangeWindow(argText(args, "layout"))
+    return toolReply(r.ok ? (r.message !== "" ? r.message : "Done.") : "Failed: " + r.message, "", [])
+  }
   if (name === "calculate") {
     let a = calculate(argText(args, "expression"))
     return toolReply(a === null ? "Could not work that out; try a simpler expression such as 15% of 80 or 5 km in mi." : a.display + " (" + a.detail + ")", "", [])
@@ -2181,6 +2294,20 @@ fn runSystem(c, arg, ask) {
   })
 }
 
+// Moves the window behind the panel and closes the panel; a failure (no permission, no window)
+// shows in the panel, opening it if a hotkey ran the command.
+fn runWindow(c) {
+  let r = arrangeWindow(c.layout)
+  if (r.ok) {
+    hide()
+    setQuery("")
+    return
+  }
+  show()
+  shell.hud = r.message
+  refresh()
+}
+
 // "volume 30", "vol 30%" set the volume from the root search.
 fn volumeRow(text) {
   let w = text.trim().toLowerCase().split(" ")
@@ -2229,6 +2356,10 @@ fn open(i) {
     setQuery("")
     return
   }
+  if (target.mode === "running-app") {
+    runningAction(target, "switch")
+    return
+  }
   if (shell.query.trim() !== "" && (shell.mode === null || categoryIndex() >= 0)) {
     addSearchHistory(shell.query)
   }
@@ -2269,11 +2400,13 @@ fn open(i) {
     runBuiltin(target)
   } else if (target.mode === "system") {
     runSystem(target, target.arg, true)
+  } else if (target.mode === "window") {
+    runWindow(target)
   } else if (target.mode === "ai") {
     enterAi(target, target.question)
   } else if (target.mode === "create") {
     startWizard(null)
-  } else if (target.mode === "list" || target.mode === "clipboard" || target.mode === "files" || target.mode === "shortcuts") {
+  } else if (target.mode === "list" || target.mode === "clipboard" || target.mode === "files" || target.mode === "shortcuts" || target.mode === "running") {
     enterList(target)
   } else if (target.mode === "view") {
     enterView(target)
@@ -2404,6 +2537,10 @@ fn onKey(name) {
   let row = shell.selected < shell.results.length ? shell.results[shell.selected] : null
   if (modeIs("shortcuts") && row !== null && (name === "cmd+enter" || name === "alt+enter" || name === "cmd+delete")) {
     openShortcutsRow(row, name)
+    return
+  }
+  if (modeIs("running") && row !== null && (name === "cmd+h" || name === "cmd+delete" || name === "alt+enter")) {
+    runningAction(row, name === "cmd+h" ? (row.hidden ? "unhide" : "hide") : (name === "cmd+delete" ? "quit" : "force-quit"))
     return
   }
   if (modeIs("output") && name === "cmd+enter") {
@@ -2590,7 +2727,7 @@ fn hintWidths(h) {
   if (h === null) {
     return [1, 1]
   }
-  return [Math.ceil(h[0].length * 6.8) + 18, Math.max(22, h[1].length * 9 + 12)]
+  return [Math.ceil(h[0].length * 6.8) + 18, Math.max(22, h[1].length * 10 + 14)]
 }
 
 fn HintLabel(props) {
@@ -2627,6 +2764,9 @@ fn primaryAction(r) {
   }
   if (r.mode === "system") {
     return r.confirm ? (confirmingRow() !== null ? "Confirm " + r.name : r.name) : "Run"
+  }
+  if (r.mode === "window") {
+    return "Arrange Window"
   }
   if (r.mode === "ai") {
     return "Ask AI"
@@ -2670,6 +2810,9 @@ fn footerHints() {
   }
   if (modeIs("history")) {
     return [["Search", "↵"], ["Back", "esc"]]
+  }
+  if (modeIs("running")) {
+    return [["Switch To", "↵"], [r !== null && r.hidden ? "Show" : "Hide", "⌘H"], ["Quit", "⌘⌫"]]
   }
   if (modeIs("apps")) {
     return [[primaryAction(r), "↵"], ["Show in Finder", "⌘R"], [appsView === "grid" ? "List View" : "Grid View", "⌘L"]]
@@ -2773,6 +2916,10 @@ fn statusText() {
   let pending = confirmingRow()
   if (pending !== null) {
     return "Press Return again to " + pending.name
+  }
+  let forced = forcingRow()
+  if (forced !== null) {
+    return "Press ⌥↵ again to force quit " + forced.name + " (unsaved changes are lost)"
   }
   if (shell.hud !== "") {
     return shell.hud
@@ -3138,6 +3285,78 @@ fn cliStatus(token, json) {
   cliEnd(token, 0)
 }
 
+// `nimble window` lists the layouts; `nimble window <layout>` arranges the frontmost window.
+fn cliWindow(token, layout) {
+  if (layout === "") {
+    let lines = []
+    for (let i = 0; i < WINDOW_LAYOUTS.length; i = i + 1) {
+      lines.push(WINDOW_LAYOUTS[i].layout + "\t" + WINDOW_LAYOUTS[i].name)
+    }
+    cliOut(token, lines.join("\n") + "\n")
+    cliEnd(token, 0)
+    return
+  }
+  let r = arrangeWindow(layout)
+  if (!r.ok) {
+    cliFail(token, r.message)
+    return
+  }
+  if (r.message !== "") {
+    cliOut(token, r.message + "\n")
+  }
+  cliEnd(token, 0)
+}
+
+let APP_ACTIONS = ["switch", "hide", "unhide", "quit", "force-quit"]
+
+// `nimble running` lists apps; `nimble running <action> <name|pid>` acts on one. A name must
+// match one app exactly (case aside) or be the start of only one app's name.
+fn cliRunning(token, w, json) {
+  let apps = runningApps()
+  if (w.length < 2) {
+    if (json) {
+      cliOut(token, JSON.stringify(apps.map((a) => ({ name: a.name, pid: a.pid, memory: a.memory, active: a.active, hidden: a.hidden, path: a.path }))) + "\n")
+    } else {
+      let lines = []
+      for (let i = 0; i < apps.length; i = i + 1) {
+        let a = apps[i]
+        lines.push(a.name + "\t" + a.memoryText + "\t" + a.pid + (a.active ? "\tfrontmost" : (a.hidden ? "\thidden" : "")))
+      }
+      cliOut(token, lines.join("\n") + (lines.length > 0 ? "\n" : ""))
+    }
+    cliEnd(token, 0)
+    return
+  }
+  let action = w[1]
+  if (APP_ACTIONS.indexOf(action) < 0 || w.length < 3) {
+    cliFail(token, "usage: nimble running [" + APP_ACTIONS.join("|") + " <name|pid>]")
+    return
+  }
+  let want = w.slice(2).join(" ").toLowerCase()
+  let exact = []
+  let prefix = []
+  for (let i = 0; i < apps.length; i = i + 1) {
+    let n = apps[i].name.toLowerCase()
+    if (n === want || ("" + apps[i].pid) === want) {
+      exact.push(apps[i])
+    } else if (n.indexOf(want) === 0) {
+      prefix.push(apps[i])
+    }
+  }
+  let found = exact.length === 1 ? exact : (exact.length === 0 ? prefix : exact)
+  if (found.length !== 1) {
+    cliFail(token, found.length === 0 ? "no running app called " + want : want + " matches " + found.map((a) => a.name).join(", "))
+    return
+  }
+  let r = appAction(found[0].pid, action)
+  if (!r.ok) {
+    cliFail(token, r.message)
+    return
+  }
+  cliOut(token, (r.message !== "" ? r.message : "Switched to " + found[0].name) + "\n")
+  cliEnd(token, 0)
+}
+
 // `nimble system` lists the commands; `nimble system <id> [arg]` runs one without asking.
 fn cliSystem(token, id, arg) {
   if (id === "") {
@@ -3250,6 +3469,18 @@ fn handleCli(argv, cwd, token) {
     cliEnd(token, apps.length > 0 ? 0 : 1)
   } else if (cmd === "ask") {
     cliAsk(token, rest)
+  } else if (cmd === "window") {
+    cliWindow(token, w.length > 1 ? w[1] : "")
+  } else if (cmd === "selection") {
+    let t = selectedText()
+    if (t === null) {
+      cliFail(token, accessibilityTrusted(false) ? "no selected text in the focused app" : "Nimble needs Accessibility: System Settings › Privacy & Security › Accessibility")
+    } else {
+      cliOut(token, t + "\n")
+      cliEnd(token, 0)
+    }
+  } else if (cmd === "running") {
+    cliRunning(token, w, p.flags.json)
   } else if (cmd === "system") {
     cliSystem(token, w.length > 1 ? w[1] : "", w.slice(2).join(" "))
   } else if (cmd === "volume" || cmd === "dark-mode" || cmd === "mute") {

@@ -288,26 +288,45 @@ fn app_by_pid(pid: i32) -> Option<Retained<NSRunningApplication>> {
     NSRunningApplication::runningApplicationWithProcessIdentifier(pid)
 }
 
-/// `switch`, `hide`, `unhide`, `quit` or `force-quit` the app with `pid`.
-pub fn app_action(pid: i32, action: &str) -> Result<(), String> {
+/// `switch`, `hide`, `unhide`, `quit` or `force-quit` the app with `pid`. Returns a short message;
+/// with `NIMBLE_SYSTEM_DRY_RUN` set it only reports what it would do.
+pub fn app_action(pid: i32, action: &str) -> Result<String, String> {
     let a = app_by_pid(pid).ok_or_else(|| format!("no app with pid {pid}"))?;
+    let name = a.localizedName().map(|s| s.to_string()).unwrap_or_default();
+    if !matches!(action, "switch" | "hide" | "unhide" | "quit" | "force-quit") {
+        return Err(format!("unknown app action `{action}`"));
+    }
+    if std::env::var_os("NIMBLE_SYSTEM_DRY_RUN").is_some() {
+        return Ok(format!("dry run: {action} {name}"));
+    }
     let ok = match action {
         "switch" => {
             a.unhide();
             #[allow(deprecated)]
             a.activateWithOptions(NSApplicationActivationOptions::ActivateAllWindows)
         }
-        "hide" => a.hide(),
-        "unhide" => a.unhide(),
+        // On macOS 26 both return NO even when the app hides or shows, so the result is ignored.
+        "hide" => {
+            a.hide();
+            true
+        }
+        "unhide" => {
+            a.unhide();
+            true
+        }
         "quit" => a.terminate(),
-        "force-quit" => a.forceTerminate(),
-        _ => return Err(format!("unknown app action `{action}`")),
+        _ => a.forceTerminate(),
     };
-    if ok {
-        Ok(())
-    } else {
-        Err(format!("{} did not {action}", a.localizedName().map(|s| s.to_string()).unwrap_or_default()))
+    if !ok {
+        return Err(format!("{name} did not {}", action.replace('-', " ")));
     }
+    Ok(match action {
+        "hide" => format!("Hid {name}"),
+        "unhide" => format!("Showing {name}"),
+        "quit" => format!("Asked {name} to quit"),
+        "force-quit" => format!("Force quit {name}"),
+        _ => String::new(),
+    })
 }
 
 /// Quit every app in the Dock but Finder (and Nimble). Returns how many were asked.
@@ -325,7 +344,8 @@ pub fn quit_all() -> usize {
 pub fn hide_all() -> usize {
     let mut n = 0;
     for a in running_apps() {
-        if app_by_pid(a.pid).is_some_and(|x| x.hide()) {
+        if let Some(x) = app_by_pid(a.pid) {
+            x.hide();
             n += 1;
         }
     }
@@ -431,5 +451,41 @@ mod tests {
             assert!((0.0..=100.0).contains(&v));
         }
         assert!(symbol("/System/Library/PrivateFrameworks/login.framework/Versions/Current/login", "SACLockScreenImmediate").is_some());
+    }
+
+    /// Starts Chess in the background and quits only that process. Skipped when Chess is already
+    /// open. Looks the process up with pgrep: without a running run loop, NSWorkspace's app list in
+    /// a test process never updates. Hide and unhide need a GUI app, so they are checked in Nimble.
+    #[test]
+    #[ignore]
+    fn acts_on_an_app_it_started() {
+        let chess = || {
+            let out = std::process::Command::new("/usr/bin/pgrep").args(["-x", "Chess"]).output().unwrap();
+            String::from_utf8_lossy(&out.stdout).lines().next().and_then(|l| l.trim().parse::<i32>().ok())
+        };
+        if chess().is_some() {
+            return;
+        }
+        assert!(std::process::Command::new("/usr/bin/open").args(["-g", "-b", "com.apple.Chess"]).status().unwrap().success());
+        let mut app = None;
+        for _ in 0..100 {
+            app = chess();
+            if app.is_some() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(100));
+        }
+        let pid = app.expect("Chess started");
+        std::thread::sleep(std::time::Duration::from_millis(500));
+        assert!(app_action(pid, "fly").is_err());
+        assert_eq!(app_action(pid, "quit").unwrap(), "Asked Chess to quit");
+        for _ in 0..100 {
+            if chess().is_none() {
+                return;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(100));
+        }
+        let _ = app_action(pid, "force-quit");
+        panic!("Chess did not quit");
     }
 }

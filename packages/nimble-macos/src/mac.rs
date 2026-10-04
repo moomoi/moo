@@ -923,6 +923,7 @@ fn install_key_monitor() {
                 "4" => Some("cmd+4"),
                 "r" => Some("cmd+r"),
                 "l" => Some("cmd+l"),
+                "h" => Some("cmd+h"),
                 _ => None,
             };
             if let Some(n) = named {

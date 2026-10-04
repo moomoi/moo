@@ -39,6 +39,11 @@ usage: nimble [command] [args]
   system [command] [arg]       list system commands, or run one: lock, sleep, sleep-displays,
                                screen-saver, dark-mode, mute, volume, eject, hide-all, quit-all,
                                empty-trash, restart, shut-down, log-out
+  window [layout]              list layouts, or arrange the frontmost window: left-half,
+                               right-third, maximize, center, next-display, restore, …
+  selection                    the selected text in the frontmost app
+  running [--json]             apps with a Dock icon, most memory first
+  running <action> <name|pid>  switch, hide, unhide, quit or force-quit one of them
   volume [N|up|down]           print or set the output volume
   mute [on|off]                toggle or set mute
   dark-mode [on|off]           toggle or set dark mode

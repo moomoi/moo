@@ -47,8 +47,10 @@ Tish binary) over a Unix-socket RPC. It does not exist yet.
 | `  src/fsindex.rs` | File name index: crawl, search, rescan, snapshot (portable) |
 | `  src/fslive.rs` | File index service: background build, FSEvents updates, saves |
 | `  src/files.rs` | Spotlight file search on a worker thread (fallback while indexing); metadata search (size, dates, kind, folder) for the AI's `findFiles` |
-| `  src/sysinfo.rs` | Running apps, OS, hardware, disk and battery facts for the AI's tools |
-| `  src/system.rs` | System commands for `systemCommand`: lock, sleep, restart / shut down / log out (Apple Events to loginwindow), empty Trash, dark mode, volume and mute (CoreAudio), eject, hide / quit all apps. `NIMBLE_SYSTEM_DRY_RUN=1` makes every command only report what it would do |
+| `  src/sysinfo.rs` | OS, hardware, disk and battery facts for the AI's `systemInfo` tool |
+| `  src/system.rs` | System commands for `systemCommand`: lock, sleep, restart / shut down / log out (Apple Events to loginwindow), empty Trash, dark mode, volume and mute (CoreAudio), eject, hide / quit all apps; running apps with memory use and switch / hide / quit / force quit for Running Apps. `NIMBLE_SYSTEM_DRY_RUN=1` makes every command only report what it would do |
+| `  src/ax.rs` | Accessibility: arrange the frontmost app's focused window (remembers the frame for Restore), selected text for `{selection}`, permission check |
+| `  src/layout.rs` | Window layouts as pure geometry: halves, quarters, thirds, maximize, center, moving to another display |
 | `  src/calc.rs` | Calculator: arithmetic, percentages, units, currency, number bases |
 | `  src/rates.rs` | ECB exchange rates, fetched on a background thread and cached for 12 h (`NIMBLE_RATES`) |
 | `  src/tz.rs` | Time zone answers ("time in tokyo", "3pm pst to cet") on `NSTimeZone` |
