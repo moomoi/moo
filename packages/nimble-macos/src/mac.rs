@@ -22,11 +22,11 @@ use objc2_app_kit::{
     NSImage, NSPasteboard, NSPasteboardTypeString, NSWindowTitleVisibility, NSWorkspace,
 };
 use objc2_foundation::{
-    NSNotification, NSNotificationCenter, NSObject, NSPoint, NSRect, NSSize, NSString, NSURL,
+    NSArray, NSNotification, NSNotificationCenter, NSObject, NSPoint, NSRect, NSSize, NSString, NSURL,
 };
 use tishlang_core::{Value, VmRef};
 
-use crate::{clip, files, index, keymap, watch};
+use crate::{clip, files, index, keymap, keys, watch};
 
 const ICON_SLOTS: usize = 512;
 use tishlang_ui::runtime::{run_with_current_root, LEGACY_ROOT_ID};
@@ -34,7 +34,9 @@ use tishlang_ui::runtime::{run_with_current_root, LEGACY_ROOT_ID};
 thread_local! {
     static ON_KEY: RefCell<Option<Value>> = const { RefCell::new(None) };
     static ON_SHOW: RefCell<Option<Value>> = const { RefCell::new(None) };
-    static PENDING: RefCell<Vec<(&'static str, &'static str)>> = const { RefCell::new(Vec::new()) };
+    static ON_HOTKEY: RefCell<Option<Value>> = const { RefCell::new(None) };
+    static START_HIDDEN: Cell<bool> = const { Cell::new(false) };
+    static PENDING: RefCell<Vec<(&'static str, String)>> = const { RefCell::new(Vec::new()) };
     static MONITOR: RefCell<Option<Retained<AnyObject>>> = const { RefCell::new(None) };
     static PANEL_SIZE: Cell<(f64, f64)> = const { Cell::new((720.0, 440.0)) };
     static ICONS: RefCell<HashMap<String, String>> = RefCell::new(HashMap::new());
@@ -47,9 +49,15 @@ thread_local! {
     static STATUS: RefCell<Option<(Retained<NSStatusItem>, Retained<MenuTarget>)>> = const { RefCell::new(None) };
 }
 
-pub fn set_callbacks(on_key: Option<Value>, on_show: Option<Value>) {
+pub fn set_callbacks(on_key: Option<Value>, on_show: Option<Value>, on_hotkey: Option<Value>) {
     ON_KEY.with(|c| *c.borrow_mut() = on_key);
     ON_SHOW.with(|c| *c.borrow_mut() = on_show);
+    ON_HOTKEY.with(|c| *c.borrow_mut() = on_hotkey);
+}
+
+/// Keep the panel hidden when setup finishes (started in the background, e.g. by the CLI).
+pub fn set_start_hidden(hidden: bool) {
+    START_HIDDEN.with(|c| c.set(hidden));
 }
 
 pub fn set_panel_size(w: f64, h: f64) {
@@ -76,8 +84,8 @@ fn host_window(mtm: MainThreadMarker) -> Option<Retained<NSWindow>> {
 // ── Deferred callbacks ──────────────────────────────────────────────────────
 
 /// Queue `(callback, arg)` and flush it from the main queue once the current handler returns.
-fn defer_callback(which: &'static str, arg: &'static str) {
-    PENDING.with(|q| q.borrow_mut().push((which, arg)));
+fn defer_callback(which: &'static str, arg: impl Into<String>) {
+    PENDING.with(|q| q.borrow_mut().push((which, arg.into())));
     DispatchQueue::main().exec_async(flush_pending);
 }
 
@@ -90,10 +98,11 @@ fn flush_pending() {
         for (which, arg) in events {
             let cb = match which {
                 "key" => ON_KEY.with(|c| c.borrow().clone()),
+                "hotkey" => ON_HOTKEY.with(|c| c.borrow().clone()),
                 _ => ON_SHOW.with(|c| c.borrow().clone()),
             };
             if let Some(Value::Function(f)) = cb {
-                let _ = f.call(&[Value::String(arg.into())]);
+                let _ = f.call(&[Value::String(arg.as_str().into())]);
                 debug_log(&format!("{which} {arg} handled"));
             }
         }
@@ -262,6 +271,7 @@ pub fn toggle() {
 
 pub fn quit() {
     let Some(mtm) = MainThreadMarker::new() else { return };
+    crate::cli::stop_serving();
     app(mtm).terminate(None);
 }
 
@@ -297,14 +307,26 @@ fn install_key_monitor() {
     }
     let block = RcBlock::new(|ev: NonNull<NSEvent>| -> *mut NSEvent {
         let e = unsafe { ev.as_ref() };
+        if RECORDING.with(|r| r.get()) {
+            if let Some(spec) = recorded_key(e) {
+                defer_callback("key", format!("record:{spec}"));
+            }
+            return std::ptr::null_mut();
+        }
         if edit_shortcut(e) {
             return std::ptr::null_mut();
         }
-        let ctrl = e.modifierFlags().contains(NSEventModifierFlags::Control);
+        let flags = e.modifierFlags();
+        let ctrl = flags.contains(NSEventModifierFlags::Control);
+        let cmd = flags.contains(NSEventModifierFlags::Command);
+        let alt = flags.contains(NSEventModifierFlags::Option);
         let name = match (e.keyCode(), ctrl) {
             (125, _) | (45, true) => Some("down"),
             (126, _) | (35, true) => Some("up"),
+            (36, _) | (76, _) if cmd => Some("cmd+enter"),
+            (36, _) | (76, _) if alt => Some("alt+enter"),
             (36, _) | (76, _) => Some("enter"),
+            (51, _) if cmd => Some("cmd+delete"),
             (53, _) => Some("escape"),
             (48, _) => Some("tab"),
             _ => None,
@@ -343,7 +365,9 @@ fn finish_setup(attempt: u32) {
     style_panel(&w, mtm);
     hide_on_resign_key(&w);
     install_key_monitor();
-    show();
+    if !START_HIDDEN.with(|c| c.get()) {
+        show();
+    }
 }
 
 // ── Global hotkey (Carbon; needs no Accessibility permission) ───────────────
@@ -381,62 +405,129 @@ extern "C" {
         options: u32,
         out_ref: *mut *mut c_void,
     ) -> i32;
+    fn UnregisterEventHotKey(hotkey: *mut c_void) -> i32;
+    fn GetEventParameter(
+        event: *mut c_void,
+        name: u32,
+        desired_type: u32,
+        actual_type: *mut u32,
+        size: usize,
+        actual_size: *mut usize,
+        data: *mut c_void,
+    ) -> i32;
 }
 
 const fn fourcc(s: &[u8; 4]) -> u32 {
     ((s[0] as u32) << 24) | ((s[1] as u32) << 16) | ((s[2] as u32) << 8) | (s[3] as u32)
 }
 
-extern "C" fn on_hotkey(_next: *mut c_void, _event: *mut c_void, _user: *mut c_void) -> i32 {
-    debug_log(&format!(
-        "hotkey shown={} key={}",
-        SHOWN.with(|s| s.get()),
-        panel_has_keys()
-    ));
-    toggle();
+/// The launcher's own action: toggle the panel directly, without a round trip through Tish.
+pub const TOGGLE: &str = "toggle";
+
+/// One hotkey as the user wrote it; registered once per logical modifier combination.
+struct Binding {
+    action: String,
+    /// What the hotkey runs, for messages: "Google", "the Nimble launcher".
+    label: String,
+    display: String,
+    /// `(Carbon hotkey ref, key code, logical modifiers)` per registration.
+    refs: Vec<(*mut c_void, u32, u32)>,
+}
+
+thread_local! {
+    /// Binding id -> binding. Carbon hotkey ids map to binding ids through `HOTKEY_OWNER`.
+    static BINDINGS: RefCell<HashMap<u32, Binding>> = RefCell::new(HashMap::new());
+    static HOTKEY_OWNER: RefCell<HashMap<u32, u32>> = RefCell::new(HashMap::new());
+    static NEXT_BINDING: Cell<u32> = const { Cell::new(1) };
+    static RECORDING: Cell<bool> = const { Cell::new(false) };
+}
+
+extern "C" fn on_hotkey(_next: *mut c_void, event: *mut c_void, _user: *mut c_void) -> i32 {
+    let mut hk = EventHotKeyID { signature: 0, id: 0 };
+    let st = unsafe {
+        GetEventParameter(
+            event,
+            fourcc(b"----"),
+            fourcc(b"hkid"),
+            std::ptr::null_mut(),
+            std::mem::size_of::<EventHotKeyID>(),
+            std::ptr::null_mut(),
+            &mut hk as *mut EventHotKeyID as *mut c_void,
+        )
+    };
+    let action = if st == 0 {
+        HOTKEY_OWNER
+            .with(|o| o.borrow().get(&hk.id).copied())
+            .and_then(|b| BINDINGS.with(|m| m.borrow().get(&b).map(|b| b.action.clone())))
+    } else {
+        None
+    };
+    let action = action.unwrap_or_else(|| TOGGLE.to_string());
+    debug_log(&format!("hotkey {action} shown={} key={}", SHOWN.with(|s| s.get()), panel_has_keys()));
+    if action == TOGGLE {
+        toggle();
+    } else {
+        defer_callback("hotkey", action);
+    }
     0
 }
 
-/// `(key code, modifiers as printed on the keyboard, key name)`.
-fn parse_hotkey(spec: &str) -> Result<(u32, u32, &'static str), String> {
-    let mut mods = 0u32;
-    let mut key = None;
-    for part in spec.split('+').map(|p| p.trim().to_ascii_lowercase()) {
-        match part.as_str() {
-            "cmd" | "command" => mods |= keymap::CMD,
-            "shift" => mods |= keymap::SHIFT,
-            "alt" | "opt" | "option" => mods |= keymap::OPT,
-            "ctrl" | "control" => mods |= keymap::CTRL,
-            "space" => key = Some((49, "space")),
-            "k" => key = Some((40, "k")),
-            "j" => key = Some((38, "j")),
-            "n" => key = Some((45, "n")),
-            "p" => key = Some((35, "p")),
-            other => return Err(format!("unsupported hotkey part `{other}`")),
-        }
-    }
-    key.map(|(k, name)| (k, mods, name)).ok_or_else(|| format!("hotkey `{spec}` has no key"))
-}
-
 pub struct Hotkey {
+    /// Binding id, for `unregister_hotkey`.
+    pub id: u32,
     /// What the user presses, as printed on the keys: `⌘Space`.
     pub display: String,
     /// What was registered after the keyboards' modifier mappings: `ctrl+space`.
     pub registered: Vec<String>,
 }
 
-/// Register `spec` (keys as printed) for whatever the connected keyboards' modifier mappings make
-/// those keys produce. Combinations an enabled system shortcut owns are skipped: macOS would
-/// accept them and then never deliver the keypress.
-pub fn register_hotkey(spec: &str) -> Result<Hotkey, String> {
-    let (code, physical, key) = parse_hotkey(spec)?;
-    let display = keymap::symbols(physical, key);
-    let combos = keymap::logical_combos(physical, &keymap::active_mappings());
+/// The logical combinations `spec` needs, or why it cannot be bound: a system shortcut or another
+/// Nimble hotkey owns it, or a modifier is remapped away on every keyboard.
+fn plan_hotkey(spec: &str) -> Result<(keys::Spec, String, Vec<u32>, Vec<String>), String> {
+    let s = keys::parse(spec)?;
+    let display = keys::display(s.mods, s.key);
+    let combos = keymap::logical_combos(s.mods, &keymap::active_mappings());
     if combos.is_empty() {
         return Err(format!("{display}: a modifier is remapped to a non-modifier key on every keyboard"));
     }
-    let mut registered = Vec::new();
+    let owner = BINDINGS.with(|m| {
+        m.borrow()
+            .values()
+            .find(|b| b.refs.iter().any(|(_, c, md)| *c == s.code && combos.contains(md)))
+            .map(|b| b.label.clone())
+    });
+    if let Some(label) = owner {
+        return Err(format!("{display} is already bound to {label}"));
+    }
+    let mut free = Vec::new();
     let mut taken = Vec::new();
+    for mods in combos {
+        match keymap::system_shortcut(s.code, mods) {
+            Some(owner) => taken.push(format!("{} is macOS \"{owner}\"", keymap::spec_name(mods, s.key))),
+            None => free.push(mods),
+        }
+    }
+    if free.is_empty() {
+        return Err(format!("{display} unavailable: {}", taken.join("; ")));
+    }
+    Ok((s, display, free, taken))
+}
+
+/// `Ok(display)` when `spec` could be bound now, else the reason it cannot.
+pub fn check_hotkey(spec: &str) -> Result<String, String> {
+    plan_hotkey(spec).map(|(_, display, _, _)| display)
+}
+
+/// Register `spec` (keys as printed) for whatever the connected keyboards' modifier mappings make
+/// those keys produce. Combinations an enabled system shortcut owns are skipped: macOS would
+/// accept them and then never deliver the keypress. `action` is `TOGGLE` for the launcher;
+/// anything else is passed to the Tish `onHotkey` callback. `label` names the target in conflict
+/// messages; empty uses `action`.
+pub fn register_hotkey(spec: &str, action: &str, label: &str) -> Result<Hotkey, String> {
+    let (s, display, combos, mut taken) = plan_hotkey(spec)?;
+    let binding_id = NEXT_BINDING.with(|n| n.replace(n.get() + 1));
+    let mut refs = Vec::new();
+    let mut registered = Vec::new();
     unsafe {
         let target = GetApplicationEventTarget();
         if !HOTKEY_HANDLER.with(|c| c.get()) {
@@ -448,24 +539,71 @@ pub fn register_hotkey(spec: &str) -> Result<Hotkey, String> {
             HOTKEY_HANDLER.with(|c| c.set(true));
         }
         for mods in combos {
-            let name = keymap::spec_name(mods, key);
-            if let Some(owner) = keymap::system_shortcut(code, mods) {
-                taken.push(format!("{name} is macOS \"{owner}\""));
-                continue;
-            }
+            let name = keymap::spec_name(mods, s.key);
             let mut out = std::ptr::null_mut();
-            let id = EventHotKeyID { signature: fourcc(b"nmbl"), id: HOTKEY_IDS.with(|n| n.replace(n.get() + 1)) };
-            match RegisterEventHotKey(code, mods, id, target, 0, &mut out) {
-                0 => registered.push(name),
-                st => taken.push(format!("{name} is taken (RegisterEventHotKey: {st})")),
+            let hk_id = HOTKEY_IDS.with(|n| n.replace(n.get() + 1));
+            let id = EventHotKeyID { signature: fourcc(b"nmbl"), id: hk_id };
+            match RegisterEventHotKey(s.code, mods, id, target, 0, &mut out) {
+                0 => {
+                    HOTKEY_OWNER.with(|o| o.borrow_mut().insert(hk_id, binding_id));
+                    refs.push((out, s.code, mods));
+                    registered.push(name);
+                }
+                st => taken.push(format!("{name} is taken by another app (RegisterEventHotKey: {st})")),
             }
         }
     }
     if registered.is_empty() {
         return Err(format!("{display} unavailable: {}", taken.join("; ")));
     }
-    debug_log(&format!("hotkey {display} registered as {}", registered.join(", ")));
-    Ok(Hotkey { display, registered })
+    debug_log(&format!("hotkey {display} -> {action} registered as {}", registered.join(", ")));
+    let label = match label {
+        "" if action == TOGGLE => "the Nimble launcher".to_string(),
+        "" => action.to_string(),
+        l => l.to_string(),
+    };
+    BINDINGS.with(|m| m.borrow_mut().insert(binding_id, Binding { action: action.to_string(), label, display: display.clone(), refs }));
+    Ok(Hotkey { id: binding_id, display, registered })
+}
+
+pub fn unregister_hotkey(id: u32) -> bool {
+    let Some(b) = BINDINGS.with(|m| m.borrow_mut().remove(&id)) else { return false };
+    for (r, _, _) in b.refs {
+        unsafe { UnregisterEventHotKey(r) };
+    }
+    HOTKEY_OWNER.with(|o| o.borrow_mut().retain(|_, owner| *owner != id));
+    debug_log(&format!("hotkey {} -> {} unregistered", b.display, b.action));
+    true
+}
+
+/// While recording, every keypress in the panel goes to `onKey` as `record:<spec>` (or
+/// `record:escape` / `record:return` / `record:delete` for those keys alone) instead of the field.
+pub fn set_recording(on: bool) {
+    RECORDING.with(|r| r.set(on));
+}
+
+fn carbon_mods(flags: NSEventModifierFlags) -> u32 {
+    let mut m = 0;
+    for (f, bit) in [
+        (NSEventModifierFlags::Command, keymap::CMD),
+        (NSEventModifierFlags::Shift, keymap::SHIFT),
+        (NSEventModifierFlags::Option, keymap::OPT),
+        (NSEventModifierFlags::Control, keymap::CTRL),
+    ] {
+        if flags.contains(f) {
+            m |= bit;
+        }
+    }
+    m
+}
+
+fn recorded_key(e: &NSEvent) -> Option<String> {
+    let mods = carbon_mods(e.modifierFlags());
+    let spec = keys::from_event(e.keyCode() as u32, mods)?;
+    match spec.as_str() {
+        "escape" | "return" | "delete" => Some(spec),
+        _ => keys::parse(&spec).ok().map(|_| spec),
+    }
 }
 
 // ── Launch and icons ────────────────────────────────────────────────────────
@@ -478,6 +616,22 @@ pub fn launch(target: &str) -> bool {
         Some(NSURL::fileURLWithPath(&s))
     };
     url.is_some_and(|u| NSWorkspace::sharedWorkspace().openURL(&u))
+}
+
+pub fn reveal(path: &str) -> bool {
+    if !std::path::Path::new(path).exists() {
+        return false;
+    }
+    let url = NSURL::fileURLWithPath(&NSString::from_str(path));
+    NSWorkspace::sharedWorkspace().activateFileViewerSelectingURLs(&NSArray::from_retained_slice(&[url]));
+    true
+}
+
+pub fn clipboard_text() -> String {
+    NSPasteboard::generalPasteboard()
+        .stringForType(unsafe { NSPasteboardTypeString })
+        .map(|s| s.to_string())
+        .unwrap_or_default()
 }
 
 pub fn copy_text(text: &str) -> bool {

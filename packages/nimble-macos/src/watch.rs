@@ -3,7 +3,6 @@
 
 use std::ffi::c_void;
 use std::ptr;
-use std::sync::OnceLock;
 
 use dispatch2::DispatchQueue;
 use objc2::rc::Retained;
@@ -39,23 +38,27 @@ extern "C" {
 const SINCE_NOW: u64 = u64::MAX;
 const LATENCY_S: f64 = 2.0;
 
-static ON_CHANGE: OnceLock<fn()> = OnceLock::new();
-
 extern "C" fn on_events(
     _s: FSEventStreamRef,
-    _info: *mut c_void,
+    info: *mut c_void,
     _n: usize,
     _paths: *mut c_void,
     _flags: *const u32,
     _ids: *const u64,
 ) {
-    if let Some(f) = ON_CHANGE.get() {
+    if !info.is_null() {
+        let f: fn() = unsafe { std::mem::transmute::<*mut c_void, fn()>(info) };
         f();
     }
 }
 
 /// Watch `dirs` (recursively); `on_change` runs on the main queue after each coalesced batch.
 pub fn watch(dirs: &[String], on_change: fn()) -> bool {
+    watch_with_latency(dirs, on_change, LATENCY_S)
+}
+
+/// As `watch`, coalescing over `latency` seconds. Each call adds a stream.
+pub fn watch_with_latency(dirs: &[String], on_change: fn(), latency: f64) -> bool {
     let existing: Vec<Retained<NSString>> = dirs
         .iter()
         .filter(|d| std::path::Path::new(d).is_dir())
@@ -66,13 +69,10 @@ pub fn watch(dirs: &[String], on_change: fn()) -> bool {
     }
     let refs: Vec<&NSString> = existing.iter().map(|s| &**s).collect();
     let paths = NSArray::from_slice(&refs);
-    if ON_CHANGE.set(on_change).is_err() {
-        return false;
-    }
     unsafe {
         let ctx = FSEventStreamContext {
             version: 0,
-            info: ptr::null_mut(),
+            info: on_change as *mut c_void,
             retain: ptr::null(),
             release: ptr::null(),
             copy_description: ptr::null(),
@@ -83,7 +83,7 @@ pub fn watch(dirs: &[String], on_change: fn()) -> bool {
             &ctx,
             Retained::as_ptr(&paths) as *const c_void,
             SINCE_NOW,
-            LATENCY_S,
+            latency,
             0,
         );
         if stream.is_null() {

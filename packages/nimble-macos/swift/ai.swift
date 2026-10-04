@@ -43,17 +43,65 @@ public func nimble_ai_free(_ p: UnsafeMutablePointer<CChar>?) {
     free(p)
 }
 
-/// A conversation: later asks see earlier turns. Returns 0 when the model is unavailable.
+/// `(session, tool name, arguments as JSON) -> result text` (malloc'd; freed here, may be null).
+/// Called on a Swift concurrency thread and may block while the host runs the tool.
+public typealias NimbleAIToolCallback = @convention(c) (UInt64, UnsafePointer<CChar>?, UnsafePointer<CChar>?) -> UnsafeMutablePointer<CChar>?
+
+/// A conversation: later asks see earlier turns. `tools` is a JSON array of
+/// `{ name, description, params: [{ name, description }] }` (string parameters); the model may call
+/// them while answering, through `toolCb`. Returns 0 when the model is unavailable.
 @_cdecl("nimble_ai_session_new")
-public func nimble_ai_session_new(_ instructions: UnsafePointer<CChar>?) -> UInt64 {
+public func nimble_ai_session_new(
+    _ instructions: UnsafePointer<CChar>?, _ tools: UnsafePointer<CChar>?, _ toolCb: NimbleAIToolCallback?
+) -> UInt64 {
     guard #available(macOS 26.0, *), case .available = SystemLanguageModel.default.availability else { return 0 }
     let text = instructions.map { String(cString: $0) } ?? ""
-    let session = text.isEmpty ? LanguageModelSession() : LanguageModelSession(instructions: text)
-    return locked {
+    let id = locked {
         let id = nextSession
         nextSession += 1
-        sessions[id] = session
         return id
+    }
+    let hostTools = toolCb.map { makeTools(tools.map { String(cString: $0) } ?? "[]", session: id, cb: $0) } ?? []
+    // The default guardrails refuse many harmless questions; this is Apple's documented, less strict
+    // level for plain-text replies.
+    let model = SystemLanguageModel(guardrails: .permissiveContentTransformations)
+    let session = LanguageModelSession(model: model, tools: hostTools, instructions: text.isEmpty ? nil : text)
+    locked { sessions[id] = session }
+    return id
+}
+
+@available(macOS 26.0, *)
+private func makeTools(_ json: String, session: UInt64, cb: NimbleAIToolCallback) -> [any Tool] {
+    guard let data = json.data(using: .utf8),
+          let list = (try? JSONSerialization.jsonObject(with: data)) as? [[String: Any]]
+    else { return [] }
+    return list.compactMap { spec -> (any Tool)? in
+        guard let name = spec["name"] as? String else { return nil }
+        let description = spec["description"] as? String ?? ""
+        let params = (spec["params"] as? [[String: Any]] ?? []).compactMap { p -> DynamicGenerationSchema.Property? in
+            guard let pname = p["name"] as? String else { return nil }
+            return .init(name: pname, description: p["description"] as? String, schema: DynamicGenerationSchema(type: String.self))
+        }
+        let root = DynamicGenerationSchema(name: name, description: description, properties: params)
+        guard let schema = try? GenerationSchema(root: root, dependencies: []) else { return nil }
+        return HostTool(name: name, description: description, parameters: schema, session: session, cb: cb)
+    }
+}
+
+/// A tool the host implements: arguments go out as JSON, the host's reply comes back as text.
+@available(macOS 26.0, *)
+private struct HostTool: Tool, @unchecked Sendable {
+    let name: String
+    let description: String
+    let parameters: GenerationSchema
+    let session: UInt64
+    let cb: NimbleAIToolCallback
+
+    func call(arguments: GeneratedContent) async throws -> String {
+        let out = name.withCString { n in arguments.jsonString.withCString { a in cb(session, n, a) } }
+        guard let out else { return "" }
+        defer { free(out) }
+        return String(cString: out)
     }
 }
 

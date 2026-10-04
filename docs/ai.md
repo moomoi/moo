@@ -28,10 +28,21 @@ and Nimble still launches on macOS 14; `aiAvailability()` then returns `requires
 reasons it reports: `deviceNotEligible`, `appleIntelligenceNotEnabled`, `modelNotReady`. The Swift
 runtime comes from `/usr/lib/swift`, which needs a deployment target of 12 or later (Nimble uses 14).
 
+**Tools.** The model can act, not just answer. `aiSession(instructions, toolsJson, onTool)` takes
+tools as `[{ name, description, params: [{ name, description }] }]` (string parameters); Swift turns
+each into a FoundationModels `Tool` with a `DynamicGenerationSchema`. When the model calls one,
+the Swift thread waits on the main queue while `onTool(name, argsJson)` runs in Tish, and the
+returned text goes back to the model. Built-in tools: `open` (app name, path or URL; `~` expanded,
+and a path that does not exist retries its last part under home, because the model guesses home
+folders) and `copyText`. The instructions include the home folder; with it, "open finder to my
+documents" called `open` with `/Users/<you>/Documents` in 3 of 3 runs, under 1 s each
+(`ai::tests::model_calls_a_host_tool`). Plugin `tools[]` can use the same path later.
+
 **Limits.** A small model with a context window Apple documents as 4,096 tokens: good for short
 answers, rewriting and extraction, weak on long input and broad knowledge. Long conversations fail
 with `exceededContextWindowSize` (shown as a message; esc starts over). Apple's safety filter can
-refuse (`guardrailViolation`).
+refuse (`guardrailViolation`); Nimble uses the `permissiveContentTransformations` guardrails, Apple's
+less strict level for plain-text replies, and puts a refused question back in the field.
 
 ## Features
 

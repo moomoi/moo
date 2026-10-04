@@ -4,15 +4,26 @@
 #[cfg(target_os = "macos")]
 mod ai;
 #[cfg(target_os = "macos")]
+mod cli;
+#[cfg(target_os = "macos")]
 mod clip;
 #[cfg(target_os = "macos")]
 mod files;
 mod frecency;
+mod fsindex;
+#[cfg(target_os = "macos")]
+mod fslive;
 mod index;
 #[cfg(target_os = "macos")]
 mod keymap;
 #[cfg(target_os = "macos")]
+mod keys;
+#[cfg(target_os = "macos")]
 mod mac;
+#[cfg(target_os = "macos")]
+mod shell;
+#[cfg(unix)]
+mod shortcuts;
 mod vmplug;
 #[cfg(target_os = "macos")]
 mod watch;
@@ -144,6 +155,7 @@ fn native_search(args: &[Value]) -> Value {
 #[cfg(target_os = "macos")]
 mod natives {
     use super::*;
+    use dispatch2::DispatchQueue;
 
     /// `launch(target)`: open a file path or a URL (`scheme://...`); hides Nimble on success.
     pub fn launch(args: &[Value]) -> Value {
@@ -158,24 +170,33 @@ mod natives {
         Value::Bool(mac::copy_text(&str_arg(args, 0)))
     }
 
-    /// `setup({ width, height, onKey, onShow })`: call before `macos.run(App)`.
+    /// `setup({ width, height, onKey, onShow, onHotkey, hidden })`: call before `macos.run(App)`.
+    /// `hidden` keeps the panel closed at startup.
     pub fn setup(args: &[Value]) -> Value {
         let opts = args.first();
         let w = field(opts, "width").and_then(|v| v.as_number()).unwrap_or(720.0);
         let h = field(opts, "height").and_then(|v| v.as_number()).unwrap_or(440.0);
         mac::set_panel_size(w, h);
-        mac::set_callbacks(field(opts, "onKey"), field(opts, "onShow"));
+        mac::set_callbacks(field(opts, "onKey"), field(opts, "onShow"), field(opts, "onHotkey"));
+        mac::set_start_hidden(matches!(field(opts, "hidden"), Some(Value::Bool(true))));
         mac::schedule_setup();
         Value::Null
     }
 
-    /// `registerHotkey(spec)` -> `{ ok, display, registered }` or `{ ok: false, error }`. `spec` names
-    /// keys as printed ("cmd+space"); `registered` lists what was registered after the keyboards'
-    /// modifier mappings (["ctrl+space"] with Command and Control swapped); `display` is "⌘Space".
+    /// `registerHotkey(spec, action?)` -> `{ ok, id, display, registered }` or `{ ok: false, error }`.
+    /// `spec` names keys as printed ("cmd+space"); `registered` lists what was registered after the
+    /// keyboards' modifier mappings (["ctrl+space"] with Command and Control swapped); `display` is
+    /// "⌘Space". Without `action` the hotkey toggles the launcher; with one, pressing it calls
+    /// `onHotkey(action)`. `label` names what it runs in conflict messages.
     pub fn register_hotkey(args: &[Value]) -> Value {
-        match mac::register_hotkey(&str_arg(args, 0)) {
+        let action = match args.get(1) {
+            Some(Value::String(s)) if !s.is_empty() => s.to_string(),
+            _ => mac::TOGGLE.to_string(),
+        };
+        match mac::register_hotkey(&str_arg(args, 0), &action, &str_arg(args, 2)) {
             Ok(h) => obj(vec![
                 ("ok", Value::Bool(true)),
+                ("id", Value::Number(h.id as f64)),
                 ("display", Value::String(h.display.as_str().into())),
                 (
                     "registered",
@@ -186,6 +207,286 @@ mod natives {
         }
     }
 
+    pub fn unregister_hotkey(args: &[Value]) -> Value {
+        Value::Bool(mac::unregister_hotkey(num_arg(args, 0, 0.0) as u32))
+    }
+
+    /// `checkHotkey(spec)` -> `{ ok, display }` when it could be bound now, else `{ ok: false, error }`.
+    pub fn check_hotkey(args: &[Value]) -> Value {
+        match mac::check_hotkey(&str_arg(args, 0)) {
+            Ok(d) => obj(vec![("ok", Value::Bool(true)), ("display", Value::String(d.as_str().into()))]),
+            Err(e) => obj(vec![("ok", Value::Bool(false)), ("error", Value::String(e.as_str().into()))]),
+        }
+    }
+
+    /// `hotkeyDisplay(spec)` -> "⌘⇧G", or the spec itself when it does not parse.
+    pub fn hotkey_display(args: &[Value]) -> Value {
+        let spec = str_arg(args, 0);
+        let d = keys::parse(&spec).map(|s| keys::display(s.mods, s.key)).unwrap_or(spec);
+        Value::String(d.as_str().into())
+    }
+
+    /// `recordHotkey(on)`: while on, panel keypresses arrive as `onKey("record:<spec>")`.
+    pub fn record_hotkey(args: &[Value]) -> Value {
+        mac::set_recording(matches!(args.first(), Some(Value::Bool(true))));
+        Value::Null
+    }
+
+    // ── Shortcuts ──
+
+    fn s(v: &str) -> Value {
+        Value::String(v.into())
+    }
+
+    fn arr(items: Vec<Value>) -> Value {
+        Value::Array(VmRef::new(items))
+    }
+
+    fn config_value(cfg: &shortcuts::Config, warnings: &[String], error: &str) -> Value {
+        let path = shortcuts::config_path().map(|p| p.to_string_lossy().into_owned()).unwrap_or_default();
+        let list = cfg
+            .shortcuts
+            .iter()
+            .map(|x| {
+                obj(vec![
+                    ("keyword", s(&x.keyword)),
+                    ("name", s(&x.name)),
+                    ("kind", s(x.kind.name())),
+                    ("target", s(&x.target)),
+                    ("input", s(&x.input)),
+                    ("output", s(&x.output)),
+                    ("hotkey", s(&x.hotkey)),
+                    ("needsQuery", Value::Bool(shortcuts::needs_query(if x.kind == shortcuts::Kind::Command { &x.input } else { &x.target }))),
+                ])
+            })
+            .collect();
+        let hotkeys = cfg
+            .hotkeys
+            .iter()
+            .map(|h| obj(vec![("keys", s(&h.keys)), ("run", s(&h.run)), ("query", s(&h.query))]))
+            .collect();
+        obj(vec![
+            ("ok", Value::Bool(error.is_empty())),
+            ("error", s(error)),
+            ("path", s(&path)),
+            ("launcher", s(&cfg.launcher)),
+            ("shortcuts", arr(list)),
+            ("hotkeys", arr(hotkeys)),
+            ("warnings", arr(warnings.iter().map(|w| s(w)).collect())),
+        ])
+    }
+
+    /// `loadShortcuts()` -> `{ ok, error, path, launcher, shortcuts, hotkeys, warnings }`.
+    pub fn load_shortcuts(_a: &[Value]) -> Value {
+        let Some(path) = shortcuts::config_path() else { return config_value(&Default::default(), &[], "HOME is not set") };
+        match shortcuts::load(&path) {
+            Ok((cfg, w)) => config_value(&cfg, &w, ""),
+            Err(e) => config_value(&Default::default(), &[], &e),
+        }
+    }
+
+    fn edit_config(f: impl FnOnce(&mut shortcuts::Config) -> Result<(), String>) -> Value {
+        let result = (|| {
+            let path = shortcuts::config_path().ok_or("HOME is not set")?;
+            let (mut cfg, _) = shortcuts::load(&path)?;
+            f(&mut cfg)?;
+            shortcuts::save(&path, &cfg)
+        })();
+        match result {
+            Ok(()) => obj(vec![("ok", Value::Bool(true))]),
+            Err(e) => obj(vec![("ok", Value::Bool(false)), ("error", s(&e))]),
+        }
+    }
+
+    fn text_field(v: Option<&Value>, key: &str) -> String {
+        match field(v, key) {
+            Some(Value::String(x)) => x.to_string(),
+            _ => String::new(),
+        }
+    }
+
+    /// `saveShortcut({ keyword, name, kind, target, input?, output?, hotkey? }, replacing?)` ->
+    /// `{ ok, error }`. `replacing` is the keyword of the shortcut being edited.
+    pub fn save_shortcut(args: &[Value]) -> Value {
+        let v = args.first();
+        let kind_name = text_field(v, "kind");
+        let Some(kind) = shortcuts::Kind::parse(&kind_name) else {
+            return obj(vec![("ok", Value::Bool(false)), ("error", s(&format!("unknown kind `{kind_name}` (url, open, command, shell, text)")))]);
+        };
+        let hotkey = text_field(v, "hotkey");
+        if !hotkey.is_empty() {
+            if let Err(e) = keys::parse(&hotkey) {
+                return obj(vec![("ok", Value::Bool(false)), ("error", s(&e))]);
+            }
+        }
+        let sc = shortcuts::Shortcut {
+            keyword: text_field(v, "keyword"),
+            name: text_field(v, "name"),
+            kind,
+            target: text_field(v, "target"),
+            input: text_field(v, "input"),
+            output: text_field(v, "output"),
+            hotkey,
+        };
+        let replacing = match args.get(1) {
+            Some(Value::String(r)) if !r.is_empty() => Some(r.to_string()),
+            _ => None,
+        };
+        edit_config(|cfg| shortcuts::upsert(cfg, sc, replacing.as_deref()))
+    }
+
+    /// `ensureShortcutsFile()` -> its path, creating an empty one if missing (never rewrites).
+    pub fn ensure_shortcuts_file(_a: &[Value]) -> Value {
+        let Some(path) = shortcuts::config_path() else { return s("") };
+        if !path.exists() {
+            if let Err(e) = shortcuts::save(&path, &Default::default()) {
+                eprintln!("nimble: {e}");
+            }
+        }
+        s(&path.to_string_lossy())
+    }
+
+    /// `checkKeyword(keyword, replacing?)` -> `{ ok, error }`.
+    pub fn check_keyword(args: &[Value]) -> Value {
+        let cfg = shortcuts::config_path().and_then(|p| shortcuts::load(&p).ok()).map(|(c, _)| c).unwrap_or_default();
+        let replacing = str_arg(args, 1);
+        match shortcuts::check_keyword(&cfg, &str_arg(args, 0), Some(replacing.as_str()).filter(|r| !r.is_empty())) {
+            Ok(()) => obj(vec![("ok", Value::Bool(true))]),
+            Err(e) => obj(vec![("ok", Value::Bool(false)), ("error", s(&e))]),
+        }
+    }
+
+    pub fn remove_shortcut(args: &[Value]) -> Value {
+        let kw = str_arg(args, 0);
+        edit_config(|cfg| if shortcuts::remove(cfg, &kw) { Ok(()) } else { Err(format!("no shortcut `{kw}`")) })
+    }
+
+    /// `bindHotkey(keys, run, query?)`: add or replace a hotkey binding in the file.
+    pub fn bind_hotkey(args: &[Value]) -> Value {
+        let (keys_spec, run, query) = (str_arg(args, 0), str_arg(args, 1), str_arg(args, 2));
+        if let Err(e) = keys::parse(&keys_spec) {
+            return obj(vec![("ok", Value::Bool(false)), ("error", s(&e))]);
+        }
+        edit_config(|cfg| {
+            shortcuts::bind(cfg, &keys_spec, &run, &query);
+            Ok(())
+        })
+    }
+
+    pub fn unbind_hotkey(args: &[Value]) -> Value {
+        let k = str_arg(args, 0);
+        edit_config(|cfg| if shortcuts::unbind(cfg, &k) { Ok(()) } else { Err(format!("no hotkey `{k}`")) })
+    }
+
+    /// `expandTemplate(template, query, kind)`: fill `{query}` (encoded for the kind),
+    /// `{clipboard}`, `{date}` and `{time}`; `~/` at the start becomes the home folder for `open`.
+    pub fn expand_template(args: &[Value]) -> Value {
+        let template = str_arg(args, 0);
+        let kind = shortcuts::Kind::parse(&str_arg(args, 2)).unwrap_or(shortcuts::Kind::Text);
+        let mut vars = shortcuts::Vars { query: str_arg(args, 1), ..Default::default() };
+        if template.contains("{clipboard}") {
+            vars.clipboard = mac::clipboard_text();
+        }
+        if template.contains("{date}") || template.contains("{time}") {
+            (vars.date, vars.time) = shortcuts::local_date_time();
+        }
+        let mut out = shortcuts::expand(&template, &vars, shortcuts::Encoding::for_kind(kind));
+        if kind == shortcuts::Kind::Open && (out == "~" || out.starts_with("~/")) {
+            if let Some(home) = std::env::var_os("HOME") {
+                out = format!("{}{}", home.to_string_lossy(), &out[1..]);
+            }
+        }
+        s(&out)
+    }
+
+    thread_local! {
+        static ON_CONFIG: std::cell::RefCell<Option<Value>> = const { std::cell::RefCell::new(None) };
+    }
+
+    fn config_changed() {
+        let Some(Value::Function(f)) = ON_CONFIG.with(|c| c.borrow().clone()) else { return };
+        tishlang_ui::runtime::run_with_current_root(tishlang_ui::runtime::LEGACY_ROOT_ID, || {
+            let _ = f.call(&[]);
+        });
+    }
+
+    /// `watchShortcuts(cb)`: call `cb()` when shortcuts.json changes (edited by hand, by the CLI or
+    /// by Nimble itself). Creates the folder so it can be watched.
+    pub fn watch_shortcuts(args: &[Value]) -> Value {
+        let Some(dir) = shortcuts::config_path().and_then(|p| p.parent().map(|d| d.to_path_buf())) else { return Value::Bool(false) };
+        let _ = std::fs::create_dir_all(&dir);
+        ON_CONFIG.with(|c| *c.borrow_mut() = args.first().cloned());
+        Value::Bool(watch::watch_with_latency(&[dir.to_string_lossy().into_owned()], config_changed, 0.3))
+    }
+
+    fn shell_value(id: u64, o: shell::Output) -> Value {
+        obj(vec![
+            ("id", Value::Number(id as f64)),
+            ("code", Value::Number(o.code as f64)),
+            ("stdout", s(&o.stdout)),
+            ("stderr", s(&o.stderr)),
+            ("ms", Value::Number(o.ms)),
+            ("timedOut", Value::Bool(o.timed_out)),
+        ])
+    }
+
+    /// `runShell(command, cwd, cb)` -> id; `cb({ id, code, stdout, stderr, ms, timedOut })` later.
+    pub fn run_shell(args: &[Value]) -> Value {
+        let cb = args.get(2).cloned().unwrap_or(Value::Null);
+        Value::Number(shell::run(&str_arg(args, 0), &str_arg(args, 1), cb, shell_value) as f64)
+    }
+
+    pub fn clipboard_text(_a: &[Value]) -> Value {
+        s(&mac::clipboard_text())
+    }
+
+    // ── Command line ──
+
+    /// `cliMain()`: when this process was started as a command (`nimble files foo`), or another
+    /// Nimble is already running, act as its client and exit. Otherwise return false: be the app.
+    pub fn cli_main(_a: &[Value]) -> Value {
+        let a = cli::args();
+        if !a.is_empty() || cli::running() {
+            std::process::exit(cli::client(&a));
+        }
+        Value::Bool(false)
+    }
+
+    /// `cliServe(onCli)`: answer `nimble` commands. `onCli(args, cwd, token)` runs on the main
+    /// thread and replies with `cliWrite(token, text, "out"|"err")` and `cliEnd(token, code)`.
+    pub fn cli_serve(args: &[Value]) -> Value {
+        cli::set_handler(args.first().cloned());
+        let served = cli::serve(|req: cli::Request| {
+            DispatchQueue::main().exec_async(move || {
+                let Some(Value::Function(f)) = cli::handler() else {
+                    cli::end(req.token, 1);
+                    return;
+                };
+                let argv = arr(req.args.iter().map(|a| s(a)).collect());
+                tishlang_ui::runtime::run_with_current_root(tishlang_ui::runtime::LEGACY_ROOT_ID, || {
+                    let _ = f.call(&[argv, s(&req.cwd), Value::Number(req.token as f64)]);
+                });
+            });
+        });
+        match served {
+            Ok(p) => obj(vec![("ok", Value::Bool(true)), ("path", s(&p.to_string_lossy()))]),
+            Err(e) => obj(vec![("ok", Value::Bool(false)), ("error", s(&e))]),
+        }
+    }
+
+    pub fn cli_write(args: &[Value]) -> Value {
+        let stream = str_arg(args, 2);
+        Value::Bool(cli::write(num_arg(args, 0, 0.0) as u64, if stream.is_empty() { "out" } else { &stream }, &str_arg(args, 1)))
+    }
+
+    pub fn cli_end(args: &[Value]) -> Value {
+        Value::Bool(cli::end(num_arg(args, 0, 0.0) as u64, num_arg(args, 1, 0.0) as i32))
+    }
+
+    pub fn cli_usage(_a: &[Value]) -> Value {
+        s(cli::USAGE)
+    }
+
     pub fn show(_a: &[Value]) -> Value {
         mac::show();
         Value::Null
@@ -193,6 +494,11 @@ mod natives {
 
     pub fn hide(_a: &[Value]) -> Value {
         mac::hide();
+        Value::Null
+    }
+
+    pub fn toggle(_a: &[Value]) -> Value {
+        mac::toggle();
         Value::Null
     }
 
@@ -206,6 +512,80 @@ mod natives {
     pub fn search_files(args: &[Value]) -> Value {
         let limit = num_arg(args, 1, 8.0).max(0.0) as usize;
         Value::Number(mac::search_files(&str_arg(args, 0), limit, args.get(2).cloned()) as f64)
+    }
+
+    /// `fileIndexStart()`: build the file index in the background (snapshot or crawl) and keep it
+    /// live. Returns at once.
+    pub fn file_index_start(_args: &[Value]) -> Value {
+        Value::Bool(fslive::start())
+    }
+
+    fn file_rows(hits: Vec<fsindex::FileHit>, icons: usize) -> Value {
+        let rows: Vec<Value> = hits
+            .into_iter()
+            .enumerate()
+            .map(|(i, h)| {
+                let icon = if i < icons { mac::icon_name(&h.path) } else { String::new() };
+                obj(vec![
+                    ("name", Value::String(h.name.as_str().into())),
+                    ("path", Value::String(h.path.as_str().into())),
+                    ("icon", Value::String(icon.as_str().into())),
+                    ("kind", Value::String(if h.is_dir { "Folder" } else { "File" }.into())),
+                    ("detail", Value::String(h.detail.as_str().into())),
+                    ("score", Value::Number(h.score as f64)),
+                ])
+            })
+            .collect();
+        Value::Array(VmRef::new(rows))
+    }
+
+    /// `findFiles(query, limit, icons = 8)` -> `{ ready, results, ms }`, synchronous. `ready` is
+    /// false while the index builds (or is briefly busy); icons are resolved for the first `icons`.
+    pub fn find_files(args: &[Value]) -> Value {
+        let limit = num_arg(args, 1, 8.0).max(0.0) as usize;
+        let icons = num_arg(args, 2, 8.0).max(0.0) as usize;
+        match fslive::search(&str_arg(args, 0), limit) {
+            Some((hits, ms)) => obj(vec![
+                ("ready", Value::Bool(true)),
+                ("results", file_rows(hits, icons)),
+                ("ms", Value::Number(ms)),
+            ]),
+            None => obj(vec![("ready", Value::Bool(false)), ("results", Value::Array(VmRef::new(vec![]))), ("ms", Value::Number(0.0))]),
+        }
+    }
+
+    /// `recentFiles(limit)`: files and folders opened through Nimble, most used first.
+    pub fn recent_files(args: &[Value]) -> Value {
+        let limit = num_arg(args, 0, 8.0).max(0.0) as usize;
+        file_rows(fslive::recent(limit), limit)
+    }
+
+    /// `fileIcon(path)` -> image name for an `<image src>`.
+    pub fn file_icon(args: &[Value]) -> Value {
+        Value::String(mac::icon_name(&str_arg(args, 0)).as_str().into())
+    }
+
+    /// `revealFile(path)`: select it in a Finder window.
+    pub fn reveal_file(args: &[Value]) -> Value {
+        let ok = mac::reveal(&str_arg(args, 0));
+        if ok {
+            mac::hide();
+        }
+        Value::Bool(ok)
+    }
+
+    /// `fileIndexStatus()` -> `{ state, entries, folders, bytes, buildMs, fromSnapshot, updates }`.
+    pub fn file_index_status(_args: &[Value]) -> Value {
+        let s = fslive::status();
+        obj(vec![
+            ("state", Value::String(s.state.into())),
+            ("entries", Value::Number(s.entries as f64)),
+            ("folders", Value::Number(s.dirs as f64)),
+            ("bytes", Value::Number(s.bytes as f64)),
+            ("buildMs", Value::Number(s.build_ms)),
+            ("fromSnapshot", Value::Bool(s.from_snapshot)),
+            ("updates", Value::Number(s.updates as f64)),
+        ])
     }
 
     /// `watchApps()`: keep the app index live with FSEvents on the application folders.
@@ -256,8 +636,14 @@ mod natives {
     }
 
     /// `aiSession(instructions)` -> session id (0 when unavailable). Asks in a session share context.
+    /// `aiSession(instructions, toolsJson?, onTool?)`; see `ai::session`.
     pub fn ai_session(args: &[Value]) -> Value {
-        Value::Number(ai::session(&str_arg(args, 0)) as f64)
+        let tools = match args.get(1) {
+            Some(Value::String(s)) => s.to_string(),
+            _ => "[]".to_string(),
+        };
+        let on_tool = args.get(2).filter(|v| matches!(v, Value::Function(_))).cloned();
+        Value::Number(ai::session(&str_arg(args, 0), &tools, on_tool) as f64)
     }
 
     pub fn ai_end_session(args: &[Value]) -> Value {
@@ -300,8 +686,40 @@ mod natives {
     }
     pub fn show(_a: &[Value]) -> Value { Value::Null }
     pub fn hide(_a: &[Value]) -> Value { Value::Null }
+    fn unsupported(_a: &[Value]) -> Value {
+        obj(vec![("ok", Value::Bool(false)), ("error", Value::String("macOS only".into()))])
+    }
+    pub use unsupported as unregister_hotkey;
+    pub use unsupported as check_hotkey;
+    pub use unsupported as load_shortcuts;
+    pub use unsupported as save_shortcut;
+    pub use unsupported as check_keyword;
+    pub use unsupported as remove_shortcut;
+    pub use unsupported as bind_hotkey;
+    pub use unsupported as unbind_hotkey;
+    pub use unsupported as cli_serve;
+    pub fn hotkey_display(a: &[Value]) -> Value { Value::String(str_arg(a, 0).as_str().into()) }
+    pub fn ensure_shortcuts_file(_a: &[Value]) -> Value { Value::String("".into()) }
+    pub fn toggle(_a: &[Value]) -> Value { Value::Null }
+    pub fn record_hotkey(_a: &[Value]) -> Value { Value::Null }
+    pub fn expand_template(a: &[Value]) -> Value { Value::String(str_arg(a, 0).as_str().into()) }
+    pub fn watch_shortcuts(_a: &[Value]) -> Value { Value::Bool(false) }
+    pub fn run_shell(_a: &[Value]) -> Value { Value::Number(0.0) }
+    pub fn clipboard_text(_a: &[Value]) -> Value { Value::String("".into()) }
+    pub fn cli_main(_a: &[Value]) -> Value { Value::Bool(false) }
+    pub fn cli_write(_a: &[Value]) -> Value { Value::Bool(false) }
+    pub fn cli_end(_a: &[Value]) -> Value { Value::Bool(false) }
+    pub fn cli_usage(_a: &[Value]) -> Value { Value::String("".into()) }
     pub fn quit(_a: &[Value]) -> Value { Value::Null }
     pub fn search_files(_a: &[Value]) -> Value { Value::Number(0.0) }
+    pub fn file_index_start(_a: &[Value]) -> Value { Value::Bool(false) }
+    pub fn find_files(_a: &[Value]) -> Value {
+        obj(vec![("ready", Value::Bool(false)), ("results", Value::Array(VmRef::new(vec![]))), ("ms", Value::Number(0.0))])
+    }
+    pub fn recent_files(_a: &[Value]) -> Value { Value::Array(VmRef::new(vec![])) }
+    pub fn file_icon(_a: &[Value]) -> Value { Value::String("".into()) }
+    pub fn reveal_file(_a: &[Value]) -> Value { Value::Bool(false) }
+    pub fn file_index_status(_a: &[Value]) -> Value { obj(vec![("state", Value::String("idle".into()))]) }
     pub fn watch_apps(_a: &[Value]) -> Value { Value::Bool(false) }
     pub fn status_item(_a: &[Value]) -> Value { Value::Bool(false) }
     pub fn watch_clipboard(_a: &[Value]) -> Value { Value::Bool(false) }
@@ -323,6 +741,27 @@ pub fn nimble_object() -> Value {
     m.insert(Arc::from("launch"), Value::native(natives::launch));
     m.insert(Arc::from("setup"), Value::native(natives::setup));
     m.insert(Arc::from("registerHotkey"), Value::native(natives::register_hotkey));
+    m.insert(Arc::from("unregisterHotkey"), Value::native(natives::unregister_hotkey));
+    m.insert(Arc::from("checkHotkey"), Value::native(natives::check_hotkey));
+    m.insert(Arc::from("hotkeyDisplay"), Value::native(natives::hotkey_display));
+    m.insert(Arc::from("recordHotkey"), Value::native(natives::record_hotkey));
+    m.insert(Arc::from("loadShortcuts"), Value::native(natives::load_shortcuts));
+    m.insert(Arc::from("saveShortcut"), Value::native(natives::save_shortcut));
+    m.insert(Arc::from("checkKeyword"), Value::native(natives::check_keyword));
+    m.insert(Arc::from("ensureShortcutsFile"), Value::native(natives::ensure_shortcuts_file));
+    m.insert(Arc::from("toggle"), Value::native(natives::toggle));
+    m.insert(Arc::from("removeShortcut"), Value::native(natives::remove_shortcut));
+    m.insert(Arc::from("bindHotkey"), Value::native(natives::bind_hotkey));
+    m.insert(Arc::from("unbindHotkey"), Value::native(natives::unbind_hotkey));
+    m.insert(Arc::from("expandTemplate"), Value::native(natives::expand_template));
+    m.insert(Arc::from("watchShortcuts"), Value::native(natives::watch_shortcuts));
+    m.insert(Arc::from("runShell"), Value::native(natives::run_shell));
+    m.insert(Arc::from("clipboardText"), Value::native(natives::clipboard_text));
+    m.insert(Arc::from("cliMain"), Value::native(natives::cli_main));
+    m.insert(Arc::from("cliServe"), Value::native(natives::cli_serve));
+    m.insert(Arc::from("cliWrite"), Value::native(natives::cli_write));
+    m.insert(Arc::from("cliEnd"), Value::native(natives::cli_end));
+    m.insert(Arc::from("cliUsage"), Value::native(natives::cli_usage));
     m.insert(Arc::from("show"), Value::native(natives::show));
     m.insert(Arc::from("hide"), Value::native(natives::hide));
     m.insert(Arc::from("quit"), Value::native(natives::quit));
@@ -332,6 +771,12 @@ pub fn nimble_object() -> Value {
     m.insert(Arc::from("copyText"), Value::native(natives::copy_text));
     m.insert(Arc::from("loadBytecodePlugin"), Value::native(native_load_bytecode_plugin));
     m.insert(Arc::from("searchFiles"), Value::native(natives::search_files));
+    m.insert(Arc::from("fileIndexStart"), Value::native(natives::file_index_start));
+    m.insert(Arc::from("findFiles"), Value::native(natives::find_files));
+    m.insert(Arc::from("recentFiles"), Value::native(natives::recent_files));
+    m.insert(Arc::from("fileIcon"), Value::native(natives::file_icon));
+    m.insert(Arc::from("revealFile"), Value::native(natives::reveal_file));
+    m.insert(Arc::from("fileIndexStatus"), Value::native(natives::file_index_status));
     m.insert(Arc::from("watchApps"), Value::native(natives::watch_apps));
     m.insert(Arc::from("bundleResources"), Value::native(native_bundle_resources));
     m.insert(Arc::from("recordUse"), Value::native(native_record_use));

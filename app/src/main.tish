@@ -6,19 +6,37 @@
 
 import { loadModule } from "tish:ffi"
 import { macos, useState } from "tish:macos"
-import { reindex, search, launch, setup, registerHotkey, quit, hide, appCount, searchFiles, watchApps, fuzzy, pluginPaths, copyText, loadBytecodePlugin, bundleResources, recordUse, frecency, statusItem, watchClipboard, clipboardHistory, clearClipboardHistory, aiAvailability, aiSession, aiEndSession, aiPrewarm, aiAsk, aiCancel, symbolIcon } from "tish:nimble"
+import { reindex, search, launch, setup, registerHotkey, quit, hide, appCount, searchFiles, watchApps, fuzzy, pluginPaths, copyText, loadBytecodePlugin, bundleResources, recordUse, frecency, statusItem, watchClipboard, clipboardHistory, clearClipboardHistory, aiAvailability, aiSession, aiEndSession, aiPrewarm, aiAsk, aiCancel, symbolIcon, fileIndexStart, findFiles, recentFiles, fileIcon, revealFile, fileIndexStatus, show, toggle, unregisterHotkey, checkHotkey, hotkeyDisplay, recordHotkey, loadShortcuts, saveShortcut, checkKeyword, ensureShortcutsFile, removeShortcut, bindHotkey, unbindHotkey, expandTemplate, watchShortcuts, runShell, cliMain, cliServe, cliWrite, cliEnd, cliUsage } from "tish:nimble"
 import { env } from "tish:process"
+
+// `nimble <command>` (or launching while Nimble already runs) makes this process a client of the
+// running app: it sends the arguments over the socket, prints the reply and exits here.
+cliMain()
 
 const ROWS = 8
 const FILE_MIN_CHARS = 2
 const FILE_ROWS_WITH_APPS = 3
+const FILE_LIST_MAX = 100
 // Characters per answer row at 14 pt across the panel.
 const AI_WRAP = 92
-const AI_INSTRUCTIONS = "You are the assistant inside Nimble, a macOS launcher. Answer briefly and plainly in a few short sentences. Do not use Markdown."
 const AI_TITLE = "Apple Intelligence"
+let HOME = env.HOME ? env.HOME : ""
+let AI_INSTRUCTIONS = "You are the assistant inside Nimble, a macOS launcher. Answer briefly and plainly in a few short sentences. Do not use Markdown. "
+  + "When the user asks to open an app, file, folder or website, call the open tool; when they ask to copy text, call the copyText tool. "
+  + "The user's home folder is " + HOME + "."
+// Tools the on-device model may call while answering; handled by onAiTool.
+let AI_TOOLS = JSON.stringify([
+  { name: "open", description: "Open an application, file, folder or web address on this Mac.", params: [{ name: "target", description: "An app name such as Safari, a path such as ~/Documents, or a URL" }] },
+  { name: "copyText", description: "Copy text to the clipboard.", params: [{ name: "text", description: "The text to copy" }] }
+])
 
 // Keys as printed on the keyboard; registerHotkey applies System Settings' modifier key mappings.
 let HOTKEYS = ["cmd+space", "alt+space", "ctrl+alt+space", "cmd+shift+space"]
+// shortcuts.json: user shortcuts, their hotkeys, other hotkey bindings and the launcher hotkey.
+let config = loadShortcuts()
+if (config.launcher !== "") {
+  HOTKEYS = [config.launcher].concat(HOTKEYS)
+}
 if (env.NIMBLE_HOTKEY) {
   HOTKEYS = [env.NIMBLE_HOTKEY].concat(HOTKEYS)
 }
@@ -27,6 +45,7 @@ let PLUGIN_DIR = env.NIMBLE_PLUGINS ? env.NIMBLE_PLUGINS : (resources ? resource
 
 let index = reindex()
 let watching = watchApps()
+fileIndexStart()
 let hotkey = ""
 let hotkeyLabel = ""
 for (let i = 0; i < HOTKEYS.length && hotkey === ""; i = i + 1) {
@@ -47,8 +66,12 @@ watchClipboard()
 let aiIcon = symbolIcon("sparkles")
 let commands = [
   { name: "Ask AI", path: "nimble:ai", icon: aiIcon, kind: AI_TITLE, mode: "ai", pluginTitle: AI_TITLE, question: "" },
+  { name: "Search Files", path: "nimble:files", icon: symbolIcon("doc.text.magnifyingglass"), kind: "Command", mode: "files", pluginTitle: "Nimble" },
   { name: "Clipboard History", path: "nimble:clipboard", icon: "NSMultipleDocuments", kind: "Command", mode: "clipboard", pluginTitle: "Nimble" },
   { name: "Clear Clipboard History", path: "nimble:clipboard-clear", icon: "NSTrashEmpty", kind: "Command", mode: "builtin" },
+  { name: "Create Shortcut", path: "nimble:create-shortcut", icon: symbolIcon("plus.square"), kind: "Command", mode: "create", pluginTitle: "Nimble" },
+  { name: "Shortcuts", path: "nimble:shortcuts", icon: symbolIcon("command.square"), kind: "Command", mode: "shortcuts", pluginTitle: "Nimble" },
+  { name: "Edit shortcuts.json", path: "nimble:edit-shortcuts", icon: "NSActionTemplate", kind: "Command", mode: "builtin" },
   { name: "Quit Nimble", path: "nimble:quit", icon: "NSStopProgressTemplate", kind: "Command", mode: "builtin" }
 ]
 let ASK_AI = commands[0]
@@ -81,7 +104,7 @@ fn addCommands(mod) {
     commands.push({
       name: c.title,
       path: "plugin:" + m.id + "/" + c.name,
-      icon: c.mode === "list" ? "NSListViewTemplate" : "NSActionTemplate",
+      icon: c.mode === "list" || c.mode === "view" ? "NSListViewTemplate" : "NSActionTemplate",
       kind: m.title,
       mode: c.mode,
       plugin: mod,
@@ -111,13 +134,355 @@ console.log("nimble: indexed " + index.count + " apps in " + index.ms.toFixed(1)
 // Native key and show callbacks are registered once, so state lives outside the component.
 // `apps` holds the synchronous rows (apps + commands, or a plugin's list); `files` arrives later
 // from Spotlight for the same query. `mode` is the open plugin list command, or null at root.
-let shell = { query: "", selected: 0, apps: [], files: [], results: [], rowCount: ROWS, mode: null, hud: "", version: 0, rerender: null }
+// `offset` is the first visible row when a view has more than ROWS items; `view` is the open
+// plugin view ({ id, tree, list }).
+let shell = { query: "", selected: 0, offset: 0, apps: [], files: [], results: [], rowCount: ROWS, mode: null, view: null, hud: "", fileMs: -1, version: 0, rerender: null }
 
 fn refresh() {
   shell.version = shell.version + 1
   if (shell.rerender !== null) {
     shell.rerender(shell.version)
   }
+}
+
+// ── Shortcuts: a keyword plus text runs a URL, path, command, shell command or text template ──
+
+let KINDS = [
+  { kind: "url", title: "Open a URL", hint: "{query} becomes the text you type after the keyword, URL-encoded", icon: symbolIcon("globe") },
+  { kind: "open", title: "Open an app, file or folder", hint: "Pick what to open", icon: "NSFolder" },
+  { kind: "command", title: "Run a Nimble command", hint: "Starts the command with the text you type", icon: "NSActionTemplate" },
+  { kind: "shell", title: "Run a shell command", hint: "{query} is inserted single-quoted; the output is shown", icon: symbolIcon("terminal") },
+  { kind: "text", title: "Copy text", hint: "{query}, {clipboard}, {date} and {time} are filled in; \\n is a new line", icon: symbolIcon("text.quote") }
+]
+
+fn kindInfo(kind) {
+  for (let i = 0; i < KINDS.length; i = i + 1) {
+    if (KINDS[i].kind === kind) {
+      return KINDS[i]
+    }
+  }
+  return KINDS[0]
+}
+
+fn shortcutIcon(s) {
+  if (s.kind === "open") {
+    let icon = fileIcon(expandTemplate(s.target, "", "open"))
+    return icon !== "" ? icon : kindInfo(s.kind).icon
+  }
+  return kindInfo(s.kind).icon
+}
+
+fn findShortcut(keyword) {
+  let k = keyword.trim().toLowerCase()
+  for (let i = 0; i < config.shortcuts.length; i = i + 1) {
+    if (config.shortcuts[i].keyword.toLowerCase() === k) {
+      return config.shortcuts[i]
+    }
+  }
+  return null
+}
+
+fn findCommand(id) {
+  let k = id.trim().toLowerCase()
+  for (let i = 0; i < commands.length; i = i + 1) {
+    let c = commands[i]
+    if (c.mode !== "shortcut" && (c.path.toLowerCase() === k || c.name.toLowerCase() === k)) {
+      return c
+    }
+  }
+  return null
+}
+
+fn shortcutKind(s) {
+  let label = "Shortcut · " + s.keyword
+  return s.hotkey !== "" ? label + " · " + hotkeyDisplay(s.hotkey) : label
+}
+
+// Shortcuts take part in root search like commands (matched by name; the keyword is matched
+// exactly by shortcutMatch).
+fn syncShortcutCommands() {
+  let kept = []
+  for (let i = 0; i < commands.length; i = i + 1) {
+    if (commands[i].mode !== "shortcut") {
+      kept.push(commands[i])
+    }
+  }
+  for (let i = 0; i < config.shortcuts.length; i = i + 1) {
+    let s = config.shortcuts[i]
+    kept.push({ name: s.name, path: "shortcut:" + s.keyword, icon: shortcutIcon(s), kind: shortcutKind(s), mode: "shortcut", shortcut: s, query: "", pluginTitle: "Shortcut" })
+  }
+  commands = kept
+  commandTitles = commands.map((c) => c.name)
+}
+
+// "Google" for a shortcut keyword, "Clipboard History" for a command id, else the target itself.
+fn targetLabel(run) {
+  let s = findShortcut(run)
+  if (s !== null) {
+    return "“" + s.name + "”"
+  }
+  if (run === "nimble:toggle" || run === "nimble:show" || run === "nimble:hide") {
+    return "the Nimble launcher"
+  }
+  let c = findCommand(run)
+  return c !== null ? "“" + c.name + "”" : run
+}
+
+// Why `keys` cannot be given to something new, or "". Another entry of the config with the same
+// combination (however it is spelled) is a conflict; `replacing` is the hotkeys[] spelling being
+// rebound, which is not.
+fn hotkeyConflict(keys, replacing) {
+  let d = hotkeyDisplay(keys)
+  if (d === hotkeyLabel) {
+    return d + " is the Nimble launcher hotkey"
+  }
+  for (let i = 0; i < hotkeyStatus.length; i = i + 1) {
+    let h = hotkeyStatus[i]
+    let same = !h.shortcut && h.keys.toLowerCase() === replacing.toLowerCase()
+    if (!same && hotkeyDisplay(h.keys) === d) {
+      return d + " is already bound to " + targetLabel(h.run)
+    }
+  }
+  return ""
+}
+
+// Registered hotkeys besides the launcher: { keys, run, query, shortcut, display, id, error }. The
+// action passed to registerHotkey is "hk:<index>" into this list.
+let hotkeyStatus = []
+
+fn bindHotkeys() {
+  for (let i = 0; i < hotkeyStatus.length; i = i + 1) {
+    if (hotkeyStatus[i].id > 0) {
+      unregisterHotkey(hotkeyStatus[i].id)
+    }
+  }
+  let wanted = []
+  for (let i = 0; i < config.shortcuts.length; i = i + 1) {
+    let s = config.shortcuts[i]
+    if (s.hotkey !== "") {
+      wanted.push({ keys: s.hotkey, run: s.keyword, query: "", shortcut: true })
+    }
+  }
+  for (let i = 0; i < config.hotkeys.length; i = i + 1) {
+    let h = config.hotkeys[i]
+    wanted.push({ keys: h.keys, run: h.run, query: h.query, shortcut: false })
+  }
+  hotkeyStatus = []
+  for (let i = 0; i < wanted.length; i = i + 1) {
+    let w = wanted[i]
+    let r = registerHotkey(w.keys, "hk:" + i, targetLabel(w.run))
+    hotkeyStatus.push({ keys: w.keys, run: w.run, query: w.query, shortcut: w.shortcut, display: r.ok ? r.display : hotkeyDisplay(w.keys), id: r.ok ? r.id : 0, error: r.ok ? "" : r.error })
+    if (!r.ok) {
+      console.log("nimble: hotkey " + w.keys + " → " + w.run + ": " + r.error)
+    }
+  }
+}
+
+fn reloadShortcuts() {
+  config = loadShortcuts()
+  if (!config.ok) {
+    console.log("nimble: shortcuts: " + config.error)
+  }
+  for (let i = 0; i < config.warnings.length; i = i + 1) {
+    console.log("nimble: shortcuts: " + config.warnings[i])
+  }
+  syncShortcutCommands()
+  bindHotkeys()
+}
+
+// A global hotkey: run its target; a shortcut that needs text opens the launcher to ask for it.
+fn onHotkey(action) {
+  let i = Number(action.slice(3))
+  if (action.indexOf("hk:") !== 0 || i < 0 || i >= hotkeyStatus.length) {
+    return
+  }
+  let h = hotkeyStatus[i]
+  let r = runTarget(h.run, h.query, null)
+  if (r !== "done" && r !== "pending") {
+    shell.hud = r
+    show()
+    refresh()
+  }
+}
+
+// Text typed after a keyword: "g rust traits" → Google with "rust traits".
+fn shortcutMatch(text) {
+  let t = text.trim()
+  if (t === "") {
+    return null
+  }
+  let space = t.indexOf(" ")
+  let s = findShortcut(space > 0 ? t.slice(0, space) : t)
+  if (s === null) {
+    return null
+  }
+  return { shortcut: s, query: space > 0 ? t.slice(space + 1).trim() : "" }
+}
+
+fn shortcutRow(s, query) {
+  let name = query !== "" ? s.name + ": " + query : (s.needsQuery ? s.name + " …" : s.name)
+  return { name: name, path: "shortcut:" + s.keyword, icon: shortcutIcon(s), kind: shortcutKind(s), mode: "shortcut", shortcut: s, query: query, pluginTitle: "Shortcut" }
+}
+
+fn leaveToRoot() {
+  if (shell.mode !== null) {
+    leaveList()
+  }
+}
+
+// Open the launcher on a command with optional search text.
+fn openCommand(c, query) {
+  leaveToRoot()
+  show()
+  if (c.mode === "builtin") {
+    runBuiltin(c)
+  } else if (c.mode === "ai") {
+    enterAi(c, query)
+  } else if (c.mode === "view") {
+    enterView(c)
+    setQuery(query)
+  } else if (c.mode === "no-view") {
+    runCommand(c)
+  } else {
+    enterList(c)
+    setQuery(query)
+  }
+}
+
+// Run a shortcut. `cli` is { token, cwd } for `nimble run`, else null. Returns "done", "pending"
+// (a shell command still running answers the CLI itself) or an error message.
+fn runShortcut(s, query, cli) {
+  recordUse("shortcut:" + s.keyword)
+  if (s.kind === "command") {
+    let c = findCommand(s.target)
+    if (c === null) {
+      return "Shortcut " + s.keyword + ": no command " + s.target
+    }
+    openCommand(c, expandTemplate(s.input, query, "command"))
+    return "done"
+  }
+  if (s.needsQuery && query === "" && cli === null) {
+    leaveToRoot()
+    show()
+    setQuery(s.keyword + " ")
+    return "done"
+  }
+  let text = expandTemplate(s.target, query, s.kind)
+  if (s.kind === "url" || s.kind === "open") {
+    if (!launch(text)) {
+      return "Could not open " + text
+    }
+    leaveToRoot()
+    return "done"
+  }
+  if (s.kind === "text") {
+    let body = text.split("\\n").join("\n")
+    copyText(body)
+    if (cli !== null) {
+      cliWrite(cli.token, body.length > 0 && body[body.length - 1] === "\n" ? body : body + "\n", "out")
+    } else {
+      hide()
+      leaveToRoot()
+    }
+    return "done"
+  }
+  runShell(text, cli !== null ? cli.cwd : HOME, (r) => onShellDone(s, r, cli))
+  if (cli === null && s.output === "show") {
+    showOutput(s, null)
+  }
+  return "pending"
+}
+
+fn onShellDone(s, r, cli) {
+  if (cli !== null) {
+    if (r.stdout !== "") {
+      cliWrite(cli.token, r.stdout, "out")
+    }
+    if (r.stderr !== "") {
+      cliWrite(cli.token, r.stderr, "err")
+    }
+    cliEnd(cli.token, r.code)
+    return
+  }
+  if (s.output === "copy") {
+    copyText(r.stdout.trim())
+    shell.hud = r.code === 0 ? "Copied the output of " + s.name : s.name + " failed (exit " + r.code + ")"
+    refresh()
+  } else if (s.output === "none") {
+    shell.hud = s.name + (r.code === 0 ? " finished" : " failed (exit " + r.code + ")")
+    refresh()
+  } else {
+    showOutput(s, r)
+  }
+}
+
+// Shell output as scrollable rows; enter copies a line, cmd+enter copies everything.
+fn showOutput(s, r) {
+  let lines = r === null ? [] : (r.stdout + r.stderr).split("\n")
+  if (lines.length > 0 && lines[lines.length - 1] === "") {
+    lines = lines.slice(0, lines.length - 1)
+  }
+  let c = { name: s.name, path: "shortcut:" + s.keyword, icon: shortcutIcon(s), kind: "Output", mode: "output", pluginTitle: "Shortcut", lines: lines, result: r, all: r === null ? "" : r.stdout }
+  if (shell.mode === null || shell.mode.mode !== "output" || shell.mode.path !== c.path) {
+    leaveToRoot()
+    show()
+    shell.mode = c
+    setQuery("")
+  } else {
+    shell.mode = c
+    setQuery(shell.query)
+  }
+}
+
+fn outputResults(text) {
+  let m = shell.mode
+  if (m.result === null) {
+    return [{ name: "Running…", kind: "", icon: "", action: null }]
+  }
+  let rows = []
+  let needle = text.trim().toLowerCase()
+  for (let i = 0; i < m.lines.length; i = i + 1) {
+    if (needle === "" || m.lines[i].toLowerCase().indexOf(needle) >= 0) {
+      rows.push({ name: m.lines[i], kind: "", icon: "", action: { copy: m.lines[i], hud: "Copied line" } })
+    }
+  }
+  if (rows.length === 0) {
+    rows.push({ name: m.lines.length === 0 ? "(no output)" : "No matching lines", kind: "", icon: "", action: null })
+  }
+  return rows
+}
+
+// Anything runnable by name: a shortcut keyword, a command id or name ("nimble:clipboard",
+// "plugin:convert/units", "Clipboard History"), or nimble:show / nimble:hide / nimble:toggle.
+// Returns "done", "pending" or an error message.
+fn runTarget(id, query, cli) {
+  let k = id.trim()
+  if (k === "nimble:show" || k === "show") {
+    show()
+    return "done"
+  }
+  if (k === "nimble:hide" || k === "hide") {
+    hide()
+    return "done"
+  }
+  if (k === "nimble:toggle" || k === "toggle") {
+    toggle()
+    return "done"
+  }
+  if (k.indexOf("shortcut:") === 0) {
+    k = k.slice(9)
+  }
+  let s = findShortcut(k)
+  if (s !== null) {
+    return runShortcut(s, query, cli)
+  }
+  let c = findCommand(k)
+  if (c !== null) {
+    recordUse(c.path)
+    openCommand(c, query)
+    return "done"
+  }
+  return "No shortcut or command called “" + id + "” (nimble list)"
 }
 
 // Commands scored like apps: nucleo match plus frecency boost. An empty query keeps only
@@ -142,15 +507,27 @@ fn commandHits(text) {
 }
 
 // Apps and commands share one scale (match + frecency), so merge them by score.
+// A typed shortcut keyword comes first: "g rust" → "Google: rust".
 fn rootResults(text) {
   let apps = search(text, ROWS)
   let hits = commandHits(text)
   let out = []
+  let sc = shortcutMatch(text)
+  let skip = ""
+  if (sc !== null) {
+    out.push(shortcutRow(sc.shortcut, sc.query))
+    skip = "shortcut:" + sc.shortcut.keyword
+    if (sc.query !== "") {
+      return out
+    }
+  }
   let i = 0
   let j = 0
   while (out.length < ROWS && (i < hits.length || j < apps.length)) {
     if (j >= apps.length || (i < hits.length && hits[i].score >= apps[j].score)) {
-      out.push(commands[hits[i].index])
+      if (commands[hits[i].index].path !== skip) {
+        out.push(commands[hits[i].index])
+      }
       i = i + 1
     } else {
       out.push(apps[j])
@@ -173,10 +550,463 @@ fn clipboardResults(text) {
   }))
 }
 
+// ── Plugin views: the plugin's VM renders with Lattish (@nimble/ui); the shell shows the
+// committed tree and sends events back through the plugin's `dispatch` ──
+
+fn viewNodes(n, tag, out) {
+  if (n.tag === tag) {
+    out.push(n)
+  }
+  for (let i = 0; i < n.children.length; i = i + 1) {
+    viewNodes(n.children[i], tag, out)
+  }
+  return out
+}
+
+fn setViewTree(tree) {
+  let lists = viewNodes(tree, "list", [])
+  shell.view.tree = tree
+  shell.view.list = lists.length > 0 ? lists[0] : null
+}
+
+fn hasEvent(node, name) {
+  return node !== null && node.events.indexOf(name) >= 0
+}
+
+fn viewDispatch(node, event, arg) {
+  try {
+    let r = shell.mode.plugin.dispatch(shell.view.id, node.id, event, arg)
+    setViewTree(r.tree)
+    return r.result
+  } catch (e) {
+    shell.hud = "Plugin error: " + e.message
+    return null
+  }
+}
+
+fn propText(node, key) {
+  let v = node.props[key]
+  return v ? String(v) : ""
+}
+
+// All items (the shell scrolls them); without onSearchTextChange the shell filters by title.
+fn viewResults(text) {
+  let list = shell.view.list
+  if (list === null) {
+    return []
+  }
+  let nodes = viewNodes(list, "listitem", [])
+  if (!hasEvent(list, "onSearchTextChange") && text.trim() !== "") {
+    let hits = fuzzy(text, nodes.map((n) => propText(n, "title")), nodes.length)
+    nodes = hits.map((x) => nodes[x.index])
+  }
+  if (nodes.length === 0) {
+    let empty = viewNodes(list, "listemptyview", [])
+    if (empty.length > 0) {
+      return [{ name: propText(empty[0], "title"), kind: propText(empty[0], "description"), icon: shell.mode.icon, action: null, node: null }]
+    }
+  }
+  return nodes.map((n) => ({
+    name: propText(n, "title"),
+    kind: propText(n, "accessory") !== "" ? propText(n, "accessory") : propText(n, "subtitle"),
+    icon: propText(n, "icon") !== "" ? propText(n, "icon") : shell.mode.icon,
+    action: n.props.action ? n.props.action : null,
+    node: n
+  }))
+}
+
+fn enterView(c) {
+  try {
+    let r = c.plugin.open(c.command)
+    shell.view = { id: r.view, tree: null, list: null }
+    setViewTree(r.tree)
+  } catch (e) {
+    shell.view = null
+    shell.hud = "Plugin error: " + e.message
+    refresh()
+    return
+  }
+  enterList(c)
+}
+
+fn closeView() {
+  if (shell.view === null) {
+    return
+  }
+  try {
+    shell.mode.plugin.close(shell.view.id)
+  } catch (e) {
+    console.log("nimble: closing view failed: " + e.message)
+  }
+  shell.view = null
+}
+
+// Enter on a view row: the item's onAction runs in the plugin and may return an action;
+// otherwise its static `action` applies.
+fn openViewRow(target) {
+  let result = null
+  if (target.node !== null && hasEvent(target.node, "onAction")) {
+    result = viewDispatch(target.node, "onAction", null)
+    shell.apps = viewResults(shell.query)
+    compose()
+  }
+  let action = result !== null ? result : target.action
+  if (action === null) {
+    refresh()
+  } else {
+    perform(action)
+  }
+}
+
+// ── Create Shortcut: kind → target → keyword → name → hotkey, all in the search field ──
+
+let wiz = { step: "kind", kind: "url", target: "", keyword: "", name: "", hotkey: "", check: null, editing: "", original: "" }
+let WIZ_STEPS = ["kind", "target", "keyword", "name", "hotkey"]
+
+fn startWizard(edit) {
+  leaveToRoot()
+  show()
+  wiz = { step: "kind", kind: "url", target: "", keyword: "", name: "", hotkey: "", check: null, editing: "", original: "" }
+  shell.mode = findCommand("nimble:create-shortcut")
+  if (edit !== null) {
+    wiz.kind = edit.kind
+    wiz.target = edit.target
+    wiz.keyword = edit.keyword
+    wiz.name = edit.name
+    wiz.hotkey = edit.hotkey
+    wiz.editing = edit.keyword
+    wiz.original = edit.hotkey
+    wiz.step = "target"
+    setQuery(edit.target)
+    return
+  }
+  setQuery("")
+}
+
+fn wizStepNumber() {
+  return WIZ_STEPS.indexOf(wiz.step) + 1
+}
+
+// Prefill each step from what is known so far.
+fn wizGo(step) {
+  wiz.step = step
+  recordHotkey(step === "hotkey")
+  if (step === "target") {
+    setQuery(wiz.target)
+  } else if (step === "keyword") {
+    setQuery(wiz.keyword !== "" ? wiz.keyword : suggestKeyword())
+  } else if (step === "name") {
+    setQuery(wiz.name !== "" ? wiz.name : suggestName())
+  } else {
+    setQuery("")
+  }
+}
+
+fn wizBack() {
+  let i = WIZ_STEPS.indexOf(wiz.step)
+  if (i <= 0 || (wiz.editing !== "" && wiz.step === "target")) {
+    recordHotkey(false)
+    leaveList()
+    return
+  }
+  wizGo(WIZ_STEPS[i - 1])
+}
+
+fn hostOf(url) {
+  let s = url.indexOf("://")
+  let rest = s >= 0 ? url.slice(s + 3) : url
+  let end = rest.indexOf("/")
+  let host = end >= 0 ? rest.slice(0, end) : rest
+  return host.indexOf("www.") === 0 ? host.slice(4) : host
+}
+
+fn lastPart(path) {
+  let parts = path.split("/").filter((p) => p !== "")
+  let last = parts.length > 0 ? parts[parts.length - 1] : path
+  return last.indexOf(".app") === last.length - 4 && last.length > 4 ? last.slice(0, last.length - 4) : last
+}
+
+fn defaultName(kind, target, keyword) {
+  if (kind === "url") {
+    let host = hostOf(target)
+    let dot = host.indexOf(".")
+    let base = dot > 0 ? host.slice(0, dot) : host
+    return base === "" ? keyword : base[0].toUpperCase() + base.slice(1)
+  }
+  if (kind === "open") {
+    let last = lastPart(target)
+    return last === "" || last === "~" ? keyword : last
+  }
+  if (kind === "command") {
+    let c = findCommand(target)
+    return c !== null ? c.name : target
+  }
+  return keyword
+}
+
+fn suggestName() {
+  return defaultName(wiz.kind, wiz.target, wiz.keyword)
+}
+
+fn suggestKeyword() {
+  let n = suggestName().toLowerCase()
+  let out = ""
+  for (let i = 0; i < n.length && out.length < 4; i = i + 1) {
+    if (n[i] !== " ") {
+      out = out + n[i]
+    }
+  }
+  return out
+}
+
+fn wizRow(name, kind, icon, pick) {
+  return { name: name, kind: kind, icon: icon, action: null, pick: pick }
+}
+
+fn wizardResults(text) {
+  let info = kindInfo(wiz.kind)
+  if (wiz.step === "kind") {
+    return KINDS.map((k) => wizRow(k.title, k.kind, k.icon, k.kind))
+  }
+  if (wiz.step === "target") {
+    if (wiz.kind === "open") {
+      let rows = []
+      let t = text.trim()
+      if (t === "") {
+        return [wizRow("Type to find an app, file or folder", "", info.icon, null)]
+      }
+      if (t[0] === "/" || t[0] === "~") {
+        rows.push(wizRow(t, "this path", info.icon, t))
+      }
+      let apps = search(t, 4)
+      for (let i = 0; i < apps.length; i = i + 1) {
+        rows.push(wizRow(apps[i].name, "Application", apps[i].icon, apps[i].path))
+      }
+      let f = findFiles(t, ROWS - rows.length, ROWS)
+      for (let i = 0; i < f.results.length && rows.length < ROWS; i = i + 1) {
+        rows.push(wizRow(f.results[i].name, f.results[i].detail, f.results[i].icon, f.results[i].path))
+      }
+      return rows
+    }
+    if (wiz.kind === "command") {
+      let rows = []
+      let hits = text.trim() === "" ? commands.map((c, i) => ({ index: i })) : fuzzy(text, commandTitles, commands.length)
+      for (let i = 0; i < hits.length && rows.length < ROWS; i = i + 1) {
+        let c = commands[hits[i].index]
+        if (c.mode !== "shortcut" && c.mode !== "create" && c.mode !== "shortcuts") {
+          rows.push(wizRow(c.name, c.path, c.icon, c.path))
+        }
+      }
+      return rows
+    }
+    let prompt = { url: "Type a URL such as https://www.google.com/search?q={query}", shell: "Type a shell command such as open -a Terminal {query}", text: "Type the text to copy" }
+    let t = text.trim()
+    return [wizRow(t === "" ? prompt[wiz.kind] : t, info.hint, info.icon, null)]
+  }
+  if (wiz.step === "keyword") {
+    let k = text.trim()
+    if (k === "") {
+      return [wizRow("Type the keyword you will type to run it", "", info.icon, null)]
+    }
+    let r = checkKeyword(k, wiz.editing)
+    return [wizRow(k, r.ok ? "free · type " + k + " then text" : r.error, info.icon, null)]
+  }
+  if (wiz.step === "name") {
+    return [wizRow(text.trim() === "" ? "Name it" : text.trim(), "shown in results", info.icon, null)]
+  }
+  let rows = []
+  if (wiz.hotkey === "") {
+    rows.push(wizRow("Press a key combination for a global hotkey (optional)", "", symbolIcon("keyboard"), null))
+  } else {
+    let ok = wiz.check === null || wiz.check.ok
+    rows.push(wizRow(hotkeyDisplay(wiz.hotkey), ok ? "free" : wiz.check.error, symbolIcon("keyboard"), null))
+  }
+  rows.push(wizRow("Save “" + wiz.name + "” · keyword " + wiz.keyword, kindInfo(wiz.kind).title, info.icon, null))
+  return rows
+}
+
+fn wizNext() {
+  let text = shell.query.trim()
+  let row = shell.selected < shell.results.length ? shell.results[shell.selected] : null
+  if (wiz.step === "kind") {
+    if (row !== null && row.pick) {
+      if (wiz.kind !== row.pick) {
+        wiz.target = ""
+      }
+      wiz.kind = row.pick
+      wizGo("target")
+    }
+  } else if (wiz.step === "target") {
+    let target = row !== null && row.pick ? row.pick : text
+    if (target === "") {
+      shell.hud = "Type a target first"
+      refresh()
+      return
+    }
+    if (wiz.kind === "url" && target.indexOf("://") < 0) {
+      target = "https://" + target
+    }
+    wiz.target = target
+    wizGo("keyword")
+  } else if (wiz.step === "keyword") {
+    let r = checkKeyword(text, wiz.editing)
+    if (!r.ok) {
+      shell.hud = r.error
+      refresh()
+      return
+    }
+    wiz.keyword = text
+    wizGo("name")
+  } else if (wiz.step === "name") {
+    wiz.name = text !== "" ? text : wiz.keyword
+    wizGo("hotkey")
+  } else {
+    wizSave()
+  }
+}
+
+// Keys pressed on the hotkey step (the panel records instead of typing).
+fn wizRecord(spec) {
+  if (spec === "escape") {
+    wizBack()
+    return
+  }
+  if (spec === "return") {
+    wizSave()
+    return
+  }
+  if (spec === "delete") {
+    wiz.hotkey = ""
+    wiz.check = null
+  } else {
+    wiz.hotkey = spec
+    let conflict = spec === wiz.original ? "" : hotkeyConflict(spec, "")
+    wiz.check = spec === wiz.original ? null : (conflict !== "" ? { ok: false, error: conflict } : checkHotkey(spec))
+  }
+  setQuery("")
+}
+
+fn wizSave() {
+  if (wiz.hotkey !== "" && wiz.check !== null && !wiz.check.ok) {
+    shell.hud = wiz.check.error
+    refresh()
+    return
+  }
+  let r = saveShortcut({ keyword: wiz.keyword, name: wiz.name, kind: wiz.kind, target: wiz.target, hotkey: wiz.hotkey }, wiz.editing)
+  if (!r.ok) {
+    shell.hud = r.error
+    refresh()
+    return
+  }
+  recordHotkey(false)
+  reloadShortcuts()
+  let keyword = wiz.keyword
+  let s = findShortcut(keyword)
+  leaveList()
+  shell.hud = "Saved “" + wiz.name + "”" + (s !== null && s.needsQuery ? ": type " + keyword + " and some text" : ": type " + keyword)
+  refresh()
+}
+
+// ── Shortcuts list: run, edit (⌘↵), delete (⌘⌫ twice), plus hotkey bindings ──
+
+let pendingDelete = ""
+
+fn shortcutsResults(text) {
+  let rows = [{ name: "Create Shortcut…", kind: "", icon: symbolIcon("plus.square"), action: null, create: true }]
+  let needle = text.trim().toLowerCase()
+  for (let i = 0; i < config.shortcuts.length; i = i + 1) {
+    let s = config.shortcuts[i]
+    if (needle === "" || s.name.toLowerCase().indexOf(needle) >= 0 || s.keyword.toLowerCase().indexOf(needle) >= 0) {
+      rows.push({ name: s.name, kind: s.keyword + " · " + s.kind + (s.hotkey !== "" ? " · " + hotkeyDisplay(s.hotkey) : ""), icon: shortcutIcon(s), action: null, shortcut: s })
+    }
+  }
+  for (let i = 0; i < hotkeyStatus.length; i = i + 1) {
+    let h = hotkeyStatus[i]
+    let isShortcutKey = findShortcut(h.run) !== null && findShortcut(h.run).hotkey === h.keys
+    if (!isShortcutKey && (needle === "" || h.run.toLowerCase().indexOf(needle) >= 0)) {
+      rows.push({ name: h.display + "  →  " + h.run, kind: h.error !== "" ? h.error : "hotkey", icon: symbolIcon("keyboard"), action: null, binding: h })
+    } else if (isShortcutKey && h.error !== "") {
+      rows.push({ name: h.display + "  →  " + h.run, kind: h.error, icon: symbolIcon("exclamationmark.triangle"), action: null, binding: h })
+    }
+  }
+  if (config.error !== "") {
+    rows.push({ name: "shortcuts.json has an error", kind: config.error, icon: symbolIcon("exclamationmark.triangle"), action: null })
+  }
+  for (let i = 0; i < config.warnings.length; i = i + 1) {
+    rows.push({ name: "Skipped an entry in shortcuts.json", kind: config.warnings[i], icon: symbolIcon("exclamationmark.triangle"), action: null })
+  }
+  return rows
+}
+
+fn openShortcutsRow(row, key) {
+  if (row.create) {
+    startWizard(null)
+    return
+  }
+  if (row.shortcut) {
+    if (key === "cmd+enter") {
+      startWizard(row.shortcut)
+    } else if (key === "alt+enter") {
+      copyText("nimble run " + row.shortcut.keyword)
+      shell.hud = "Copied “nimble run " + row.shortcut.keyword + "”"
+      refresh()
+    } else if (key === "cmd+delete") {
+      if (pendingDelete !== row.shortcut.keyword) {
+        pendingDelete = row.shortcut.keyword
+        shell.hud = "Press ⌘⌫ again to delete “" + row.shortcut.name + "”"
+        refresh()
+        return
+      }
+      let r = removeShortcut(row.shortcut.keyword)
+      reloadShortcuts()
+      shell.hud = r.ok ? "Deleted “" + row.shortcut.name + "”" : r.error
+      setQuery(shell.query)
+    } else {
+      let res = runShortcut(row.shortcut, "", null)
+      if (res !== "done" && res !== "pending") {
+        shell.hud = res
+        refresh()
+      }
+    }
+    pendingDelete = ""
+    return
+  }
+  if (row.binding && key === "cmd+delete") {
+    let r = unbindHotkey(row.binding.keys)
+    reloadShortcuts()
+    shell.hud = r.ok ? "Removed hotkey " + row.binding.display : r.error
+    setQuery(shell.query)
+  } else if (row.binding) {
+    let res = runTarget(row.binding.run, row.binding.query, null)
+    if (res !== "done" && res !== "pending") {
+      shell.hud = res
+      refresh()
+    }
+  }
+}
+
 fn listResults(text) {
   let m = shell.mode
   if (m.mode === "clipboard") {
     return clipboardResults(text)
+  }
+  if (m.mode === "create") {
+    return wizardResults(text)
+  }
+  if (m.mode === "shortcuts") {
+    return shortcutsResults(text)
+  }
+  if (m.mode === "output") {
+    return outputResults(text)
+  }
+  if (m.mode === "files") {
+    return fileResults(text, FILE_LIST_MAX, 0)
+  }
+  if (m.mode === "view") {
+    if (hasEvent(shell.view.list, "onSearchTextChange")) {
+      viewDispatch(shell.view.list, "onSearchTextChange", text)
+    }
+    return viewResults(text)
   }
   try {
     let items = m.plugin.list(m.command, text)
@@ -187,17 +1017,60 @@ fn listResults(text) {
   }
 }
 
+fn isFile(r) {
+  return r !== null && (r.kind === "File" || r.kind === "Folder")
+}
+
+// The file index answers synchronously; while it builds (or is busy applying changes), Spotlight
+// answers asynchronously through onFiles. An empty query in Search Files lists recent files.
+fn fileResults(text, limit, icons) {
+  shell.fileMs = -1
+  if (text.trim() === "") {
+    return shell.mode !== null && shell.mode.mode === "files" ? recentFiles(limit) : []
+  }
+  let f = findFiles(text, limit, icons)
+  if (f.ready) {
+    shell.fileMs = f.ms
+    return f.results
+  }
+  searchFiles(text, limit, onFiles)
+  return []
+}
+
+fn inFiles() {
+  return shell.mode !== null && shell.mode.mode === "files"
+}
+
 // Synchronous rows first; once files arrive they get at least FILE_ROWS_WITH_APPS rows.
 fn compose() {
-  let keepApps = shell.files.length > 0 ? ROWS - Math.min(shell.files.length, FILE_ROWS_WITH_APPS) : ROWS
-  shell.results = shell.apps.slice(0, keepApps).concat(shell.files).slice(0, ROWS)
+  if (shell.mode !== null && shell.mode.mode === "view") {
+    shell.results = shell.apps
+  } else if (inFiles()) {
+    shell.results = shell.apps.concat(shell.files)
+  } else if (shell.mode !== null && (shell.mode.mode === "output" || shell.mode.mode === "shortcuts")) {
+    shell.results = shell.apps
+  } else {
+    let keepApps = shell.files.length > 0 ? ROWS - Math.min(shell.files.length, FILE_ROWS_WITH_APPS) : ROWS
+    shell.results = shell.apps.slice(0, keepApps).concat(shell.files).slice(0, ROWS)
+  }
   if (shell.selected >= shell.results.length) {
     shell.selected = 0
   }
+  follow()
+}
+
+// Keep the selected row inside the visible window.
+fn follow() {
+  if (shell.selected < shell.offset) {
+    shell.offset = shell.selected
+  } else if (shell.selected >= shell.offset + ROWS) {
+    shell.offset = shell.selected - ROWS + 1
+  }
+  shell.offset = Math.max(0, Math.min(shell.offset, shell.results.length - ROWS))
 }
 
 fn onFiles(r) {
-  if (shell.mode !== null || r.query !== shell.query) {
+  if ((shell.mode !== null && !inFiles()) || r.query !== shell.query) {
     return
   }
   shell.files = r.results
@@ -272,6 +1145,10 @@ fn onAiEvent(e) {
   }
   if (e.kind === "error") {
     ai.error = aiErrorText(e.text)
+    // Put the question back so it can be rephrased.
+    if (shell.query === "") {
+      shell.query = ai.question
+    }
   } else {
     ai.answer = e.text
   }
@@ -281,6 +1158,53 @@ fn onAiEvent(e) {
     ai.stopped = e.kind === "cancelled"
   }
   showAi()
+}
+
+// open: a URL, a path (~ expanded; a missing path retries its last part under home, since the
+// model guesses home folders), or an app name.
+fn aiOpen(target) {
+  let t = target.trim()
+  if (t === "") {
+    return "Nothing to open."
+  }
+  if (t.indexOf("://") > 0) {
+    return launch(t) ? "Opened " + t : "Could not open " + t
+  }
+  if (t[0] === "~") {
+    t = HOME + t.slice(1)
+  }
+  if (t[0] === "/") {
+    if (launch(t)) {
+      return "Opened " + t
+    }
+    let parts = t.split("/").filter((p) => p !== "")
+    let underHome = parts.length > 0 ? HOME + "/" + parts[parts.length - 1] : ""
+    if (underHome !== "" && launch(underHome)) {
+      return "Opened " + underHome
+    }
+    return "No such file or folder: " + t
+  }
+  let folder = HOME + "/" + t[0].toUpperCase() + t.slice(1).toLowerCase()
+  if (launch(folder)) {
+    return "Opened " + folder
+  }
+  let apps = search(t, 1)
+  if (apps.length > 0 && launch(apps[0].path)) {
+    return "Opened " + apps[0].name
+  }
+  return "Could not find an app, file or folder called " + t
+}
+
+fn onAiTool(name, argsJson) {
+  let args = JSON.parse(argsJson)
+  if (name === "open") {
+    return aiOpen(String(args.target))
+  }
+  if (name === "copyText") {
+    copyText(String(args.text))
+    return "Copied to the clipboard."
+  }
+  return "Unknown tool " + name
 }
 
 fn askAi(question) {
@@ -294,7 +1218,7 @@ fn askAi(question) {
       showAi()
       return
     }
-    ai.session = aiSession(AI_INSTRUCTIONS)
+    ai.session = aiSession(AI_INSTRUCTIONS, AI_TOOLS, onAiTool)
   }
   ai.question = question.trim()
   ai.answer = ""
@@ -328,6 +1252,7 @@ fn inAi() {
 fn setQuery(text) {
   shell.query = text
   shell.selected = 0
+  shell.offset = 0
   shell.hud = ""
   shell.files = []
   if (inAi()) {
@@ -336,8 +1261,9 @@ fn setQuery(text) {
     shell.apps = listResults(text)
   } else {
     shell.apps = rootResults(text)
-    if (text.trim().length >= FILE_MIN_CHARS) {
-      searchFiles(text, ROWS, onFiles)
+    let sc = shortcutMatch(text)
+    if (text.trim().length >= FILE_MIN_CHARS && (sc === null || sc.query === "")) {
+      shell.files = fileResults(text, ROWS, ROWS)
     }
   }
   compose()
@@ -353,6 +1279,8 @@ fn leaveList() {
   if (inAi()) {
     resetAi()
   }
+  recordHotkey(false)
+  closeView()
   shell.mode = null
   setQuery("")
 }
@@ -367,7 +1295,7 @@ fn enterAi(c, question) {
     refresh()
     return
   }
-  ai.session = aiSession(AI_INSTRUCTIONS)
+  ai.session = aiSession(AI_INSTRUCTIONS, AI_TOOLS, onAiTool)
   if (question.trim() !== "") {
     askAi(question)
   } else {
@@ -407,6 +1335,12 @@ fn runBuiltin(c) {
     clearClipboardHistory()
     shell.hud = "Clipboard history cleared"
     refresh()
+  } else if (c.path === "nimble:edit-shortcuts") {
+    let path = ensureShortcutsFile()
+    if (!launch(path)) {
+      shell.hud = "Could not open " + path
+      refresh()
+    }
   }
 }
 
@@ -424,19 +1358,49 @@ fn open(i) {
     return
   }
   let target = shell.results[i]
+  if (shell.mode !== null && shell.mode.mode === "view") {
+    shell.selected = i
+    openViewRow(target)
+    return
+  }
+  if (inFiles()) {
+    recordUse(target.path)
+    launch(target.path)
+    leaveList()
+    return
+  }
+  if (shell.mode !== null && shell.mode.mode === "create") {
+    shell.selected = i
+    wizNext()
+    return
+  }
+  if (shell.mode !== null && shell.mode.mode === "shortcuts") {
+    openShortcutsRow(target, "enter")
+    return
+  }
   if (shell.mode !== null) {
     perform(target.action)
     return
   }
-  if (target.kind !== "File" && target.kind !== "Folder") {
-    recordUse(target.path)
+  if (target.mode === "shortcut") {
+    let r = runShortcut(target.shortcut, target.query, null)
+    if (r !== "done" && r !== "pending") {
+      shell.hud = r
+      refresh()
+    }
+    return
   }
+  recordUse(target.path)
   if (target.mode === "builtin") {
     runBuiltin(target)
   } else if (target.mode === "ai") {
     enterAi(target, target.question)
-  } else if (target.mode === "list" || target.mode === "clipboard") {
+  } else if (target.mode === "create") {
+    startWizard(null)
+  } else if (target.mode === "list" || target.mode === "clipboard" || target.mode === "files" || target.mode === "shortcuts") {
     enterList(target)
+  } else if (target.mode === "view") {
+    enterView(target)
   } else if (target.mode === "no-view") {
     runCommand(target)
   } else {
@@ -470,9 +1434,61 @@ fn onAiKey(name) {
   }
 }
 
+// ⌘↵ reveals a file in Finder, ⌥↵ copies its path; on other rows both act as ↵.
+fn onFileKey(name) {
+  let r = shell.selected < shell.results.length ? shell.results[shell.selected] : null
+  if (!isFile(r)) {
+    open(shell.selected)
+    return
+  }
+  recordUse(r.path)
+  if (name === "cmd+enter") {
+    revealFile(r.path)
+    leaveList()
+  } else {
+    copyText(r.path)
+    shell.hud = "Copied " + r.path
+    refresh()
+  }
+}
+
+fn modeIs(m) {
+  return shell.mode !== null && shell.mode.mode === m
+}
+
 fn onKey(name) {
+  if (name.indexOf("record:") === 0) {
+    if (modeIs("create")) {
+      wizRecord(name.slice(7))
+    } else {
+      recordHotkey(false)
+    }
+    return
+  }
   if (inAi()) {
-    onAiKey(name)
+    onAiKey(name === "cmd+enter" || name === "alt+enter" ? "enter" : name)
+    return
+  }
+  let row = shell.selected < shell.results.length ? shell.results[shell.selected] : null
+  if (modeIs("shortcuts") && row !== null && (name === "cmd+enter" || name === "alt+enter" || name === "cmd+delete")) {
+    openShortcutsRow(row, name)
+    return
+  }
+  if (modeIs("output") && name === "cmd+enter") {
+    copyText(shell.mode.all)
+    shell.hud = "Copied all output"
+    refresh()
+    return
+  }
+  if (modeIs("create") && name === "escape") {
+    wizBack()
+    return
+  }
+  if (name === "cmd+delete") {
+    return
+  }
+  if (name === "cmd+enter" || name === "alt+enter") {
+    onFileKey(name)
     return
   }
   let n = shell.results.length
@@ -483,9 +1499,11 @@ fn onKey(name) {
     }
   } else if (name === "down" && n > 0) {
     shell.selected = (shell.selected + 1) % n
+    follow()
     refresh()
   } else if (name === "up" && n > 0) {
     shell.selected = (shell.selected - 1 + n) % n
+    follow()
     refresh()
   } else if (name === "enter") {
     open(shell.selected)
@@ -533,10 +1551,10 @@ fn ResultRow(props) {
 }
 
 fn aiStatusText() {
-  if (ai.error !== "") {
-    return ai.error
-  }
   let q = ai.question.length > 32 ? ai.question.slice(0, 32) + "…" : ai.question
+  if (ai.error !== "") {
+    return q !== "" ? ai.error + " · “" + q + "”" : ai.error
+  }
   let lines = aiLines().length
   let more = lines > ROWS ? " · lines " + (ai.scroll + 1) + "–" + Math.min(lines, ai.scroll + ROWS) + " of " + lines : ""
   if (ai.request !== 0) {
@@ -549,6 +1567,26 @@ fn aiStatusText() {
   return AI_TITLE + " · on-device · type a question"
 }
 
+fn shortCount(n) {
+  if (n >= 1000000) {
+    return (n / 1000000).toFixed(1) + "M"
+  }
+  return n >= 1000 ? Math.round(n / 1000) + "K" : "" + n
+}
+
+fn fileStatus() {
+  let s = fileIndexStatus()
+  if (s.state !== "ready") {
+    return "indexing (Spotlight meanwhile)"
+  }
+  let n = shell.results.length
+  if (shell.query.trim() === "") {
+    return shortCount(s.entries) + " items indexed · " + (n === 0 ? "no recent files" : "recent")
+  }
+  let count = n === 0 ? "No matches" : (n > ROWS ? (shell.selected + 1) + " of " + n : n + " matches")
+  return count + (shell.fileMs >= 0 ? " · " + shell.fileMs.toFixed(1) + " ms" : "")
+}
+
 fn statusText() {
   if (shell.hud !== "") {
     return shell.hud
@@ -557,8 +1595,35 @@ fn statusText() {
     return aiStatusText()
   }
   let where = shell.mode !== null ? shell.mode.pluginTitle + " › " + shell.mode.name : "Nimble"
+  if (shell.view !== null && shell.view.list !== null && propText(shell.view.list, "navigationTitle") !== "") {
+    where = shell.mode.pluginTitle + " › " + propText(shell.view.list, "navigationTitle")
+  }
+  if (inFiles()) {
+    return where + " · " + fileStatus()
+  }
+  if (modeIs("create")) {
+    let title = wiz.editing !== "" ? "Edit Shortcut" : "Create Shortcut"
+    return title + " · step " + wizStepNumber() + " of 5" + (wiz.step !== "kind" ? " · " + kindInfo(wiz.kind).title : "")
+  }
+  if (modeIs("shortcuts")) {
+    let broken = 0
+    for (let i = 0; i < hotkeyStatus.length; i = i + 1) {
+      if (hotkeyStatus[i].error !== "") {
+        broken = broken + 1
+      }
+    }
+    return where + " · " + config.shortcuts.length + " shortcuts · " + (hotkeyStatus.length - broken) + " hotkeys" + (broken > 0 ? " · " + broken + " not active" : "")
+  }
+  if (modeIs("output")) {
+    let r = shell.mode.result
+    let state = r === null ? "running" : (r.timedOut ? "timed out" : "exit " + r.code) + " · " + Math.round(r.ms) + " ms · " + shell.mode.lines.length + " lines"
+    return where + " · " + state
+  }
   if (shell.results.length === 0) {
     return where + " · No matches"
+  }
+  if (shell.results.length > ROWS) {
+    return where + " · " + (shell.selected + 1) + " of " + shell.results.length
   }
   if (shell.mode === null && shell.query === "") {
     return where + " · " + appCount() + " apps · " + commands.length + " commands"
@@ -571,14 +1636,24 @@ fn App() {
   shell.rerender = setVersion
 
   let rows = []
-  let wide = inAi()
+  let wide = inAi() || modeIs("output")
   let rowCount = shell.rowCount
   for (let i = 0; i < rowCount; i = i + 1) {
-    let r = i < shell.results.length ? shell.results[i] : null
-    rows.push(<ResultRow index={i} result={r} selected={!wide && r !== null && i === shell.selected} wide={wide} />)
+    let at = i + shell.offset
+    let r = at < shell.results.length ? shell.results[at] : null
+    if (isFile(r) && r.icon === "") {
+      r.icon = fileIcon(r.path)
+    }
+    rows.push(<ResultRow index={at} result={r} selected={!inAi() && r !== null && at === shell.selected} wide={wide} />)
   }
   let hints = "↑↓ select   ↵ open   ⇥ ask AI   esc hide"
-  if (wide) {
+  if (modeIs("output")) {
+    hints = "↵ copy line   ⌘↵ copy all   esc back"
+  } else if (modeIs("create")) {
+    hints = wiz.step === "hotkey" ? "press keys   ↵ save   ⌫ clear   esc back" : "↵ next   esc back"
+  } else if (modeIs("shortcuts")) {
+    hints = "↵ run   ⌘↵ edit   ⌘⌫ delete   esc back"
+  } else if (wide) {
     if (ai.request !== 0) {
       hints = "esc stop"
     } else if (ai.answer !== "" && shell.query === "") {
@@ -586,8 +1661,12 @@ fn App() {
     } else {
       hints = "↵ ask   esc back"
     }
+  } else if (inFiles()) {
+    hints = "↵ open   ⌘↵ reveal   ⌥↵ copy path   esc back"
   } else if (shell.mode !== null) {
     hints = shell.mode.mode === "clipboard" ? "↑↓ select   ↵ copy   esc back" : "↑↓ select   ↵ run   esc back"
+  } else if (isFile(shell.selected < shell.results.length ? shell.results[shell.selected] : null)) {
+    hints = "↵ open   ⌘↵ reveal   ⌥↵ copy path   esc hide"
   }
   let footer = <row columnWidths={["flex", 280]} paddingTop={6}><text fontSize={11} color="secondaryLabel">{statusText()}</text><text fontSize={11} color="secondaryLabel" textAlign="right">{hints}</text></row>
   return (
@@ -595,7 +1674,355 @@ fn App() {
   )
 }
 
+// ── Command line: `nimble <command>` from a terminal, script or hotkey daemon ──
+
+fn cliOut(token, text) {
+  cliWrite(token, text, "out")
+}
+
+fn cliFail(token, message) {
+  cliWrite(token, "nimble: " + message + "\n", "err")
+  cliEnd(token, 1)
+}
+
+// Words plus flags: --json, -n N, --name N, --hotkey K, --output O, --input T.
+fn cliParse(argv) {
+  let words = []
+  let flags = { json: false, n: 0, name: "", hotkey: "", output: "", input: "" }
+  for (let i = 0; i < argv.length; i = i + 1) {
+    let a = argv[i]
+    if (a === "--json") {
+      flags.json = true
+    } else if ((a === "-n" || a === "--limit") && i + 1 < argv.length) {
+      flags.n = Number(argv[i + 1])
+      i = i + 1
+    } else if ((a === "--name" || a === "--hotkey" || a === "--output" || a === "--input") && i + 1 < argv.length) {
+      flags[a.slice(2)] = argv[i + 1]
+      i = i + 1
+    } else {
+      words.push(a)
+    }
+  }
+  return { words: words, flags: flags }
+}
+
+fn cliLimit(flags, fallback) {
+  return flags.n > 0 ? flags.n : fallback
+}
+
+// Relative paths are resolved against the caller's working directory.
+fn cliPath(target, cwd) {
+  if (target.indexOf("://") > 0 || target[0] === "/") {
+    return target
+  }
+  if (target === "~" || target.indexOf("~/") === 0) {
+    return HOME + target.slice(1)
+  }
+  let parts = []
+  let segs = (cwd + "/" + target).split("/")
+  for (let i = 0; i < segs.length; i = i + 1) {
+    if (segs[i] === "..") {
+      parts.pop()
+    } else if (segs[i] !== "" && segs[i] !== ".") {
+      parts.push(segs[i])
+    }
+  }
+  return "/" + parts.join("/")
+}
+
+fn printFiles(token, results, json) {
+  if (json) {
+    cliOut(token, JSON.stringify(results.map((r) => ({ name: r.name, path: r.path, kind: r.kind, score: r.score }))) + "\n")
+  } else {
+    for (let i = 0; i < results.length; i = i + 1) {
+      cliOut(token, results[i].path + "\n")
+    }
+  }
+  cliEnd(token, results.length > 0 ? 0 : 1)
+}
+
+fn cliFiles(token, query, flags) {
+  if (query.trim() === "") {
+    cliFail(token, "usage: nimble files <query>")
+    return
+  }
+  let limit = cliLimit(flags, 20)
+  let f = findFiles(query, limit, 0)
+  if (f.ready) {
+    printFiles(token, f.results, flags.json)
+    return
+  }
+  searchFiles(query, limit, (r) => printFiles(token, r.results, flags.json))
+}
+
+fn cliAsk(token, question) {
+  if (question.trim() === "") {
+    cliFail(token, "usage: nimble ask <question>")
+    return
+  }
+  let why = aiAvailability()
+  if (why !== "available") {
+    cliFail(token, AI_TITLE + " is unavailable: " + why)
+    return
+  }
+  let session = aiSession(AI_INSTRUCTIONS, AI_TOOLS, onAiTool)
+  let printed = { n: 0 }
+  let request = aiAsk(session, question, (e) => {
+    if (e.kind === "error") {
+      aiEndSession(session)
+      cliFail(token, aiErrorText(e.text))
+      return
+    }
+    if (e.text.length > printed.n) {
+      cliOut(token, e.text.slice(printed.n))
+      printed.n = e.text.length
+    }
+    if (e.kind !== "partial") {
+      cliOut(token, "\n")
+      aiEndSession(session)
+      cliEnd(token, 0)
+    }
+  })
+  if (request === 0) {
+    aiEndSession(session)
+    cliFail(token, "the model is busy")
+  }
+}
+
+fn cliList(token, what, json) {
+  let out = []
+  if (what === "" || what === "shortcuts") {
+    for (let i = 0; i < config.shortcuts.length; i = i + 1) {
+      let s = config.shortcuts[i]
+      out.push(json ? { type: "shortcut", keyword: s.keyword, name: s.name, kind: s.kind, target: s.target, hotkey: s.hotkey } : s.keyword + "\t" + s.name + "\t" + s.kind + "\t" + s.target + (s.hotkey !== "" ? "\t" + s.hotkey : ""))
+    }
+  }
+  if (what === "" || what === "commands") {
+    for (let i = 0; i < commands.length; i = i + 1) {
+      let c = commands[i]
+      if (c.mode !== "shortcut") {
+        out.push(json ? { type: "command", id: c.path, name: c.name } : c.path + "\t" + c.name)
+      }
+    }
+  }
+  if (what === "" || what === "hotkeys") {
+    out.push(json ? { type: "hotkey", keys: hotkey, run: "nimble:toggle", display: hotkeyLabel, error: "" } : hotkey + "\tnimble:toggle\t" + hotkeyLabel)
+    for (let i = 0; i < hotkeyStatus.length; i = i + 1) {
+      let h = hotkeyStatus[i]
+      out.push(json ? { type: "hotkey", keys: h.keys, run: h.run, display: h.display, error: h.error } : h.keys + "\t" + h.run + "\t" + (h.error !== "" ? "not active: " + h.error : h.display))
+    }
+  }
+  if (what !== "" && what !== "shortcuts" && what !== "commands" && what !== "hotkeys") {
+    cliFail(token, "list shortcuts, commands or hotkeys")
+    return
+  }
+  cliOut(token, json ? JSON.stringify(out) + "\n" : (out.length > 0 ? out.join("\n") + "\n" : ""))
+  cliEnd(token, 0)
+}
+
+fn cliShortcut(token, words, flags, cwd) {
+  let sub = words.length > 1 ? words[1] : ""
+  if (sub === "add" && words.length >= 5) {
+    let s = { keyword: words[2], kind: words[3], target: words.slice(4).join(" "), name: flags.name, hotkey: flags.hotkey, output: flags.output, input: flags.input }
+    if (s.kind === "open" && (s.target === "." || s.target === ".." || s.target.indexOf("./") === 0 || s.target.indexOf("../") === 0)) {
+      s.target = cliPath(s.target, cwd)
+    }
+    if (s.name === "") {
+      s.name = defaultName(s.kind, s.target, s.keyword)
+    }
+    if (s.hotkey !== "") {
+      let conflict = hotkeyConflict(s.hotkey, "")
+      if (conflict !== "") {
+        cliFail(token, conflict)
+        return
+      }
+    }
+    let r = saveShortcut(s, "")
+    if (!r.ok) {
+      cliFail(token, r.error)
+      return
+    }
+    reloadShortcuts()
+    let saved = findShortcut(s.keyword)
+    let hk = null
+    for (let i = 0; i < hotkeyStatus.length; i = i + 1) {
+      if (hotkeyStatus[i].run === s.keyword && hotkeyStatus[i].keys === s.hotkey) {
+        hk = hotkeyStatus[i]
+      }
+    }
+    cliOut(token, "Added “" + saved.name + "”: type " + saved.keyword + (saved.needsQuery ? " and some text" : "") + "\n")
+    if (hk !== null && hk.error !== "") {
+      cliWrite(token, "nimble: hotkey not active: " + hk.error + "\n", "err")
+    }
+    cliEnd(token, 0)
+  } else if (sub === "rm" && words.length === 3) {
+    let r = removeShortcut(words[2])
+    if (!r.ok) {
+      cliFail(token, r.error)
+      return
+    }
+    reloadShortcuts()
+    cliEnd(token, 0)
+  } else {
+    cliFail(token, "usage: nimble shortcut add <keyword> <kind> <target> [--name N] [--hotkey K] | shortcut rm <keyword>")
+  }
+}
+
+fn cliHotkey(token, words) {
+  let sub = words.length > 1 ? words[1] : ""
+  if (sub === "add" && words.length >= 4) {
+    let target = words[3]
+    let t = target.indexOf("shortcut:") === 0 ? target.slice(9) : target
+    let builtin = ["show", "hide", "toggle", "nimble:show", "nimble:hide", "nimble:toggle"].indexOf(t) >= 0
+    if (!builtin && findShortcut(t) === null && findCommand(t) === null) {
+      cliFail(token, "No shortcut or command called “" + target + "” (nimble list)")
+      return
+    }
+    let conflict = hotkeyConflict(words[2], words[2])
+    if (conflict !== "") {
+      cliFail(token, conflict)
+      return
+    }
+    let r = bindHotkey(words[2], target, words.slice(4).join(" "))
+    if (!r.ok) {
+      cliFail(token, r.error)
+      return
+    }
+    reloadShortcuts()
+    for (let i = 0; i < hotkeyStatus.length; i = i + 1) {
+      let h = hotkeyStatus[i]
+      if (h.keys === words[2] && h.error !== "") {
+        cliFail(token, "saved, but not active: " + h.error)
+        return
+      }
+    }
+    cliEnd(token, 0)
+  } else if (sub === "rm" && words.length === 3) {
+    let r = unbindHotkey(words[2])
+    if (!r.ok) {
+      cliFail(token, r.error)
+      return
+    }
+    reloadShortcuts()
+    cliEnd(token, 0)
+  } else {
+    cliFail(token, "usage: nimble hotkey add <keys> <keyword|id> [text] | hotkey rm <keys>")
+  }
+}
+
+fn cliStatus(token, json) {
+  let s = fileIndexStatus()
+  let active = 0
+  for (let i = 0; i < hotkeyStatus.length; i = i + 1) {
+    if (hotkeyStatus[i].error === "") {
+      active = active + 1
+    }
+  }
+  let st = { launcher: hotkeyLabel, apps: appCount(), commands: commands.length - config.shortcuts.length, shortcuts: config.shortcuts.length, hotkeys: active, hotkeysNotActive: hotkeyStatus.length - active, files: s.entries, fileIndex: s.state, config: config.path }
+  if (json) {
+    cliOut(token, JSON.stringify(st) + "\n")
+  } else {
+    cliOut(token, "launcher   " + st.launcher + "\napps       " + st.apps + "\ncommands   " + st.commands + "\nshortcuts  " + st.shortcuts + "\nhotkeys    " + st.hotkeys + (st.hotkeysNotActive > 0 ? " (" + st.hotkeysNotActive + " not active)" : "") + "\nfiles      " + st.files + " (" + st.fileIndex + ")\nconfig     " + st.config + "\n")
+  }
+  cliEnd(token, 0)
+}
+
+fn handleCli(argv, cwd, token) {
+  let p = cliParse(argv)
+  let w = p.words
+  let cmd = w.length > 0 ? w[0] : "show"
+  let rest = w.slice(1).join(" ")
+  if (cmd === "show") {
+    show()
+    cliEnd(token, 0)
+  } else if (cmd === "toggle") {
+    toggle()
+    cliEnd(token, 0)
+  } else if (cmd === "hide") {
+    hide()
+    cliEnd(token, 0)
+  } else if (cmd === "quit") {
+    cliEnd(token, 0)
+    quit()
+  } else if (cmd === "search") {
+    leaveToRoot()
+    show()
+    setQuery(rest)
+    cliEnd(token, 0)
+  } else if (cmd === "run") {
+    if (w.length < 2) {
+      cliFail(token, "usage: nimble run <keyword|id> [text]")
+      return
+    }
+    let r = runTarget(w[1], w.slice(2).join(" "), { token: token, cwd: cwd })
+    if (r === "done") {
+      cliEnd(token, 0)
+    } else if (r !== "pending") {
+      cliFail(token, r)
+    }
+  } else if (cmd === "open") {
+    let target = cliPath(rest, cwd)
+    if (rest === "" || !launch(target)) {
+      cliFail(token, rest === "" ? "usage: nimble open <path|url>" : "cannot open " + target)
+      return
+    }
+    cliEnd(token, 0)
+  } else if (cmd === "files") {
+    cliFiles(token, rest, p.flags)
+  } else if (cmd === "apps") {
+    let apps = search(rest, cliLimit(p.flags, 20))
+    cliOut(token, p.flags.json ? JSON.stringify(apps.map((a) => ({ name: a.name, path: a.path, score: a.score }))) + "\n" : apps.map((a) => a.name + "\t" + a.path).join("\n") + (apps.length > 0 ? "\n" : ""))
+    cliEnd(token, apps.length > 0 ? 0 : 1)
+  } else if (cmd === "ask") {
+    cliAsk(token, rest)
+  } else if (cmd === "clipboard") {
+    let items = clipboardHistory("", cliLimit(p.flags, 10))
+    cliOut(token, p.flags.json ? JSON.stringify(items.map((c) => ({ text: c.text, app: c.app, ago: c.ago }))) + "\n" : items.map((c) => c.text).join("\n") + (items.length > 0 ? "\n" : ""))
+    cliEnd(token, 0)
+  } else if (cmd === "list") {
+    cliList(token, rest, p.flags.json)
+  } else if (cmd === "shortcut") {
+    cliShortcut(token, w, p.flags, cwd)
+  } else if (cmd === "hotkey") {
+    cliHotkey(token, w)
+  } else if (cmd === "config") {
+    cliOut(token, config.path + "\n")
+    cliEnd(token, 0)
+  } else if (cmd === "status") {
+    cliStatus(token, p.flags.json)
+  } else if (cmd === "help") {
+    cliOut(token, cliUsage())
+    cliEnd(token, 0)
+  } else {
+    cliFail(token, "unknown command “" + cmd + "” (nimble help)")
+  }
+}
+
+fn onCli(argv, cwd, token) {
+  try {
+    handleCli(argv, cwd, token)
+  } catch (e) {
+    cliFail(token, e.message)
+  }
+}
+
+fn onShortcutsChanged() {
+  reloadShortcuts()
+  if (shell.mode === null || modeIs("shortcuts")) {
+    setQuery(shell.query)
+  }
+}
+
+syncShortcutCommands()
+bindHotkeys()
+for (let i = 0; i < config.warnings.length; i = i + 1) {
+  console.log("nimble: shortcuts: " + config.warnings[i])
+}
+watchShortcuts(onShortcutsChanged)
+let served = cliServe(onCli)
+console.log("nimble: " + config.shortcuts.length + " shortcuts, " + hotkeyStatus.length + " hotkeys; cli " + (served.ok ? served.path : served.error))
+
 shell.apps = rootResults("")
 compose()
-setup({ width: 680, height: 372, onKey: onKey, onShow: onShow })
+setup({ width: 680, height: 372, onKey: onKey, onShow: onShow, onHotkey: onHotkey, hidden: env.NIMBLE_START_HIDDEN === "1" })
 macos.run(App)

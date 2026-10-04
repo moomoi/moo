@@ -1,0 +1,96 @@
+// Hello List: a Tier A plugin whose commands are Lattish views (@nimble/ui). It runs in a
+// capability-free VM; the shell renders the committed tree and sends events back.
+//   "Hello List": the shell filters the items; enter stars one (component state).
+//   "Change Case": the plugin handles the search text itself; enter copies a variant.
+
+import { h, useState, List, ListItem, ListSection, ListEmptyView, definePlugin } from "../../../packages/ui/src/ui.tish"
+
+const GREETINGS = [
+  ["Hello", "English"], ["Hola", "Spanish"], ["Bonjour", "French"], ["Hallo", "German"],
+  ["Ciao", "Italian"], ["Olá", "Portuguese"], ["Konnichiwa", "Japanese"], ["Annyeong", "Korean"],
+  ["Namaste", "Hindi"], ["Merhaba", "Turkish"], ["Hej", "Swedish"], ["Salam", "Persian"]
+]
+
+fn HelloList() {
+  let [starred, setStarred] = useState([])
+  let isStarred = (word) => starred.indexOf(word) >= 0
+  let toggle = (word) => {
+    if (isStarred(word)) {
+      setStarred(starred.filter((w) => w !== word))
+      return { hud: "Unstarred " + word }
+    }
+    setStarred(starred.concat([word]))
+    return { hud: "Starred " + word }
+  }
+  let item = (g) => <ListItem title={(isStarred(g[0]) ? "★ " : "") + g[0]} subtitle={g[1]} onAction={() => toggle(g[0])} />
+  let top = GREETINGS.filter((g) => isStarred(g[0]))
+  let rest = GREETINGS.filter((g) => !isStarred(g[0]))
+  return <List navigationTitle={"Hello List · " + starred.length + " starred"}><ListSection title="Starred">{top.map(item)}</ListSection><ListSection title="All">{rest.map(item)}</ListSection></List>
+}
+
+fn words(text) {
+  let out = []
+  let w = ""
+  for (let i = 0; i < text.length; i = i + 1) {
+    let ch = text[i]
+    let lower = ch.toLowerCase()
+    let upper = ch.toUpperCase()
+    let letterOrDigit = lower !== upper || "0123456789".indexOf(ch) >= 0
+    if (!letterOrDigit) {
+      if (w !== "") {
+        out.push(w)
+      }
+      w = ""
+    } else {
+      // A capital after a lowercase letter starts a word: "camelCase" -> camel, case.
+      if (ch === upper && lower !== upper && w !== "" && w[w.length - 1] === w[w.length - 1].toLowerCase() && w[w.length - 1].toLowerCase() !== w[w.length - 1].toUpperCase()) {
+        out.push(w)
+        w = ""
+      }
+      w = w + ch
+    }
+  }
+  if (w !== "") {
+    out.push(w)
+  }
+  return out.map((x) => x.toLowerCase())
+}
+
+fn cap(w) {
+  return w.length > 0 ? w[0].toUpperCase() + w.slice(1) : w
+}
+
+fn variants(text) {
+  let ws = words(text)
+  if (ws.length === 0) {
+    return []
+  }
+  return [
+    ["UPPER CASE", text.toUpperCase()],
+    ["lower case", text.toLowerCase()],
+    ["Title Case", ws.map(cap).join(" ")],
+    ["camelCase", ws[0] + ws.slice(1).map(cap).join("")],
+    ["PascalCase", ws.map(cap).join("")],
+    ["snake_case", ws.join("_")],
+    ["kebab-case", ws.join("-")],
+    ["CONSTANT_CASE", ws.join("_").toUpperCase()]
+  ]
+}
+
+fn ChangeCase() {
+  let [text, setText] = useState("")
+  let rows = variants(text)
+  return <List navigationTitle="Change Case" onSearchTextChange={(t) => setText(t)}>{rows.map((v) => <ListItem title={v[1]} subtitle={v[0]} action={{ copy: v[1], hud: "Copied " + v[0] }} />)}<ListEmptyView title="Type some text to convert" description="e.g. hello world" /></List>
+}
+
+register(definePlugin({
+  manifest: () => ({
+    id: "hello-list",
+    title: "Hello List",
+    commands: [
+      { name: "hello", title: "Hello List", mode: "view" },
+      { name: "change-case", title: "Change Case", mode: "view" }
+    ]
+  }),
+  views: { hello: HelloList, "change-case": ChangeCase }
+}))

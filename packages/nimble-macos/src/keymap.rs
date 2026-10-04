@@ -71,19 +71,6 @@ pub fn spec_name(mods: u32, key: &str) -> String {
     parts.join("+")
 }
 
-pub fn symbols(mods: u32, key: &str) -> String {
-    let mut s = String::new();
-    for (bit, sym) in [(CTRL, "⌃"), (OPT, "⌥"), (SHIFT, "⇧"), (CMD, "⌘")] {
-        if mods & bit != 0 {
-            s.push_str(sym);
-        }
-    }
-    let mut k = key.chars();
-    s.extend(k.next().map(|c| c.to_ascii_uppercase()));
-    s.push_str(k.as_str());
-    s
-}
-
 // ── CoreFoundation / IOKit ──────────────────────────────────────────────────
 
 type CFTypeRef = *const c_void;
@@ -372,7 +359,6 @@ mod tests {
     #[test]
     fn names() {
         assert_eq!(spec_name(CTRL | CMD, "space"), "ctrl+cmd+space");
-        assert_eq!(symbols(CMD | SHIFT, "space"), "⇧⌘Space");
     }
 
     #[test]

@@ -49,8 +49,11 @@ expansion), window management, calculator, emoji, system commands and script com
 | React reconciler sends UI over IPC | Plugins return plain data (today: list rows and actions); Lattish-style JSX for richer views is planned |
 | `package.json` manifest | `nimble.json` (id, tier, entry) plus a `manifest()` the plugin returns at load |
 | Frecency ranking | Done: decayed use counts added to the fuzzy score |
-| Spotlight file search | Done: in-process `MDQuery`, no extra index |
+| File search | Done: own live name index, 0.7–3.6 ms over ~600K entries, 18 MB, idle CPU 0; Spotlight while it builds. "Search Files" with reveal (⌘↵) and copy path (⌥↵) |
 | Clipboard history | Done: in memory, skips concealed items |
+| Quicklinks, snippets, script commands | Done, in Universal Launcher's simpler form: a keyword bound to a `url`, `open`, `command`, `shell` or `text` target with a `{query}` template, in one hand-editable `shortcuts.json`. "Create Shortcut" builds one in a few keystrokes |
+| Hotkeys for any command | Done: any number of global hotkeys, each bound to a shortcut or command (with optional text), every ANSI key and F1–F20, conflict detection against other bindings and macOS shortcuts, recorder in the panel |
+| Deeplinks (`raycast://`) | A CLI instead: the `nimble` binary talks to the running app over a Unix socket in about 5 ms, so skhd, Karabiner, BetterTouchTool or any script can run shortcuts, search files, ask the AI and manage shortcuts |
 | AI with BYOK and Ollama | Planned: Hypery remote, local Uzu, any OpenAI-compatible local server |
 | Reviewed source store | Planned: signed `.nimbleplugin` packages; third-party code runs as Tier A or in a sandboxed helper |
 

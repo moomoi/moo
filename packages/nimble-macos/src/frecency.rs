@@ -106,6 +106,16 @@ pub fn score(key: &str) -> f64 {
     with_store(|m| m.get(key).map_or(0.0, |e| decayed(*e, t)))
 }
 
+/// Keys accepted by `keep`, highest current score first.
+pub fn ranked(limit: usize, keep: impl Fn(&str) -> bool) -> Vec<String> {
+    let t = now();
+    with_store(|m| {
+        let mut all: Vec<(&String, f64)> = m.iter().filter(|(k, _)| keep(k)).map(|(k, e)| (k, decayed(*e, t))).collect();
+        all.sort_by(|a, b| b.1.total_cmp(&a.1));
+        all.into_iter().take(limit).map(|(k, _)| k.clone()).collect()
+    })
+}
+
 /// Score bonus to add to a fuzzy match score.
 pub fn boost(key: &str) -> u32 {
     (BOOST_SCALE * score(key).ln_1p()).round() as u32

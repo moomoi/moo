@@ -40,6 +40,12 @@ open dist/Nimble.app             # the bundle
 | `NIMBLE_PLUGINS` | Plugin folder |
 | `NIMBLE_FRECENCY` | Frecency file (default `~/Library/Application Support/Nimble/frecency.tsv`) |
 | `NIMBLE_DEBUG` | Timestamped logs on stderr: focus changes, hotkey, key handling, file query timings |
+| `NIMBLE_CONFIG` | Shortcuts file (default `~/.config/nimble/shortcuts.json`) |
+| `NIMBLE_SOCKET` | CLI socket (default `~/Library/Application Support/Nimble/nimble.sock`) |
+| `NIMBLE_START_HIDDEN` | `1`: start without showing the panel (set by the CLI when it starts Nimble) |
+
+The launcher hotkey can also be set as `"launcher"` in `shortcuts.json`; `NIMBLE_HOTKEY` wins
+over it.
 
 Hotkeys name keys as printed on the keyboard. System Settings › Keyboard › Modifier Keys remaps
 them per keyboard below the event system (with Command and Control swapped, the Command key sends
@@ -59,6 +65,58 @@ other app receives the keypress. Set `NIMBLE_HOTKEY`. Chrome's "Ask Gemini" bar 
 option+space: Nimble's panel opens and then loses focus to Chrome at once (the debug log shows
 `panel key=true` followed by `panel key=false` within milliseconds).
 
+## Command line
+
+The app binary is the CLI. Link it onto your `PATH`:
+
+```sh
+ln -s "$PWD/dist/Nimble.app/Contents/MacOS/nimble" /usr/local/bin/nimble   # or app/dist/nimble
+```
+
+```sh
+nimble                                  # show the launcher (starts Nimble if needed)
+nimble run g rust traits                # run a shortcut or command with text
+nimble run nimble:clipboard             # open a built-in or plugin command (ids: nimble list commands)
+nimble search invoice                   # show the launcher with text typed
+nimble files invoice -n 3 --json        # file paths from the live index
+nimble apps safari                      # matching applications
+nimble ask "summarize: $(pbpaste)"      # on-device model; the answer streams
+nimble clipboard -n 5                   # clipboard history
+nimble shortcut add g url 'https://www.google.com/search?q={query}'
+nimble shortcut add proj open .         # relative paths resolve against your folder
+nimble shortcut add ip shell 'curl -s ifconfig.me' --output copy --hotkey ctrl+alt+i
+nimble shortcut rm ip
+nimble hotkey add cmd+shift+v nimble:clipboard
+nimble hotkey add f5 g weather          # a hotkey can carry the text too
+nimble hotkey rm f5
+nimble list [shortcuts|commands|hotkeys] [--json]
+nimble status [--json]
+nimble config                           # path of shortcuts.json
+nimble help
+```
+
+Exit codes are 0 on success and 1 on any error, with the reason on stderr ("⌃⌥⇧F18 is already
+bound to “Downloads”", "No shortcut or command called “x”"). A call to a running Nimble takes
+about 5 ms.
+
+From other hotkey tools:
+
+```sh
+# skhd (~/.skhdrc)
+cmd + shift - g : nimble run g "$(pbpaste)"
+alt - space : nimble toggle
+```
+
+Karabiner-Elements, in a complex modification's `manipulators` (F13 opens clipboard history):
+
+```json
+{ "type": "basic", "from": { "key_code": "f13" },
+  "to": [{ "shell_command": "/usr/local/bin/nimble run nimble:clipboard" }] }
+```
+
+BetterTouchTool, Hammerspoon (`hs.execute("nimble run dl")`), Keyboard Maestro and Shortcuts.app
+("Run Shell Script") work the same way.
+
 ## Test
 
 ```sh
@@ -66,7 +124,20 @@ cd packages/nimble-macos && cargo test
 ```
 
 Covers the Tier A sandbox (capabilities denied, `register` required, state kept across calls, time
-budgets for runaway loops and recursion) and frecency decay and persistence.
+budgets for runaway loops and recursion), frecency decay and persistence, the file index,
+`shortcuts.json` parsing and templates, hotkey specs, shell output limits and a CLI socket round
+trip.
+
+The CLI also makes end-to-end tests possible without driving the UI. Run a separate instance
+that cannot touch your real setup, then talk to it:
+
+```sh
+export NIMBLE_SOCKET=/tmp/nt/s.sock NIMBLE_CONFIG=/tmp/nt/shortcuts.json \
+       NIMBLE_FILE_INDEX=/tmp/nt/files.idx NIMBLE_HOTKEY=ctrl+alt+shift+cmd+f17
+app/dist/nimble shortcut add up shell 'echo up {query}'   # starts the instance hidden
+app/dist/nimble run up 'a b; touch /tmp/pwned'            # prints "up a b; touch /tmp/pwned"
+app/dist/nimble quit
+```
 
 The `scripts/drive-*.sh` scripts drive a running Nimble with System Events keystrokes and take
 screenshots into `/tmp`. They need Accessibility permission for the terminal running them, expect

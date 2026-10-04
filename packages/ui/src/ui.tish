@@ -1,0 +1,204 @@
+// @nimble/ui: the SDK for plugin view commands. A view is a Lattish component that runs in the
+// plugin's own VM. Its host config keeps the committed tree as plain data; the shell reads that
+// tree and sends events back through `dispatch`. Nothing here touches AppKit, and the plugin needs
+// no capabilities.
+//
+//   import { h, useState, List, ListItem, definePlugin } from "../../../packages/ui/src/ui.tish"
+//   fn Hello() { return <List><ListItem title="Hi" onAction={() => ({ hud: "Hi" })} /></List> }
+//   register(definePlugin({ manifest: () => ({ ... }), views: { hello: Hello } }))
+//
+// Event handlers may return an action for the shell: { copy, open, hud, close }.
+
+export { h, Fragment, useState, useEffect, useMemo, useCallback, useRef, memo } from "../../../vendor/lattish/src/Lattish.tish"
+import { h, createRoot } from "../../../vendor/lattish/src/Lattish.tish"
+
+// ── Components (flat names: dotted JSX tags don't parse) ──
+
+fn attrs(props) {
+  let out = {}
+  let keys = Object.keys(props)
+  for (let i = 0; i < keys.length; i = i + 1) {
+    if (keys[i] !== "children") {
+      out[keys[i]] = props[keys[i]]
+    }
+  }
+  return out
+}
+
+fn kids(props) {
+  return props.children ? props.children : []
+}
+
+// <List navigationTitle searchBarPlaceholder onSearchTextChange>. Without onSearchTextChange the
+// shell filters items by title as the user types.
+export fn List(props) {
+  return h("list", attrs(props), kids(props))
+}
+
+// <ListSection title> groups items.
+export fn ListSection(props) {
+  return h("listsection", attrs(props), kids(props))
+}
+
+// <ListItem title subtitle accessory icon onAction action>. `action` is a static action object;
+// `onAction` runs in the plugin and may return one.
+export fn ListItem(props) {
+  return h("listitem", attrs(props), [])
+}
+
+// <ListEmptyView title description> shows when the list has no items.
+export fn ListEmptyView(props) {
+  return h("listemptyview", attrs(props), [])
+}
+
+// ── Host config: a plain node tree ──
+
+let nextId = 1
+let pending = []
+
+fn makeNode(kind, tag) {
+  let n = { id: nextId, kind: kind, tag: tag, text: "", props: {}, children: [] }
+  nextId = nextId + 1
+  return n
+}
+
+fn setProp(el, k, v) {
+  el.props[k] = v
+}
+
+let Host = {
+  createElement: (tag) => makeNode("el", tag),
+  createText: (v) => {
+    let n = makeNode("text", null)
+    n.text = v
+    return n
+  },
+  createComment: () => makeNode("comment", null),
+  createFragment: () => makeNode("fragment", null),
+  isText: (n) => n.kind === "text",
+  setText: (n, v) => {
+    n.text = v
+  },
+  appendChild: (p, c) => {
+    if (c.kind === "fragment") {
+      for (let k of c.children) {
+        p.children.push(k)
+      }
+      c.children = []
+    } else {
+      p.children.push(c)
+    }
+  },
+  removeChild: (p, c) => {
+    p.children = p.children.filter((x) => x.id !== c.id)
+  },
+  replaceChild: (p, nc, oc) => {
+    p.children = p.children.map((x) => x.id === oc.id ? nc : x)
+  },
+  replaceChildren: (p, nodes) => {
+    p.children = nodes
+  },
+  childAt: (p, i) => p.children[i],
+  firstChild: (p) => p.children.length > 0 ? p.children[0] : null,
+  mountProp: (el, tag, k, v) => setProp(el, k, v),
+  patchProp: (el, tag, k, v, prev) => setProp(el, k, v),
+  styleRemoved: (el) => {},
+  setRef: (refObj, value) => {
+    refObj.current = value
+  },
+  schedule: (cb) => {
+    pending.push(cb)
+  }
+}
+
+fn drain() {
+  while (pending.length > 0) {
+    let batch = pending
+    pending = []
+    for (let cb of batch) {
+      cb()
+    }
+  }
+}
+
+// Committed tree as data: { id, tag, props, events, children } per element, { tag: "#text", text }
+// per text node. Function props become event names; `live` maps ids back to nodes for dispatch.
+fn snapshot(n, live) {
+  if (n.kind === "text") {
+    return { tag: "#text", text: n.text }
+  }
+  live[String(n.id)] = n
+  let props = {}
+  let events = []
+  let keys = Object.keys(n.props)
+  for (let i = 0; i < keys.length; i = i + 1) {
+    let v = n.props[keys[i]]
+    if (typeof v === "function") {
+      events.push(keys[i])
+    } else {
+      props[keys[i]] = v
+    }
+  }
+  let children = []
+  for (let c of n.children) {
+    if (c.kind === "el" || (c.kind === "text" && c.text.trim() !== "")) {
+      children.push(snapshot(c, live))
+    }
+  }
+  return { id: n.id, tag: n.tag, props: props, events: events, children: children }
+}
+
+// ── Plugin contract ──
+
+// spec: { manifest, views: { commandName: Component }, run?, list? }. Adds the view exports the
+// shell calls: open(command) -> { view, tree }, dispatch(view, node, event, arg) -> { result, tree },
+// close(view).
+export fn definePlugin(spec) {
+  let views = {}
+  let nextView = 1
+
+  fn tree(v) {
+    v.live = {}
+    return snapshot(v.root, v.live)
+  }
+
+  let out = { manifest: spec.manifest }
+  if (spec.run) {
+    out.run = spec.run
+  }
+  if (spec.list) {
+    out.list = spec.list
+  }
+  out.open = (command) => {
+    let App = spec.views ? spec.views[command] : null
+    if (!App) {
+      throw new Error("no view for command " + command)
+    }
+    let v = { root: makeNode("el", "root"), live: {} }
+    let id = nextView
+    nextView = nextView + 1
+    views[String(id)] = v
+    createRoot(v.root, Host).render(App)
+    drain()
+    return { view: id, tree: tree(v) }
+  }
+  out.dispatch = (viewId, nodeId, event, arg) => {
+    let v = views[String(viewId)]
+    if (!v) {
+      throw new Error("view " + viewId + " is closed")
+    }
+    let node = v.live[String(nodeId)]
+    let handler = node ? node.props[event] : null
+    let result = null
+    if (typeof handler === "function") {
+      result = handler(arg)
+    }
+    drain()
+    return { result: result ? result : null, tree: tree(v) }
+  }
+  out.close = (viewId) => {
+    views[String(viewId)] = null
+    return null
+  }
+  return out
+}

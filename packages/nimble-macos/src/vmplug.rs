@@ -183,6 +183,96 @@ mod tests {
         assert!(elapsed < Duration::from_millis(1000), "took {elapsed:?}");
     }
 
+    fn get(v: &Value, key: &str) -> Value {
+        match v {
+            Value::Object(o) => o.borrow().strings.get(key).cloned().unwrap_or(Value::Null),
+            _ => Value::Null,
+        }
+    }
+
+    fn items(v: &Value) -> Vec<Value> {
+        match v {
+            Value::Array(a) => a.borrow().clone(),
+            _ => vec![],
+        }
+    }
+
+    /// Every element with `tag`, depth first.
+    fn find_all(tree: &Value, tag: &str, out: &mut Vec<Value>) {
+        if get(tree, "tag").to_display_string() == tag {
+            out.push(tree.clone());
+        }
+        for c in items(&get(tree, "children")) {
+            find_all(&c, tag, out);
+        }
+    }
+
+    fn titles(tree: &Value) -> Vec<String> {
+        let mut found = vec![];
+        find_all(tree, "listitem", &mut found);
+        found.iter().map(|i| get(&get(i, "props"), "title").to_display_string()).collect()
+    }
+
+    fn id(v: &Value) -> Value {
+        get(v, "id")
+    }
+
+    /// Lattish views from @nimble/ui, end to end in a Tier A VM. Needs `plugins/build.sh` first.
+    #[test]
+    fn lattish_view_plugin_opens_and_dispatches() {
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../plugins/dist/hello-list.tishc");
+        if !std::path::Path::new(path).exists() {
+            eprintln!("skip: {path} not built");
+            return;
+        }
+        let (exports, ms) = load(path).expect("load");
+        eprintln!("hello-list loaded in {ms:.2} ms");
+
+        let opened = call(&exports, "open", &[Value::String("hello".into())]);
+        assert!(take_pending_throw().is_none());
+        let tree = get(&opened, "tree");
+        let t = titles(&tree);
+        assert_eq!(t.len(), 12, "{t:?}");
+        assert_eq!(t[0], "Hello");
+
+        let mut found = vec![];
+        find_all(&tree, "listitem", &mut found);
+        let hola = found.iter().find(|i| get(&get(i, "props"), "title").to_display_string() == "Hola").unwrap();
+        let events = items(&get(hola, "events"));
+        assert!(events.iter().any(|e| e.to_display_string() == "onAction"), "{events:?}");
+
+        let view = get(&opened, "view");
+        let t0 = Instant::now();
+        let r = call(&exports, "dispatch", &[view.clone(), id(hola), Value::String("onAction".into()), Value::Null]);
+        eprintln!("dispatch + re-render in {:.2} ms", t0.elapsed().as_secs_f64() * 1000.0);
+        assert!(take_pending_throw().is_none());
+        assert_eq!(get(&get(&r, "result"), "hud").to_display_string(), "Starred Hola");
+        let t = titles(&get(&r, "tree"));
+        assert_eq!(t[0], "★ Hola", "{t:?}");
+        let mut lists = vec![];
+        find_all(&get(&r, "tree"), "list", &mut lists);
+        assert_eq!(get(&get(&lists[0], "props"), "navigationTitle").to_display_string(), "Hello List · 1 starred");
+
+        let opened = call(&exports, "open", &[Value::String("change-case".into())]);
+        let tree = get(&opened, "tree");
+        assert!(titles(&tree).is_empty());
+        let mut lists = vec![];
+        find_all(&tree, "list", &mut lists);
+        let r = call(
+            &exports,
+            "dispatch",
+            &[get(&opened, "view"), id(&lists[0]), Value::String("onSearchTextChange".into()), Value::String("hello big World".into())],
+        );
+        assert!(take_pending_throw().is_none());
+        let t = titles(&get(&r, "tree"));
+        assert!(t.contains(&"helloBigWorld".to_string()), "{t:?}");
+        assert!(t.contains(&"hello_big_world".to_string()), "{t:?}");
+
+        call(&exports, "open", &[Value::String("missing".into())]);
+        let thrown = take_pending_throw().expect("unknown view must throw");
+        assert!(message(&thrown).contains("no view"), "{}", message(&thrown));
+    }
+
     #[test]
     fn runaway_top_level_is_a_load_error() {
         let t0 = Instant::now();
