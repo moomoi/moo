@@ -31,7 +31,10 @@ usage: nimble [command] [args]
   history [--clear]            recent searches, newest first
   run <keyword|id> [text]      run a shortcut or command (ids: nimble list commands)
   open <path|url>              open with the default app
-  files <query> [-n N]         file paths, best match first
+  files <query> [-n N] [--contents]
+                               file paths, best match first; --contents searches inside files
+  trash <path>                 move to the Trash; prints where it went
+  open-with <path> [app]       list the apps that open it (* default), or open it in one
   apps <query> [-n N]          matching applications
   ask <question>               ask the on-device model; the answer streams
   calc <expression>            the plain answer: 2^10, 5 km in mi, 100 usd to eur, 255 in hex,

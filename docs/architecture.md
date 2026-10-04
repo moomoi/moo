@@ -46,7 +46,8 @@ Tish binary) over a Unix-socket RPC. It does not exist yet.
 | `  src/index.rs` | App index and nucleo fuzzy ranking (portable) |
 | `  src/fsindex.rs` | File name index: crawl, search, rescan, snapshot (portable) |
 | `  src/fslive.rs` | File index service: background build, FSEvents updates, saves |
-| `  src/files.rs` | Spotlight file search on a worker thread (fallback while indexing); metadata search (size, dates, kind, folder) for the AI's `findFiles` |
+| `  src/files.rs` | Spotlight file search on a worker thread (fallback while indexing); metadata search (size, dates, kind, folder, words in the text) for the AI's `findFiles`; content search for Search Files |
+| `  src/fileops.rs` | Move to Trash, the apps that open a file, open with one of them |
 | `  src/sysinfo.rs` | OS, hardware, disk and battery facts for the AI's `systemInfo` tool |
 | `  src/system.rs` | System commands for `systemCommand`: lock, sleep, restart / shut down / log out (Apple Events to loginwindow), empty Trash, dark mode, volume and mute (CoreAudio), eject, hide / quit all apps; running apps with memory use and switch / hide / quit / force quit for Running Apps. `NIMBLE_SYSTEM_DRY_RUN=1` makes every command only report what it would do |
 | `  src/ax.rs` | Accessibility: arrange the frontmost app's focused window (remembers the frame for Restore), selected text for `{selection}`, replacing a typed snippet keyword, permission check |

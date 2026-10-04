@@ -15,6 +15,8 @@ mod cli;
 #[cfg(target_os = "macos")]
 mod clip;
 #[cfg(target_os = "macos")]
+mod fileops;
+#[cfg(target_os = "macos")]
 mod files;
 mod frecency;
 mod fsindex;
@@ -688,6 +690,7 @@ mod natives {
         let num = |k| field(f, k).and_then(|v| v.as_number()).unwrap_or(0.0).max(0.0);
         let filter = files::Filter {
             name: text("name"),
+            contains: text("contains"),
             kind: text("kind"),
             min_bytes: num("minBytes") as u64,
             max_bytes: num("maxBytes") as u64,
@@ -818,6 +821,86 @@ mod natives {
             Err(e) => (false, e),
         };
         obj(vec![("ok", Value::Bool(ok)), ("message", s(&message))])
+    }
+
+    fn result_value(r: Result<String, String>) -> Value {
+        match r {
+            Ok(m) => obj(vec![("ok", Value::Bool(true)), ("message", s(&m))]),
+            Err(e) => obj(vec![("ok", Value::Bool(false)), ("error", s(&e))]),
+        }
+    }
+
+    /// `trashFile(path)` -> `{ ok, message, error }`; message is where the file went.
+    pub fn trash_file(args: &[Value]) -> Value {
+        result_value(crate::fileops::trash(&str_arg(args, 0)))
+    }
+
+    /// `appsFor(path)` -> `[{ name, path, icon, isDefault }]`, the default app first.
+    pub fn apps_for(args: &[Value]) -> Value {
+        let rows = crate::fileops::apps_for(&str_arg(args, 0))
+            .into_iter()
+            .map(|a| obj(vec![("name", s(&a.name)), ("icon", s(&mac::icon_name(&a.path))), ("path", s(&a.path)), ("isDefault", Value::Bool(a.default))]))
+            .collect();
+        arr(rows)
+    }
+
+    /// `openWith(path, app)` -> `{ ok, error }`.
+    pub fn open_with(args: &[Value]) -> Value {
+        result_value(crate::fileops::open_with(&str_arg(args, 0), &str_arg(args, 1)).map(|()| String::new()))
+    }
+
+    /// `quickLook(path)` -> whether the preview is open: shows `path` (or switches to it), or
+    /// closes the preview when `path` is empty.
+    pub fn quick_look(args: &[Value]) -> Value {
+        Value::Bool(mac::quick_look(&str_arg(args, 0)))
+    }
+
+    pub fn quick_look_visible(_a: &[Value]) -> Value {
+        Value::Bool(mac::quick_look_visible())
+    }
+
+    static CONTENTS_GEN: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+    thread_local! {
+        static ON_CONTENTS: std::cell::RefCell<Option<Value>> = const { std::cell::RefCell::new(None) };
+    }
+
+    /// `searchContents(text, limit, cb)`: Spotlight search of file contents on a worker thread;
+    /// `cb({ query, results })` unless a newer search started. Rows look like searchFiles rows.
+    pub fn search_contents(args: &[Value]) -> Value {
+        use std::sync::atomic::Ordering;
+        let (query, limit) = (str_arg(args, 0), num_arg(args, 1, 8.0).clamp(1.0, 50.0) as usize);
+        ON_CONTENTS.with(|c| *c.borrow_mut() = args.get(2).cloned());
+        let generation = CONTENTS_GEN.fetch_add(1, Ordering::SeqCst) + 1;
+        std::thread::spawn(move || {
+            let hits = files::search_contents(&query, limit);
+            if CONTENTS_GEN.load(Ordering::SeqCst) != generation {
+                return;
+            }
+            dispatch2::DispatchQueue::main().exec_async(move || {
+                if CONTENTS_GEN.load(Ordering::SeqCst) != generation {
+                    return;
+                }
+                let Some(Value::Function(f)) = ON_CONTENTS.with(|c| c.borrow().clone()) else { return };
+                let rows = hits
+                    .iter()
+                    .map(|h| {
+                        obj(vec![
+                            ("name", s(&h.name)),
+                            ("path", s(&h.path)),
+                            ("icon", s(&mac::icon_name(&h.path))),
+                            ("kind", s(if h.is_dir { "Folder" } else { "File" })),
+                            ("detail", s(&h.detail)),
+                        ])
+                    })
+                    .collect();
+                let payload = obj(vec![("query", s(&query)), ("results", arr(rows))]);
+                mac::with_ui(|| {
+                    let _ = f.call(&[payload]);
+                });
+            });
+        });
+        Value::Number(generation as f64)
     }
 
     /// `watchSnippets(keywords, cb)` -> `{ ok, error }`: call `cb(keyword)` when one of the
@@ -1075,6 +1158,12 @@ mod natives {
     pub use unsupported as arrange_window;
     pub use unsupported as watch_snippets;
     pub use unsupported as replace_typed;
+    pub use unsupported as trash_file;
+    pub use unsupported as open_with;
+    pub fn apps_for(_a: &[Value]) -> Value { Value::Array(VmRef::new(vec![])) }
+    pub fn quick_look(_a: &[Value]) -> Value { Value::Bool(false) }
+    pub fn quick_look_visible(_a: &[Value]) -> Value { Value::Bool(false) }
+    pub fn search_contents(_a: &[Value]) -> Value { Value::Number(0.0) }
     pub fn selected_text(_a: &[Value]) -> Value { Value::Null }
     pub fn accessibility_trusted(_a: &[Value]) -> Value { Value::Bool(false) }
     pub fn dark_mode(_a: &[Value]) -> Value { Value::Null }
@@ -1154,6 +1243,12 @@ pub fn nimble_object() -> Value {
     m.insert(Arc::from("arrangeWindow"), Value::native(natives::arrange_window));
     m.insert(Arc::from("selectedText"), Value::native(natives::selected_text));
     m.insert(Arc::from("watchSnippets"), Value::native(natives::watch_snippets));
+    m.insert(Arc::from("trashFile"), Value::native(natives::trash_file));
+    m.insert(Arc::from("appsFor"), Value::native(natives::apps_for));
+    m.insert(Arc::from("openWith"), Value::native(natives::open_with));
+    m.insert(Arc::from("quickLook"), Value::native(natives::quick_look));
+    m.insert(Arc::from("quickLookVisible"), Value::native(natives::quick_look_visible));
+    m.insert(Arc::from("searchContents"), Value::native(natives::search_contents));
     m.insert(Arc::from("replaceTyped"), Value::native(natives::replace_typed));
     m.insert(Arc::from("accessibilityTrusted"), Value::native(natives::accessibility_trusted));
     m.insert(Arc::from("darkMode"), Value::native(natives::dark_mode));

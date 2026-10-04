@@ -185,8 +185,136 @@ define_class!(
         fn can_become_main(&self) -> bool {
             false
         }
+
+        // Quick Look asks the key window's responder chain for a controller; the panel stays key
+        // while previewing so the arrow keys keep moving through the results.
+        #[unsafe(method(acceptsPreviewPanelControl:))]
+        fn accepts_preview(&self, _panel: &AnyObject) -> bool {
+            true
+        }
+
+        #[unsafe(method(beginPreviewPanelControl:))]
+        fn begin_preview(&self, panel: &AnyObject) {
+            let source = PREVIEW_SOURCE.with(|s| s.borrow().clone());
+            if let Some(source) = source {
+                let _: () = unsafe { msg_send![panel, setDataSource: &*source] };
+            }
+        }
+
+        #[unsafe(method(endPreviewPanelControl:))]
+        fn end_preview(&self, panel: &AnyObject) {
+            let _: () = unsafe { msg_send![panel, setDataSource: std::ptr::null::<AnyObject>()] };
+        }
     }
 );
+
+define_class!(
+    /// Hands Quick Look the one file being previewed.
+    #[unsafe(super(NSObject))]
+    #[thread_kind = MainThreadOnly]
+    #[name = "NimblePreviewSource"]
+    struct PreviewSource;
+
+    impl PreviewSource {
+        #[unsafe(method(numberOfPreviewItemsInPreviewPanel:))]
+        fn count(&self, _panel: &AnyObject) -> isize {
+            PREVIEW_PATH.with(|p| !p.borrow().is_empty()) as isize
+        }
+
+        #[unsafe(method_id(previewPanel:previewItemAtIndex:))]
+        fn item(&self, _panel: &AnyObject, _index: isize) -> Option<Retained<NSURL>> {
+            let path = PREVIEW_PATH.with(|p| p.borrow().clone());
+            (!path.is_empty()).then(|| NSURL::fileURLWithPath(&NSString::from_str(&path)))
+        }
+    }
+);
+
+#[link(name = "Quartz", kind = "framework")]
+extern "C" {}
+
+thread_local! {
+    static PREVIEW_PATH: RefCell<String> = const { RefCell::new(String::new()) };
+    static PREVIEW_SOURCE: RefCell<Option<Retained<PreviewSource>>> = const { RefCell::new(None) };
+}
+
+fn preview_panel(create: bool) -> Option<Retained<AnyObject>> {
+    let cls = AnyClass::get(c"QLPreviewPanel")?;
+    unsafe {
+        if !create {
+            let exists: bool = msg_send![cls, sharedPreviewPanelExists];
+            if !exists {
+                return None;
+            }
+        }
+        msg_send![cls, sharedPreviewPanel]
+    }
+}
+
+pub fn quick_look_visible() -> bool {
+    preview_panel(false).is_some_and(|p| unsafe { msg_send![&*p, isVisible] })
+}
+
+/// Preview `path` in Quick Look (or switch the open preview to it); an empty path closes it.
+/// Returns whether the preview is now open.
+pub fn quick_look(path: &str) -> bool {
+    let Some(mtm) = MainThreadMarker::new() else { return false };
+    if path.is_empty() || !SHOWN.with(|s| s.get()) {
+        close_quick_look();
+        return false;
+    }
+    PREVIEW_PATH.with(|p| *p.borrow_mut() = path.to_string());
+    if PREVIEW_SOURCE.with(|s| s.borrow().is_none()) {
+        let source: Retained<PreviewSource> = unsafe { msg_send![PreviewSource::alloc(mtm), init] };
+        PREVIEW_SOURCE.with(|s| *s.borrow_mut() = Some(source));
+    }
+    let Some(panel) = preview_panel(true) else { return false };
+    unsafe {
+        let _: () = msg_send![&*panel, updateController];
+        let _: () = msg_send![&*panel, reloadData];
+        let level = main_window(mtm).map_or(3, |w| w.level());
+        let _: () = msg_send![&*panel, setLevel: level + 1];
+        let _: () = msg_send![&*panel, orderFront: std::ptr::null::<AnyObject>()];
+    }
+    // Quick Look sizes and centres itself once the item has loaded, so move it afterwards.
+    let when = DispatchTime::try_from(std::time::Duration::from_millis(250)).unwrap_or(DispatchTime::NOW);
+    let _ = DispatchQueue::main().after(when, || {
+        let (Some(mtm), Some(panel)) = (MainThreadMarker::new(), preview_panel(false)) else { return };
+        if let Some(w) = main_window(mtm).filter(|_| quick_look_visible()) {
+            unsafe { beside_panel(&panel, &w) };
+        }
+    });
+    debug_log(&format!("quick look {path}: visible={}", quick_look_visible()));
+    true
+}
+
+/// Quick Look centres itself, over the launcher; put it beside the launcher (right, else left)
+/// when the screen has room, so the results stay in view.
+unsafe fn beside_panel(preview: &AnyObject, w: &NSWindow) {
+    const GAP: f64 = 12.0;
+    let Some(screen) = w.screen() else { return };
+    let area = screen.visibleFrame();
+    let p = w.frame();
+    let f: NSRect = msg_send![preview, frame];
+    let room_right = area.origin.x + area.size.width - (p.origin.x + p.size.width) - 2.0 * GAP;
+    let room_left = p.origin.x - area.origin.x - 2.0 * GAP;
+    let (room, right) = if room_right >= room_left { (room_right, true) } else { (room_left, false) };
+    if room < 320.0 {
+        return;
+    }
+    let width = f.size.width.min(room);
+    let height = f.size.height * width / f.size.width;
+    let x = if right { p.origin.x + p.size.width + GAP } else { p.origin.x - GAP - width };
+    let top = p.origin.y + p.size.height;
+    let frame = NSRect::new(NSPoint::new(x, (top - height).max(area.origin.y)), NSSize::new(width, height));
+    let _: () = msg_send![preview, setFrame: frame, display: true, animate: false];
+}
+
+pub fn close_quick_look() {
+    PREVIEW_PATH.with(|p| p.borrow_mut().clear());
+    if let Some(panel) = preview_panel(false) {
+        let _: () = unsafe { msg_send![&*panel, orderOut: std::ptr::null::<AnyObject>()] };
+    }
+}
 
 define_class!(
     /// The panel's content view. The window takes every click (see `adopt_into_panel`), so a click
@@ -688,6 +816,14 @@ fn hide_on_resign_key(w: &NSWindow) {
     let center = NSNotificationCenter::defaultCenter();
     let resign = RcBlock::new(|_n: NonNull<NSNotification>| {
         debug_log("panel key=false");
+        if SHOWN.with(|s| s.get()) && PREVIEW_PATH.with(|p| !p.borrow().is_empty()) && quick_look_visible() {
+            DispatchQueue::main().exec_async(|| {
+                if let Some(w) = MainThreadMarker::new().and_then(main_window) {
+                    w.makeKeyWindow();
+                }
+            });
+            return;
+        }
         if SHOWN.with(|s| s.get()) {
             hide();
         }
@@ -833,6 +969,7 @@ fn type_step(chars: Vec<char>, i: usize) {
 pub fn hide() {
     let Some(mtm) = MainThreadMarker::new() else { return };
     SHOWN.with(|s| s.set(false));
+    close_quick_look();
     stop_open_animation();
     stop_morph();
     if let Some(w) = main_window(mtm) {
@@ -924,6 +1061,9 @@ fn install_key_monitor() {
                 "r" => Some("cmd+r"),
                 "l" => Some("cmd+l"),
                 "h" => Some("cmd+h"),
+                "k" => Some("cmd+k"),
+                "o" => Some("cmd+o"),
+                "y" => Some("cmd+y"),
                 _ => None,
             };
             if let Some(n) = named {
@@ -998,7 +1138,7 @@ pub fn watch_snippets(keywords: Vec<String>, cb: Value) {
         }
     });
     let mask = NSEventMask::KeyDown | NSEventMask::LeftMouseDown | NSEventMask::RightMouseDown | NSEventMask::OtherMouseDown;
-    let monitor = unsafe { NSEvent::addGlobalMonitorForEventsMatchingMask_handler(mask, &block) };
+    let monitor = NSEvent::addGlobalMonitorForEventsMatchingMask_handler(mask, &block);
     TYPED_MONITOR.with(|m| *m.borrow_mut() = monitor);
 }
 

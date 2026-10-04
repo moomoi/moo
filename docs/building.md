@@ -160,7 +160,10 @@ every app, so give test snippets keywords you would never type.
 Two ignored tests act on real apps they open themselves, and skip when that app is already open:
 `cargo test --lib -- --ignored acts_on_an_app_it_started` (launches and quits Chess) and
 `replaces_a_keyword_in_textedit` (expands a keyword in a temporary file in TextEdit, then quits
-it without saving).
+it without saving). `finds_a_file_by_its_contents` writes a file into
+`packages/nimble-macos/spotlight-scratch/` (Spotlight skips `target/`), waits for Spotlight to
+index it and removes it. `trash_moves_a_file_and_reports_where` is not ignored: unless
+`NIMBLE_SYSTEM_DRY_RUN` is set it moves a scratch file to the Trash and deletes it from there.
 
 The `scripts/drive-*.sh` scripts drive a running Nimble with System Events keystrokes and take
 screenshots into `/tmp`. They need Accessibility permission for the terminal running them, expect

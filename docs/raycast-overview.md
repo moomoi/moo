@@ -50,6 +50,8 @@ expansion), window management, calculator, emoji, system commands and script com
 | `package.json` manifest | `nimble.json` (id, tier, entry) plus a `manifest()` the plugin returns at load |
 | Frecency ranking | Done: decayed use counts added to the fuzzy score |
 | File search | Done: own live name index, 0.7–3.6 ms over ~600K entries, 18 MB, idle CPU 0; Spotlight while it builds. "Search Files" with reveal (⌘↵) and copy path (⌥↵) |
+| File contents | Done: in Search Files, a "Contents" section under the name matches lists files whose text has every typed word (Spotlight, 3+ characters, on a worker thread). Also `nimble files <words> --contents` and `contains` in the AI's `findFiles` |
+| File actions (⌘K), Quick Look, Open With, Trash | Done for file rows anywhere: ⌘K lists Open, Show in Finder, Quick Look, Open With…, Copy Path, Copy Name and Move to Trash. ⌘Y opens Quick Look beside the panel and the preview follows the selection (Escape closes it); ⌘O lists the apps that open the file, default first; ⌘⌫ twice moves it to the Trash. Also `nimble open-with <path> [app]` and `nimble trash <path>` |
 | Clipboard history | Done: in memory, skips concealed items |
 | System commands | Done: Lock Screen, Sleep, Sleep Displays, Screen Saver, Toggle Dark Mode, Toggle Mute, Volume Up / Down ("volume 30" sets it), Eject All Disks, Hide / Quit All Apps, Empty Trash, Restart, Shut Down, Log Out. Destructive ones need a second Return on the same row and query; hotkeys and shortcuts run them at once. Also `nimble system`, `nimble volume`, `nimble mute`, `nimble dark-mode` and the AI's `controlMac` |
 | Window management | Done: 21 commands (halves, quarters, thirds, two thirds, Maximize Window, Almost Maximize, Maximize Height, Center Window, Reasonable Size, Next / Previous Display, Restore Window) on the window behind the panel, through Accessibility. Bind any to a hotkey. Also `nimble window <layout>` and the AI's `arrangeWindow` |
@@ -83,7 +85,7 @@ Apps and files are already indexed when the panel first opens, so there is no on
 | Esc clears the query, then closes | Done |
 | Actions with quick keys ("ac", "sp") and an "Add quick keys" button | Shortcut keywords are the quick keys, listed under Quick Keys in Actions; "Create Shortcut" adds one |
 | Actions with parameter fields that run in the background | Planned, with AI Commands and system actions |
-| → cycles categories inside results; Space opens Quick Look | Planned (Space cannot be taken from the focused field; Quick Look will be a key with a modifier) |
+| → cycles categories inside results; Space opens Quick Look | Quick Look is ⌘Y (Space belongs to the focused field); cycling categories with → is planned |
 | ⌥⌘Space opens a Finder search window | Not planned |
 | Calendar, Mail, Messages, Contacts, Music, web results | Planned: definitions, contacts, mail and web suggestions |
 

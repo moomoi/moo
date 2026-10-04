@@ -270,6 +270,8 @@ fn run_query(query: &str, limit: usize, matcher: &mut Matcher) -> Vec<FileHit> {
 pub struct Filter {
     /// Words that must all appear in the file name.
     pub name: String,
+    /// Words that must all appear in the file's text (words starting with them, as Finder does).
+    pub contains: String,
     /// `image`, `video`, `audio`, `pdf`, `document`, `text`, `spreadsheet`, `presentation`,
     /// `archive`, `diskimage`, `folder`; anything else means any kind.
     pub kind: String,
@@ -345,6 +347,7 @@ fn filter_query(f: &Filter, min_bytes: u64, age: Option<(&str, f64)>) -> String 
         .split_whitespace()
         .map(|t| format!("(kMDItemFSName == \"*{}*\"cd)", escape(t)))
         .collect();
+    c.extend(f.contains.split_whitespace().map(|t| format!("(kMDItemTextContent == \"{}*\"cdw)", escape(t))));
     if let Some(k) = kind_clause(&f.kind) {
         c.push(format!("({k})"));
     }
@@ -472,6 +475,20 @@ pub fn find(f: &Filter) -> FindResult {
     FindResult { hits, total, ms: t0.elapsed().as_secs_f64() * 1000.0 }
 }
 
+/// Files in the home folder whose text contains every word of `text`, most recently changed first,
+/// leaving out the places the launcher's name search skips (~/Library, hidden folders, …).
+pub fn search_contents(text: &str, limit: usize) -> Vec<Found> {
+    if text.split_whitespace().next().is_none() {
+        return Vec::new();
+    }
+    let home = std::env::var("HOME").unwrap_or_default();
+    let mut hits = md_find(&filter_query(&Filter { contains: text.into(), ..Default::default() }, 0, None), "", &home);
+    hits.retain(|h| wanted(&h.path, &home));
+    hits.sort_by(|a, b| b.modified.total_cmp(&a.modified));
+    hits.truncate(limit);
+    hits
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -486,6 +503,40 @@ mod tests {
              && (kMDItemFSSize >= 104857600) && (kMDItemFSCreationDate >= $time.now(-172800)) \
              && (kMDItemContentType != \"com.apple.application-bundle\")"
         );
+    }
+
+    #[test]
+    fn contents_are_matched_by_word_prefix() {
+        let f = Filter { contains: "invoice \"4411".into(), kind: "pdf".into(), ..Default::default() };
+        assert_eq!(
+            filter_query(&f, 0, None),
+            "(kMDItemTextContent == \"invoice*\"cdw) && (kMDItemTextContent == \"\\\"4411*\"cdw) \
+             && (kMDItemContentTypeTree == \"com.adobe.pdf\") && (kMDItemContentType != \"com.apple.application-bundle\")"
+        );
+    }
+
+    /// Real Spotlight: a scratch file beside `target` (which Spotlight skips) is found by a word
+    /// inside it once indexed, which takes several seconds.
+    #[test]
+    #[ignore = "queries this Mac's Spotlight index"]
+    fn finds_a_file_by_its_contents() {
+        let word = format!("nimblecontent{}", std::process::id());
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("spotlight-scratch");
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("note.txt");
+        std::fs::write(&file, format!("hello {word} world")).unwrap();
+        let mut hits = Vec::new();
+        for _ in 0..120 {
+            let f = Filter { contains: word.clone(), folder: dir.to_string_lossy().into(), limit: 5, ..Default::default() };
+            hits = find(&f).hits;
+            if !hits.is_empty() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(250));
+        }
+        std::fs::remove_file(&file).unwrap();
+        let _ = std::fs::remove_dir(&dir);
+        assert_eq!(hits.iter().map(|h| h.name.as_str()).collect::<Vec<_>>(), ["note.txt"]);
     }
 
     /// Real Spotlight: everything returned honours the filter and comes back largest first.

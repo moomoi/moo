@@ -42,7 +42,7 @@ large files") rather than say so. The tools, defined in `aiTools()` in `main.tis
 | --- | --- |
 | `open` | App name, path or URL; `~` expanded, a missing path retries its last part under home |
 | `copyText` | Put text on the clipboard |
-| `findFiles` | Spotlight metadata search: name, kind, minimum size, created / modified / opened within, folder, sorted by size, date or name |
+| `findFiles` | Spotlight metadata search: name, words in the file's text (`contains`), kind, minimum size, created / modified / opened within, folder, sorted by size, date or name |
 | `revealFile` | Select a file in Finder |
 | `findApps` | Installed apps by name (the app index) |
 | `runningApps` | Apps with a Dock icon, frontmost and hidden marked |

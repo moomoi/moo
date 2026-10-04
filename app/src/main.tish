@@ -8,7 +8,7 @@
 
 import { loadModule } from "tish:ffi"
 import { macos, useState } from "tish:macos"
-import { reindex, search, launch, setup, setPanelShape, setArrowKeys, setTheme, typeText, getPref, setPref, searchHistory, addSearchHistory, clearSearchHistory, registerHotkey, quit, hide, appCount, searchFiles, watchApps, fuzzy, pluginPaths, copyText, loadBytecodePlugin, bundleResources, recordUse, frecency, statusItem, watchClipboard, clipboardHistory, clearClipboardHistory, aiAvailability, aiSession, aiEndSession, aiPrewarm, aiAsk, aiCancel, symbolIcon, fileIndexStart, findFiles, recentFiles, queryFiles, runningApps, systemInfo, calculate, systemCommand, appAction, arrangeWindow, selectedText, watchSnippets, replaceTyped, accessibilityTrusted, fileIcon, revealFile, fileIndexStatus, show, toggle, unregisterHotkey, checkHotkey, hotkeyDisplay, recordHotkey, loadShortcuts, saveShortcut, checkKeyword, ensureShortcutsFile, removeShortcut, bindHotkey, unbindHotkey, expandTemplate, watchShortcuts, runShell, cliMain, cliServe, cliWrite, cliEnd, cliUsage } from "tish:nimble"
+import { reindex, search, launch, setup, setPanelShape, setArrowKeys, setTheme, typeText, getPref, setPref, searchHistory, addSearchHistory, clearSearchHistory, registerHotkey, quit, hide, appCount, searchFiles, watchApps, fuzzy, pluginPaths, copyText, loadBytecodePlugin, bundleResources, recordUse, frecency, statusItem, watchClipboard, clipboardHistory, clearClipboardHistory, aiAvailability, aiSession, aiEndSession, aiPrewarm, aiAsk, aiCancel, symbolIcon, fileIndexStart, findFiles, recentFiles, queryFiles, runningApps, systemInfo, calculate, systemCommand, appAction, arrangeWindow, selectedText, watchSnippets, replaceTyped, trashFile, appsFor, openWith, quickLook, quickLookVisible, searchContents, accessibilityTrusted, fileIcon, revealFile, fileIndexStatus, show, toggle, unregisterHotkey, checkHotkey, hotkeyDisplay, recordHotkey, loadShortcuts, saveShortcut, checkKeyword, ensureShortcutsFile, removeShortcut, bindHotkey, unbindHotkey, expandTemplate, watchShortcuts, runShell, cliMain, cliServe, cliWrite, cliEnd, cliUsage } from "tish:nimble"
 import { env } from "tish:process"
 import { THEME } from "./theme.tish"
 
@@ -53,8 +53,9 @@ fn aiTools() {
   let tools = [
     { name: "open", description: "Open an application, file, folder or web address on this Mac.", params: [{ name: "target", description: "An app name such as Safari, a path such as ~/Documents, or a URL" }] },
     { name: "copyText", description: "Copy text to the clipboard.", params: [{ name: "text", description: "The text to copy" }] },
-    { name: "findFiles", description: "Search files on this Mac with Spotlight by name, kind, size, date and folder. Use for any question about finding, listing or sizing files, e.g. large files, recent downloads, screenshots from today.", params: [
+    { name: "findFiles", description: "Search files on this Mac with Spotlight by name, contents, kind, size, date and folder. Use for any question about finding, listing or sizing files, e.g. large files, recent downloads, screenshots from today, the document that mentions a project.", params: [
       opt("name", "Words in the file's own name, e.g. invoice; never a folder name"),
+      opt("contains", "Words inside the file's text, e.g. a project name or invoice number the document mentions"),
       { name: "kind", description: "The kind of file", optional: true, choices: FILE_KINDS },
       opt("minSize", "Smallest size to include, e.g. 100 MB or 1 GB"),
       opt("createdWithin", "Only files created this recently, e.g. 2 days, 6 hours, 1 week"),
@@ -261,7 +262,7 @@ console.log("nimble: indexed " + index.count + " apps in " + index.ms.toFixed(1)
 // `offset` is the first visible result when they do not all fit; `groups[i]` is the section
 // heading of `results[i]`; `view` is the open plugin view ({ id, tree, list }); `bubble` is the
 // category button selected with tab in the idle bar (-1: the field).
-let shell = { query: "", selected: 0, offset: 0, apps: [], files: [], results: [], groups: [], mode: null, view: null, hud: "", fileMs: -1, bubble: -1, version: 0, rerender: null }
+let shell = { query: "", selected: 0, offset: 0, apps: [], files: [], contents: [], results: [], groups: [], mode: null, view: null, hud: "", fileMs: -1, bubble: -1, version: 0, rerender: null }
 
 // Layout. The tree keeps the same shape in every state (header with 4 category buttons, SLOTS list
 // rows, footer with HINT_SLOTS hints): a different shape rebuilds the views and the field loses
@@ -332,6 +333,7 @@ fn syncShape() {
 
 fn refresh() {
   syncShape()
+  syncQuickLook()
   setArrowKeys(isGrid())
   shell.version = shell.version + 1
   if (shell.rerender !== null) {
@@ -934,6 +936,9 @@ fn groupAt(r, i) {
   if (inAi() && r.item) {
     return ai.itemsTitle
   }
+  if (r.group) {
+    return r.group
+  }
   return sectionTitle()
 }
 
@@ -1409,7 +1414,16 @@ fn listResults(text) {
     return outputResults(text)
   }
   if (m.mode === "files") {
+    if (text.trim().length >= CONTENT_MIN_CHARS) {
+      searchContents(text, CONTENT_MAX, onContents)
+    }
     return fileResults(text, FILE_LIST_MAX, 0)
+  }
+  if (m.mode === "fileactions") {
+    return fileActionResults(text)
+  }
+  if (m.mode === "openwith") {
+    return openWithResults(text)
   }
   if (m.mode === "view") {
     if (hasEvent(shell.view.list, "onSearchTextChange")) {
@@ -1428,6 +1442,174 @@ fn listResults(text) {
 
 fn isFile(r) {
   return r !== null && (r.kind === "File" || r.kind === "Folder")
+}
+
+// ── File actions: ⌘K lists them; ⌘Y Quick Look, ⌘O Open With, ⌘⌫ twice Move to Trash ──
+
+let FILE_ACTIONS = [
+  { act: "open", name: "Open", key: "↵", symbol: "arrow.up.forward.app" },
+  { act: "reveal", name: "Show in Finder", key: "⌘R", symbol: "folder" },
+  { act: "look", name: "Quick Look", key: "⌘Y", symbol: "eye" },
+  { act: "openwith", name: "Open With…", key: "⌘O", symbol: "square.on.square" },
+  { act: "copypath", name: "Copy Path", key: "⌥↵", symbol: "doc.on.clipboard" },
+  { act: "copyname", name: "Copy Name", key: "", symbol: "textformat" },
+  { act: "trash", name: "Move to Trash", key: "⌘⌫", symbol: "trash" }
+]
+let FILE_KEYS = { "cmd+y": "look", "cmd+o": "openwith", "cmd+r": "reveal", "cmd+delete": "trash" }
+
+// A list opened from another one (a file's actions, Open With); Escape goes back to it with the
+// same rows and selection (searching again could return them in a different order).
+fn enterSub(c) {
+  c.back = { mode: shell.mode, query: shell.query, selected: shell.selected, offset: shell.offset, apps: shell.apps, files: shell.files, contents: shell.contents }
+  shell.mode = c
+  setQuery("")
+}
+
+fn leaveSub() {
+  let b = shell.mode.back
+  shell.mode = b.mode
+  shell.query = b.query
+  shell.apps = b.apps
+  shell.files = b.files
+  shell.contents = b.contents
+  shell.hud = ""
+  compose()
+  shell.selected = Math.min(b.selected, Math.max(0, shell.results.length - 1))
+  shell.offset = b.offset
+  follow()
+  refresh()
+}
+
+// The file a key acts on: the selected file row, or the file whose actions are listed.
+fn fileTarget(row) {
+  if (modeIs("fileactions") || modeIs("openwith")) {
+    return shell.mode.file
+  }
+  return isFile(row) ? row : null
+}
+
+fn fileActionResults(text) {
+  let t = text.trim().toLowerCase()
+  let rows = []
+  for (let i = 0; i < FILE_ACTIONS.length; i = i + 1) {
+    let a = FILE_ACTIONS[i]
+    if (t === "" || a.name.toLowerCase().indexOf(t) >= 0) {
+      rows.push({ name: a.name, kind: a.key, icon: symbolIcon(a.symbol), act: a.act, mode: "fileaction" })
+    }
+  }
+  return rows
+}
+
+fn openWithResults(text) {
+  let t = text.trim().toLowerCase()
+  return shell.mode.apps.filter((a) => t === "" || a.name.toLowerCase().indexOf(t) >= 0).map((a) => ({ name: a.name, kind: a.isDefault ? "Default" : "", icon: a.icon, app: a.path, mode: "openwith-app" }))
+}
+
+fn openWithApp(f, app) {
+  let r = openWith(f.path, app)
+  if (!r.ok) {
+    shell.hud = r.error
+    refresh()
+    return
+  }
+  recordUse(f.path)
+  hide()
+  leaveToRoot()
+}
+
+fn fileAction(f, act) {
+  if (act === "open") {
+    recordUse(f.path)
+    launch(f.path)
+    leaveToRoot()
+  } else if (act === "reveal") {
+    recordUse(f.path)
+    revealFile(f.path)
+    leaveToRoot()
+  } else if (act === "look") {
+    toggleQuickLook(f)
+  } else if (act === "openwith") {
+    if (!modeIs("openwith")) {
+      enterSub({ name: "Open With", mode: "openwith", pluginTitle: f.name, icon: f.icon, file: f, apps: appsFor(f.path) })
+    }
+  } else if (act === "copypath" || act === "copyname") {
+    let text = act === "copypath" ? f.path : f.name
+    copyText(text)
+    shell.hud = "Copied " + text
+    refresh()
+  } else if (act === "trash") {
+    trashFileRow(f)
+  }
+}
+
+let trashing = { path: "", name: "", at: 0 }
+
+fn trashingFile() {
+  return trashing.path !== "" && Date.now() - trashing.at <= CONFIRM_MS ? trashing : null
+}
+
+fn dropPath(p) {
+  shell.apps = shell.apps.filter((r) => r.path !== p)
+  shell.files = shell.files.filter((r) => r.path !== p)
+  shell.contents = shell.contents.filter((r) => r.path !== p)
+  compose()
+}
+
+// The first press asks; a second press of the same file within CONFIRM_MS moves it.
+fn trashFileRow(f) {
+  let pending = trashingFile()
+  if (pending === null || pending.path !== f.path) {
+    trashing = { path: f.path, name: f.name, at: Date.now() }
+    refresh()
+    return
+  }
+  trashing = { path: "", name: "", at: 0 }
+  let r = trashFile(f.path)
+  if (!r.ok) {
+    shell.hud = r.error
+    refresh()
+    return
+  }
+  if (shell.mode !== null && shell.mode.back) {
+    leaveSub()
+  }
+  let dry = r.message.indexOf("dry run") === 0
+  if (!dry) {
+    dropPath(f.path)
+  }
+  shell.hud = dry ? r.message : "Moved “" + f.name + "” to the Trash"
+  refresh()
+}
+
+// The file in Quick Look follows the selection while the preview is open.
+let lookingAt = ""
+
+fn toggleQuickLook(f) {
+  if (lookingAt === f.path && quickLookVisible()) {
+    quickLook("")
+    lookingAt = ""
+    return
+  }
+  lookingAt = quickLook(f.path) ? f.path : ""
+}
+
+fn syncQuickLook() {
+  if (lookingAt === "") {
+    return
+  }
+  if (!quickLookVisible()) {
+    lookingAt = ""
+    return
+  }
+  let r = shell.selected < shell.results.length ? shell.results[shell.selected] : null
+  let f = fileTarget(r)
+  if (f === null) {
+    quickLook("")
+    lookingAt = ""
+  } else if (f.path !== lookingAt) {
+    lookingAt = f.path
+    quickLook(f.path)
+  }
 }
 
 // ── Running Apps: ↵ switch, ⌘H hide or show, ⌘⌫ quit, ⌥↵ twice force quit ──
@@ -1527,7 +1709,12 @@ fn compose() {
     let merged = shell.apps.slice(0, keepApps).concat(shell.files).slice(0, ROWS)
     shell.results = groupInOrder(merged, rootGroup, merged.length > 0 && merged[0].mode !== "filter" ? 1 : 0, ROOT_GROUPS)
   } else if (inFiles()) {
-    shell.results = shell.apps.concat(shell.files)
+    let named = shell.apps.concat(shell.files)
+    let seen = {}
+    for (let i = 0; i < named.length; i = i + 1) {
+      seen[named[i].path] = true
+    }
+    shell.results = named.concat(shell.contents.filter((r) => seen[r.path] !== true))
   } else {
     shell.results = shell.apps
   }
@@ -1607,6 +1794,22 @@ fn onFiles(r) {
     return
   }
   shell.files = r.results
+  compose()
+  refresh()
+}
+
+// Files whose text matches, under the name matches in Search Files.
+let CONTENT_MIN_CHARS = 3
+let CONTENT_MAX = 8
+
+fn onContents(r) {
+  if (!inFiles() || r.query !== shell.query) {
+    return
+  }
+  shell.contents = r.results.map((f) => {
+    f.group = "Contents"
+    return f
+  })
   compose()
   refresh()
 }
@@ -1919,6 +2122,7 @@ fn aiFindFiles(ta) {
   }
   let filter = {
     name: name,
+    contains: argText(ta, "contains"),
     kind: kind === "any" ? "" : kind,
     minBytes: parseSize(argText(ta, "minSize")),
     createdSecs: parseAge(argText(ta, "createdWithin")),
@@ -2210,6 +2414,7 @@ fn setQuery(text) {
   shell.offset = 0
   shell.hud = ""
   shell.files = []
+  shell.contents = []
   if (inAi()) {
     shell.apps = aiRows()
   } else if (shell.mode !== null) {
@@ -2404,6 +2609,14 @@ fn open(i) {
     runningAction(target, "switch")
     return
   }
+  if (target.mode === "fileaction") {
+    fileAction(shell.mode.file, target.act)
+    return
+  }
+  if (target.mode === "openwith-app") {
+    openWithApp(shell.mode.file, target.app)
+    return
+  }
   if (shell.query.trim() !== "" && (shell.mode === null || categoryIndex() >= 0)) {
     addSearchHistory(shell.query)
   }
@@ -2542,6 +2755,15 @@ fn onKey(name) {
     }
     return
   }
+  if (name === "escape" && lookingAt !== "" && quickLookVisible()) {
+    quickLook("")
+    lookingAt = ""
+    return
+  }
+  if ((name === "escape" || name === "delete-empty") && shell.mode !== null && shell.mode.back) {
+    leaveSub()
+    return
+  }
   if (name.indexOf("cmd+") === 0 && name.length === 5 && name[4] >= "1" && name[4] <= "4") {
     openCategory(CATEGORIES[Number(name[4]) - 1], shell.mode === null ? shell.query : "")
     return
@@ -2579,6 +2801,17 @@ fn onKey(name) {
     return
   }
   let row = shell.selected < shell.results.length ? shell.results[shell.selected] : null
+  let file = fileTarget(row)
+  if (file !== null && (name === "cmd+k" || name === "cmd+y" || name === "cmd+o" || name === "cmd+r" || name === "cmd+delete")) {
+    if (name === "cmd+k") {
+      if (!modeIs("fileactions") && !modeIs("openwith")) {
+        enterSub({ name: "Actions", mode: "fileactions", pluginTitle: file.name, icon: file.icon, file: file })
+      }
+    } else {
+      fileAction(file, FILE_KEYS[name])
+    }
+    return
+  }
   if (modeIs("shortcuts") && row !== null && (name === "cmd+enter" || name === "alt+enter" || name === "cmd+delete")) {
     openShortcutsRow(row, name)
     return
@@ -2779,7 +3012,7 @@ fn HintLabel(props) {
 }
 
 // Footer key caps are buttons too: a click does what the key does.
-let KEYCAP_KEYS = { "↵": "enter", "⌘↵": "cmd+enter", "⌥↵": "alt+enter", "esc": "escape", "⌘R": "cmd+r", "⌘L": "cmd+l", "⇥": "tab", "⌘⌫": "cmd+delete" }
+let KEYCAP_KEYS = { "↵": "enter", "⌘↵": "cmd+enter", "⌥↵": "alt+enter", "esc": "escape", "⌘R": "cmd+r", "⌘L": "cmd+l", "⇥": "tab", "⌘⌫": "cmd+delete", "⌘Y": "cmd+y", "⌘K": "cmd+k", "⌘O": "cmd+o" }
 
 fn clickHint(h) {
   let key = h !== null ? KEYCAP_KEYS[h[1]] : null
@@ -2852,8 +3085,14 @@ fn footerHints() {
     }
     return [["Ask", "↵"], ["Back", "esc"]]
   }
+  if (modeIs("fileactions")) {
+    return [["Run", "↵"], ["Back", "esc"]]
+  }
+  if (modeIs("openwith")) {
+    return [["Open", "↵"], ["Back", "esc"]]
+  }
   if (inFiles() || isFile(r)) {
-    return [["Open", "↵"], ["Show in Finder", "⌘R"], ["Copy Path", "⌥↵"]]
+    return [["Open", "↵"], ["Quick Look", "⌘Y"], ["Actions", "⌘K"]]
   }
   if (modeIs("history")) {
     return [["Search", "↵"], ["Back", "esc"]]
@@ -2967,6 +3206,11 @@ fn statusText() {
   let forced = forcingRow()
   if (forced !== null) {
     return "Press ⌥↵ again to force quit " + forced.name + " (unsaved changes are lost)"
+  }
+  let toTrash = trashingFile()
+  if (toTrash !== null) {
+    let short = toTrash.name.length > 28 ? toTrash.name.slice(0, 27) + "…" : toTrash.name
+    return "Press " + (modeIs("fileactions") ? "Return" : "⌘⌫") + " again to trash “" + short + "”"
   }
   if (shell.hud !== "") {
     return shell.hud
@@ -3090,16 +3334,18 @@ fn cliFail(token, message) {
   cliEnd(token, 1)
 }
 
-// Words plus flags: --json, --expand, -n N, --name N, --hotkey K, --output O, --input T.
+// Words plus flags: --json, --expand, --contents, -n N, --name N, --hotkey K, --output O, --input T.
 fn cliParse(argv) {
   let words = []
-  let flags = { json: false, expand: false, n: 0, name: "", hotkey: "", output: "", input: "" }
+  let flags = { json: false, expand: false, contents: false, n: 0, name: "", hotkey: "", output: "", input: "" }
   for (let i = 0; i < argv.length; i = i + 1) {
     let a = argv[i]
     if (a === "--json") {
       flags.json = true
     } else if (a === "--expand") {
       flags.expand = true
+    } else if (a === "--contents") {
+      flags.contents = true
     } else if ((a === "-n" || a === "--limit") && i + 1 < argv.length) {
       flags.n = Number(argv[i + 1])
       i = i + 1
@@ -3154,12 +3400,63 @@ fn cliFiles(token, query, flags) {
     return
   }
   let limit = cliLimit(flags, 20)
+  if (flags.contents) {
+    searchContents(query, limit, (r) => printFiles(token, r.results, flags.json))
+    return
+  }
   let f = findFiles(query, limit, 0)
   if (f.ready) {
     printFiles(token, f.results, flags.json)
     return
   }
   searchFiles(query, limit, (r) => printFiles(token, r.results, flags.json))
+}
+
+fn cliTrash(token, target, cwd) {
+  if (target === "") {
+    cliFail(token, "usage: nimble trash <path>")
+    return
+  }
+  let r = trashFile(cliPath(target, cwd))
+  if (!r.ok) {
+    cliFail(token, r.error)
+    return
+  }
+  cliOut(token, r.message + "\n")
+  cliEnd(token, 0)
+}
+
+// `nimble open-with <path>` lists the apps that open it (the default marked *); with an app name
+// or path it opens the file in that app.
+fn cliOpenWith(token, w, cwd) {
+  if (w.length < 2) {
+    cliFail(token, "usage: nimble open-with <path> [app]")
+    return
+  }
+  let path = cliPath(w[1], cwd)
+  let apps = appsFor(path)
+  if (w.length === 2) {
+    cliOut(token, apps.map((a) => (a.isDefault ? "* " : "  ") + a.name + "\t" + a.path).join("\n") + (apps.length > 0 ? "\n" : ""))
+    cliEnd(token, apps.length > 0 ? 0 : 1)
+    return
+  }
+  let want = w.slice(2).join(" ")
+  let app = want.indexOf("/") >= 0 ? cliPath(want, cwd) : ""
+  for (let i = 0; i < apps.length && app === ""; i = i + 1) {
+    if (apps[i].name.toLowerCase() === want.toLowerCase()) {
+      app = apps[i].path
+    }
+  }
+  if (app === "") {
+    cliFail(token, "no app called “" + want + "” opens " + path + " (nimble open-with " + w[1] + ")")
+    return
+  }
+  let r = openWith(path, app)
+  if (!r.ok) {
+    cliFail(token, r.error)
+    return
+  }
+  cliEnd(token, 0)
 }
 
 fn cliAsk(token, question) {
@@ -3522,6 +3819,10 @@ fn handleCli(argv, cwd, token) {
     cliEnd(token, apps.length > 0 ? 0 : 1)
   } else if (cmd === "ask") {
     cliAsk(token, rest)
+  } else if (cmd === "trash") {
+    cliTrash(token, rest, cwd)
+  } else if (cmd === "open-with") {
+    cliOpenWith(token, w, cwd)
   } else if (cmd === "window") {
     cliWindow(token, w.length > 1 ? w[1] : "")
   } else if (cmd === "selection") {
