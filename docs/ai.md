@@ -49,6 +49,8 @@ large files") rather than say so. The tools, defined in `aiTools()` in `main.tis
 | `clipboardHistory` | Nimble's in-memory clipboard history, optionally filtered |
 | `systemInfo` | macOS version, model, chip, cores, memory, disk free, battery, uptime |
 | `runShortcut` | Run a user shortcut by keyword (listed in the tool description); commands are left to the user |
+| `controlMac` | Dark mode, volume and mute, lock screen, sleep displays, screen saver, hide all apps, eject disks. Restart, shut down, sleep, log out, quit all apps and empty Trash are choices too, but the tool refuses them and tells the model to name the command for the user: with no matching choice, the on-device model picked the nearest action and claimed it had restarted |
+| `calculate` | The launcher's calculator: arithmetic, percentages, units, currency (ECB rates), number bases, time zones. The instructions tell the model to use it for any maths, since it knows neither today's rates nor the time |
 
 `findFiles` is `queryFiles` in Rust (`files::find`, an in-process `MDQuery`). Arguments arrive as
 text ("100 MB", "2 days") and are parsed in Tish. "Largest" with no size floor narrows from 1 GB

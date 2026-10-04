@@ -48,6 +48,10 @@ Tish binary) over a Unix-socket RPC. It does not exist yet.
 | `  src/fslive.rs` | File index service: background build, FSEvents updates, saves |
 | `  src/files.rs` | Spotlight file search on a worker thread (fallback while indexing); metadata search (size, dates, kind, folder) for the AI's `findFiles` |
 | `  src/sysinfo.rs` | Running apps, OS, hardware, disk and battery facts for the AI's tools |
+| `  src/system.rs` | System commands for `systemCommand`: lock, sleep, restart / shut down / log out (Apple Events to loginwindow), empty Trash, dark mode, volume and mute (CoreAudio), eject, hide / quit all apps. `NIMBLE_SYSTEM_DRY_RUN=1` makes every command only report what it would do |
+| `  src/calc.rs` | Calculator: arithmetic, percentages, units, currency, number bases |
+| `  src/rates.rs` | ECB exchange rates, fetched on a background thread and cached for 12 h (`NIMBLE_RATES`) |
+| `  src/tz.rs` | Time zone answers ("time in tokyo", "3pm pst to cet") on `NSTimeZone` |
 | `  src/watch.rs` | FSEvents on the application folders |
 | `  src/frecency.rs` | Use counts with decay, persisted as TSV (portable) |
 | `  src/history.rs` | Recent searches for Spotlight's ↑ list, newest first (portable) |

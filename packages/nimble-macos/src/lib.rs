@@ -44,7 +44,11 @@ mod shortcuts;
 #[cfg(target_os = "macos")]
 mod sysinfo;
 #[cfg(target_os = "macos")]
+mod system;
+#[cfg(target_os = "macos")]
 mod theme;
+#[cfg(target_os = "macos")]
+mod tz;
 mod vmplug;
 #[cfg(target_os = "macos")]
 mod watch;
@@ -712,6 +716,22 @@ mod natives {
         ])
     }
 
+    /// `calculate(text)` -> `{ display, copy, detail }` or null: arithmetic, units, currency (ECB
+    /// rates, refreshed in the background when over 12 h old), number bases and time zones.
+    pub fn calculate(args: &[Value]) -> Value {
+        rates::refresh_if_stale();
+        let text = str_arg(args, 0);
+        let rates = rates::get().map(|(r, _)| r);
+        match calc::answer(&text, rates.as_ref()).or_else(|| tz::answer(&text)) {
+            Some(a) => obj(vec![
+                ("display", Value::String(a.display.as_str().into())),
+                ("copy", Value::String(a.copy.as_str().into())),
+                ("detail", Value::String(a.detail.as_str().into())),
+            ]),
+            None => Value::Null,
+        }
+    }
+
     /// `runningApps()` -> `[{ name, path, icon, pid, active, hidden }]`: apps with a Dock icon.
     pub fn running_apps(_a: &[Value]) -> Value {
         let rows: Vec<Value> = crate::sysinfo::running_apps()
@@ -728,6 +748,56 @@ mod natives {
             })
             .collect();
         Value::Array(VmRef::new(rows))
+    }
+
+    /// `systemCommand(id, arg, cb)`: lock, sleep, sleep-displays, restart, shut-down, log-out,
+    /// empty-trash, screen-saver, dark-mode, mute, volume, eject, quit-all, hide-all.
+    /// `cb({ ok, message })` runs later on the main thread; without `cb` the result is returned.
+    pub fn system_command(args: &[Value]) -> Value {
+        fn result(r: Result<String, String>) -> Value {
+            let (ok, message) = match r {
+                Ok(m) => (true, m),
+                Err(e) => (false, e),
+            };
+            obj(vec![("ok", Value::Bool(ok)), ("message", s(&message))])
+        }
+        if !matches!(args.get(2), Some(Value::Function(_))) {
+            return result(crate::system::run(&str_arg(args, 0), &str_arg(args, 1)));
+        }
+        thread_local! {
+            static CALLBACKS: std::cell::RefCell<std::collections::HashMap<u64, Value>> = Default::default();
+        }
+        static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+        fn reply(id: u64, r: Result<String, String>) {
+            DispatchQueue::main().exec_async(move || {
+                let Some(Value::Function(f)) = CALLBACKS.with(|c| c.borrow_mut().remove(&id)) else { return };
+                crate::mac::with_ui(|| {
+                    let _ = f.call(&[result(r)]);
+                });
+            });
+        }
+        let (cmd, arg) = (str_arg(args, 0), str_arg(args, 1));
+        let id = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        CALLBACKS.with(|c| c.borrow_mut().insert(id, args.get(2).cloned().unwrap_or(Value::Null)));
+        if crate::system::blocks(&cmd) {
+            std::thread::spawn(move || reply(id, crate::system::run(&cmd, &arg)));
+        } else {
+            reply(id, crate::system::run(&cmd, &arg));
+        }
+        Value::Null
+    }
+
+    /// `volume()` -> `{ percent, muted }` or null when the output device has no volume control.
+    pub fn volume(_a: &[Value]) -> Value {
+        match crate::system::volume() {
+            Ok((v, m)) => obj(vec![("percent", Value::Number(v)), ("muted", Value::Bool(m))]),
+            Err(_) => Value::Null,
+        }
+    }
+
+    /// `darkMode()` -> true, false, or null when it cannot be read.
+    pub fn dark_mode(_a: &[Value]) -> Value {
+        crate::system::dark_mode().map(Value::Bool).unwrap_or(Value::Null)
     }
 
     /// `systemInfo()` -> `{ os, model, chip, cores, memoryBytes, uptimeSecs, diskTotal, diskFree,
@@ -923,7 +993,16 @@ mod natives {
         obj(vec![("results", Value::Array(VmRef::new(vec![]))), ("total", Value::Number(0.0)), ("ms", Value::Number(0.0))])
     }
     pub fn running_apps(_a: &[Value]) -> Value { Value::Array(VmRef::new(vec![])) }
+    pub fn calculate(a: &[Value]) -> Value {
+        match calc::answer(&str_arg(a, 0), None) {
+            Some(x) => obj(vec![("display", Value::String(x.display.as_str().into())), ("copy", Value::String(x.copy.as_str().into())), ("detail", Value::String(x.detail.as_str().into()))]),
+            None => Value::Null,
+        }
+    }
     pub fn system_info(_a: &[Value]) -> Value { Value::Null }
+    pub fn system_command(_a: &[Value]) -> Value { Value::Null }
+    pub fn volume(_a: &[Value]) -> Value { Value::Null }
+    pub fn dark_mode(_a: &[Value]) -> Value { Value::Null }
     pub fn file_icon(_a: &[Value]) -> Value { Value::String("".into()) }
     pub fn reveal_file(_a: &[Value]) -> Value { Value::Bool(false) }
     pub fn file_index_status(_a: &[Value]) -> Value { obj(vec![("state", Value::String("idle".into()))]) }
@@ -992,7 +1071,11 @@ pub fn nimble_object() -> Value {
     m.insert(Arc::from("recentFiles"), Value::native(natives::recent_files));
     m.insert(Arc::from("queryFiles"), Value::native(natives::query_files));
     m.insert(Arc::from("runningApps"), Value::native(natives::running_apps));
+    m.insert(Arc::from("calculate"), Value::native(natives::calculate));
     m.insert(Arc::from("systemInfo"), Value::native(natives::system_info));
+    m.insert(Arc::from("systemCommand"), Value::native(natives::system_command));
+    m.insert(Arc::from("volume"), Value::native(natives::volume));
+    m.insert(Arc::from("darkMode"), Value::native(natives::dark_mode));
     m.insert(Arc::from("fileIcon"), Value::native(natives::file_icon));
     m.insert(Arc::from("revealFile"), Value::native(natives::reveal_file));
     m.insert(Arc::from("fileIndexStatus"), Value::native(natives::file_index_status));

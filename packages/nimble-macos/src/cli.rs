@@ -34,6 +34,14 @@ usage: nimble [command] [args]
   files <query> [-n N]         file paths, best match first
   apps <query> [-n N]          matching applications
   ask <question>               ask the on-device model; the answer streams
+  calc <expression>            the plain answer: 2^10, 5 km in mi, 100 usd to eur, 255 in hex,
+                               time in tokyo, 3pm pst to cet (--json adds display and detail)
+  system [command] [arg]       list system commands, or run one: lock, sleep, sleep-displays,
+                               screen-saver, dark-mode, mute, volume, eject, hide-all, quit-all,
+                               empty-trash, restart, shut-down, log-out
+  volume [N|up|down]           print or set the output volume
+  mute [on|off]                toggle or set mute
+  dark-mode [on|off]           toggle or set dark mode
   clipboard [-n N]             clipboard history, newest first
   list [shortcuts|commands|hotkeys]
   shortcut add <keyword> <kind> <target> [--name N] [--hotkey K] [--output show|copy|none] [--input T]

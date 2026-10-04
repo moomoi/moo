@@ -43,6 +43,7 @@ open dist/Nimble.app             # the bundle
 | `NIMBLE_CONFIG` | Shortcuts file (default `~/.config/nimble/shortcuts.json`) |
 | `NIMBLE_SOCKET` | CLI socket (default `~/Library/Application Support/Nimble/nimble.sock`) |
 | `NIMBLE_START_HIDDEN` | `1`: start without showing the panel (set by the CLI when it starts Nimble) |
+| `NIMBLE_SYSTEM_DRY_RUN` | Set: system commands (restart, lock, volume, …) only report what they would do |
 
 The launcher hotkey can also be set as `"launcher"` in `shortcuts.json`; `NIMBLE_HOTKEY` wins
 over it.
@@ -133,11 +134,19 @@ that cannot touch your real setup, then talk to it:
 
 ```sh
 export NIMBLE_SOCKET=/tmp/nt/s.sock NIMBLE_CONFIG=/tmp/nt/shortcuts.json \
-       NIMBLE_FILE_INDEX=/tmp/nt/files.idx NIMBLE_HOTKEY=ctrl+alt+shift+cmd+f17
+       NIMBLE_FILE_INDEX=/tmp/nt/files.idx NIMBLE_HOTKEY=ctrl+alt+shift+cmd+f17 \
+       NIMBLE_HISTORY=/tmp/nt/history.txt NIMBLE_FRECENCY=/tmp/nt/frecency.tsv \
+       NIMBLE_PREFS=/tmp/nt/prefs.tsv NIMBLE_SYSTEM_DRY_RUN=1
 app/dist/nimble shortcut add up shell 'echo up {query}'   # starts the instance hidden
 app/dist/nimble run up 'a b; touch /tmp/pwned'            # prints "up a b; touch /tmp/pwned"
 app/dist/nimble quit
 ```
+
+Export these in the shell rather than prefixing one command: any `nimble` command starts Nimble
+when none is running, and that instance inherits only the environment of the command that started
+it. Without `NIMBLE_SYSTEM_DRY_RUN=1`, Restart, Shut Down and the other system commands are real;
+check with `nimble system restart`, which must print `dry run: restart`, before pressing Return in
+the panel. The clipboard is not isolated: AI answers that call `copyText` change it.
 
 The `scripts/drive-*.sh` scripts drive a running Nimble with System Events keystrokes and take
 screenshots into `/tmp`. They need Accessibility permission for the terminal running them, expect

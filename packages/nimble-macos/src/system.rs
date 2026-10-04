@@ -332,6 +332,77 @@ pub fn hide_all() -> usize {
     n
 }
 
+/// Commands that wait on another app or the disks; run them off the main thread.
+pub fn blocks(id: &str) -> bool {
+    matches!(id, "empty-trash" | "eject")
+}
+
+fn toggle_arg(arg: &str, current: bool) -> bool {
+    match arg {
+        "on" => true,
+        "off" => false,
+        _ => !current,
+    }
+}
+
+/// Run system command `id`; `arg` is `on`/`off`/`toggle` for `dark-mode` and `mute`, and a
+/// percentage, `up` or `down` for `volume` (empty reports the level). Returns a short message.
+/// With `NIMBLE_SYSTEM_DRY_RUN` set, known commands only report what they would do.
+pub fn run(id: &str, arg: &str) -> Result<String, String> {
+    let arg = arg.trim().to_lowercase();
+    if std::env::var_os("NIMBLE_SYSTEM_DRY_RUN").is_some() {
+        return match id {
+            "lock" | "sleep" | "sleep-displays" | "restart" | "shut-down" | "log-out" | "empty-trash" | "screen-saver" | "dark-mode"
+            | "mute" | "volume" | "eject" | "quit-all" | "hide-all" => Ok(format!("dry run: {id} {arg}").trim_end().to_string()),
+            _ => Err(format!("unknown system command `{id}`")),
+        };
+    }
+    match id {
+        "lock" => lock_screen().map(|_| String::new()),
+        "sleep" => sleep().map(|_| String::new()),
+        "sleep-displays" => sleep_displays().map(|_| String::new()),
+        "restart" => restart().map(|_| "Restarting".into()),
+        "shut-down" => shut_down().map(|_| "Shutting down".into()),
+        "log-out" => log_out().map(|_| "Logging out".into()),
+        "empty-trash" => empty_trash().map(|_| "Trash emptied".into()),
+        "screen-saver" => screen_saver().then(String::new).ok_or_else(|| "Could not start the screen saver".into()),
+        "dark-mode" => {
+            let on = toggle_arg(&arg, dark_mode().ok_or("cannot read the appearance")?);
+            set_dark_mode(on)?;
+            Ok(if on { "Dark mode on" } else { "Dark mode off" }.into())
+        }
+        "mute" => {
+            let on = toggle_arg(&arg, volume()?.1);
+            set_mute(on)?;
+            Ok(if on { "Sound muted" } else { "Sound on" }.into())
+        }
+        "volume" => {
+            let (v, muted) = volume()?;
+            let target = match arg.trim_end_matches('%') {
+                "" => return Ok(if muted { format!("Volume {v}% (muted)") } else { format!("Volume {v}%") }),
+                "up" => v + 10.0,
+                "down" => v - 10.0,
+                n => n.parse::<f64>().map_err(|_| format!("not a volume: {arg}"))?,
+            }
+            .clamp(0.0, 100.0)
+            .round();
+            set_volume(target)?;
+            Ok(format!("Volume {target}%"))
+        }
+        "eject" => {
+            let (ejected, failed) = eject_all();
+            match (ejected.is_empty(), failed.is_empty()) {
+                (true, true) => Ok("No disks to eject".into()),
+                (_, true) => Ok(format!("Ejected {}", ejected.join(", "))),
+                _ => Err(format!("Could not eject {}", failed.join("; "))),
+            }
+        }
+        "quit-all" => Ok(format!("Asked {} apps to quit", quit_all())),
+        "hide-all" => Ok(format!("Hid {} apps", hide_all())),
+        _ => Err(format!("unknown system command `{id}`")),
+    }
+}
+
 /// "1.2 GB", "340 MB".
 pub fn bytes(n: u64) -> String {
     let mb = n as f64 / 1_048_576.0;

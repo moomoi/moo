@@ -8,7 +8,7 @@
 
 import { loadModule } from "tish:ffi"
 import { macos, useState } from "tish:macos"
-import { reindex, search, launch, setup, setPanelShape, setArrowKeys, setTheme, typeText, getPref, setPref, searchHistory, addSearchHistory, clearSearchHistory, registerHotkey, quit, hide, appCount, searchFiles, watchApps, fuzzy, pluginPaths, copyText, loadBytecodePlugin, bundleResources, recordUse, frecency, statusItem, watchClipboard, clipboardHistory, clearClipboardHistory, aiAvailability, aiSession, aiEndSession, aiPrewarm, aiAsk, aiCancel, symbolIcon, fileIndexStart, findFiles, recentFiles, queryFiles, runningApps, systemInfo, fileIcon, revealFile, fileIndexStatus, show, toggle, unregisterHotkey, checkHotkey, hotkeyDisplay, recordHotkey, loadShortcuts, saveShortcut, checkKeyword, ensureShortcutsFile, removeShortcut, bindHotkey, unbindHotkey, expandTemplate, watchShortcuts, runShell, cliMain, cliServe, cliWrite, cliEnd, cliUsage } from "tish:nimble"
+import { reindex, search, launch, setup, setPanelShape, setArrowKeys, setTheme, typeText, getPref, setPref, searchHistory, addSearchHistory, clearSearchHistory, registerHotkey, quit, hide, appCount, searchFiles, watchApps, fuzzy, pluginPaths, copyText, loadBytecodePlugin, bundleResources, recordUse, frecency, statusItem, watchClipboard, clipboardHistory, clearClipboardHistory, aiAvailability, aiSession, aiEndSession, aiPrewarm, aiAsk, aiCancel, symbolIcon, fileIndexStart, findFiles, recentFiles, queryFiles, runningApps, systemInfo, calculate, systemCommand, fileIcon, revealFile, fileIndexStatus, show, toggle, unregisterHotkey, checkHotkey, hotkeyDisplay, recordHotkey, loadShortcuts, saveShortcut, checkKeyword, ensureShortcutsFile, removeShortcut, bindHotkey, unbindHotkey, expandTemplate, watchShortcuts, runShell, cliMain, cliServe, cliWrite, cliEnd, cliUsage } from "tish:nimble"
 import { env } from "tish:process"
 import { THEME } from "./theme.tish"
 
@@ -27,9 +27,21 @@ let HOME = env.HOME ? env.HOME : ""
 let AI_INSTRUCTIONS = "You are the assistant inside Nimble, a macOS launcher. Answer briefly and plainly in a few short sentences. Do not use Markdown. "
   + "Use the tools to look things up on this Mac (files, apps, clipboard history, system facts) instead of guessing, and never say you searched without calling a tool. "
   + "When a tool lists results, the user also sees them as rows they can open, so summarise instead of repeating every path. "
+  + "For any arithmetic, unit or currency conversion, or the time in another place, call the calculate tool and give its answer; you do not know today's exchange rates or the current time. "
+  + "Only say a setting was changed when a tool reply says so, and pass on what the reply says. "
   + "When the user asks to open an app, file, folder or website, call the open tool; when they ask to copy text, call the copyText tool. "
   + "The user's home folder is " + HOME + "."
 let FILE_KINDS = ["any", "image", "video", "audio", "pdf", "document", "text", "spreadsheet", "presentation", "archive", "diskimage", "folder"]
+// The AI's controlMac actions as systemCommand id and arg. Restart, shut down, log out, quit all
+// and empty Trash are left out: those stay with the user.
+let AI_SYSTEM = {
+  darkModeOn: ["dark-mode", "on"], darkModeOff: ["dark-mode", "off"], mute: ["mute", "on"], unmute: ["mute", "off"],
+  setVolume: ["volume", ""], volumeUp: ["volume", "up"], volumeDown: ["volume", "down"], lockScreen: ["lock", ""],
+  sleepDisplays: ["sleep-displays", ""], startScreenSaver: ["screen-saver", ""], hideAllApps: ["hide-all", ""], ejectDisks: ["eject", ""]
+}
+// Offered so the model has a match for these requests; the tool refuses them and names the command.
+let AI_SYSTEM_REFUSED = { restart: "Restart", shutDown: "Shut Down", sleep: "Sleep", logOut: "Log Out", quitAllApps: "Quit All Apps", emptyTrash: "Empty Trash" }
+let AI_SYSTEM_ACTIONS = ["darkModeOn", "darkModeOff", "mute", "unmute", "setVolume", "volumeUp", "volumeDown", "lockScreen", "sleepDisplays", "startScreenSaver", "hideAllApps", "ejectDisks", "restart", "shutDown", "sleep", "logOut", "quitAllApps", "emptyTrash"]
 let AI_LIST = 8
 let AI_ANSWER_ROWS = 4
 
@@ -54,7 +66,12 @@ fn aiTools() {
     { name: "findApps", description: "Search the applications installed on this Mac by name.", params: [{ name: "query", description: "Part of the app name, e.g. photo" }] },
     { name: "runningApps", description: "List the applications that are open right now.", params: [] },
     { name: "clipboardHistory", description: "Get what the user copied recently (Nimble keeps a clipboard history), newest first. Use whenever they ask what they copied or what is on the clipboard.", params: [opt("query", "Words to look for; all recent entries when omitted")] },
-    { name: "systemInfo", description: "Facts about this Mac: macOS version, model, chip, memory, disk space, battery and uptime.", params: [] }
+    { name: "systemInfo", description: "Facts about this Mac: macOS version, model, chip, memory, disk space, battery and uptime.", params: [] },
+    { name: "controlMac", description: "Change a setting on this Mac: dark mode, sound volume and mute, lock the screen, sleep the displays, start the screen saver, hide all apps, eject disks. Also call it for restart, shut down, sleep, log out, quit all apps and empty Trash, and repeat its reply.", params: [
+      { name: "action", description: "What to do", choices: AI_SYSTEM_ACTIONS },
+      { name: "level", description: "Volume percentage 0 to 100, only for setVolume", optional: true }
+    ] },
+    { name: "calculate", description: "Work out arithmetic, percentages, unit and currency conversions, number bases and the time in other time zones exactly. Use it for any maths instead of calculating yourself.", params: [{ name: "expression", description: "e.g. 15% of 80, 5 km in mi, 100 usd to eur, 255 in hex, time in tokyo, 3pm pst to cet" }] }
   ]
   let list = config.shortcuts.slice(0, 30).map((s) => s.keyword + " (" + s.name + ")")
   if (list.length > 0) {
@@ -100,6 +117,7 @@ watchClipboard()
 // ── Plugins: every module in PLUGIN_DIR contributes its manifest's commands to root search ──
 
 let aiIcon = symbolIcon("sparkles")
+let calcIcon = symbolIcon(THEME.icon.calculator)
 let APPS = { name: "Applications", path: "nimble:apps", icon: symbolIcon("square.grid.2x2"), kind: "Command", mode: "apps", pluginTitle: "Nimble" }
 let FILES = { name: "Search Files", path: "nimble:files", icon: symbolIcon("doc.text.magnifyingglass"), kind: "Command", mode: "files", pluginTitle: "Nimble" }
 let ACTIONS = { name: "Actions", path: "nimble:actions", icon: symbolIcon("square.2.layers.3d"), kind: "Command", mode: "actions", pluginTitle: "Nimble" }
@@ -124,6 +142,29 @@ let commands = [
   { name: "Edit shortcuts.json", path: "nimble:edit-shortcuts", icon: "NSActionTemplate", kind: "Command", mode: "builtin" },
   { name: "Quit Nimble", path: "nimble:quit", icon: "NSStopProgressTemplate", kind: "Command", mode: "builtin" }
 ]
+// System commands. `system` and `arg` go to systemCommand; `hides` closes the panel first so it
+// does not cover the lock screen or screen saver; `confirm` asks for a second Return.
+let SYSTEM_COMMANDS = [
+  { name: "Lock Screen", system: "lock", symbol: "lock.fill", hides: true },
+  { name: "Sleep", system: "sleep", symbol: "moon.zzz.fill", hides: true },
+  { name: "Sleep Displays", system: "sleep-displays", symbol: "display", hides: true },
+  { name: "Start Screen Saver", system: "screen-saver", symbol: "sparkles.tv", hides: true },
+  { name: "Toggle Dark Mode", system: "dark-mode", symbol: "circle.lefthalf.filled" },
+  { name: "Toggle Mute", system: "mute", symbol: "speaker.slash.fill" },
+  { name: "Volume Up", system: "volume", arg: "up", symbol: "speaker.wave.3.fill" },
+  { name: "Volume Down", system: "volume", arg: "down", symbol: "speaker.wave.1.fill" },
+  { name: "Eject All Disks", system: "eject", symbol: "eject.fill" },
+  { name: "Hide All Apps", system: "hide-all", symbol: "eye.slash", hides: true },
+  { name: "Quit All Apps", system: "quit-all", symbol: "xmark.app", hides: true, confirm: true },
+  { name: "Empty Trash", system: "empty-trash", symbol: "trash", confirm: true },
+  { name: "Restart", system: "restart", symbol: "restart", hides: true, confirm: true },
+  { name: "Shut Down", system: "shut-down", symbol: "power", hides: true, confirm: true },
+  { name: "Log Out", system: "log-out", symbol: "rectangle.portrait.and.arrow.right", hides: true, confirm: true }
+]
+for (let i = 0; i < SYSTEM_COMMANDS.length; i = i + 1) {
+  let d = SYSTEM_COMMANDS[i]
+  commands.push({ name: d.name, path: "nimble:system:" + d.system + (d.arg ? "-" + d.arg : ""), icon: symbolIcon(d.symbol), kind: "System", mode: "system", system: d.system, arg: d.arg ? d.arg : "", hides: d.hides === true, confirm: d.confirm === true, pluginTitle: "System" })
+}
 let ASK_AI = commands[0]
 let BUILTIN_COUNT = commands.length
 let pluginCount = 0
@@ -452,6 +493,10 @@ fn leaveToRoot() {
 
 // Open the launcher on a command with optional search text.
 fn openCommand(c, query) {
+  if (c.mode === "system") {
+    runSystem(c, query.trim() !== "" ? query.trim() : c.arg, false)
+    return
+  }
   leaveToRoot()
   show()
   if (c.mode === "builtin") {
@@ -638,6 +683,15 @@ fn rootResults(text) {
   let apps = search(text, ROWS)
   let hits = commandHits(text)
   let out = []
+  // An inline answer comes first, as in Spotlight: "2^10", "5 km in mi", "time in tokyo".
+  let answer = calculate(text)
+  if (answer !== null) {
+    out.push({ name: answer.display, path: "nimble:calc", icon: calcIcon, kind: answer.detail, mode: "calc", copy: answer.copy, pluginTitle: "Calculator" })
+  }
+  let vol = volumeRow(text)
+  if (vol !== null) {
+    out.push(vol)
+  }
   let sc = shortcutMatch(text)
   let skip = ""
   if (sc !== null) {
@@ -755,6 +809,9 @@ fn rootGroup(r) {
   if (r.mode === "filter") {
     return "Filter Search"
   }
+  if (r.mode === "calc") {
+    return "Calculator"
+  }
   if (r.mode === "ai" && r.question !== "") {
     return "Ask AI"
   }
@@ -764,7 +821,7 @@ fn rootGroup(r) {
   return r.kind === "Application" ? "Applications" : "Actions"
 }
 
-let ROOT_GROUPS = ["Filter Search", "Applications", "Files", "Actions", "Ask AI"]
+let ROOT_GROUPS = ["Filter Search", "Calculator", "Applications", "Files", "Actions", "Ask AI"]
 
 // Keeps list[0..from) in place and gathers the rest by group: groups named in `ranked` first, in
 // that order, then any others in order of first appearance.
@@ -789,7 +846,7 @@ fn groupInOrder(list, groupOf, from, ranked) {
 
 fn groupAt(r, i) {
   if (shell.mode === null) {
-    return i === 0 && r.mode !== "filter" ? "Top Hit" : rootGroup(r)
+    return i === 0 && r.mode !== "filter" && r.mode !== "calc" ? "Top Hit" : rootGroup(r)
   }
   if (modeIs("actions")) {
     return r.mode === "shortcut" ? "Quick Keys" : "Actions"
@@ -1802,6 +1859,27 @@ fn aiClipboard(ta) {
   return toolReply("Recent clipboard entries, newest first:\n" + lines.join("\n"), "Clipboard", items)
 }
 
+fn aiControlMac(ta) {
+  let action = argText(ta, "action")
+  let refused = AI_SYSTEM_REFUSED[action]
+  if (refused !== null) {
+    return toolReply("Nothing was done: only the user can do this. Tell them to type " + refused + " in Nimble and press Return twice.", "", [])
+  }
+  let m = AI_SYSTEM[action]
+  if (m === null) {
+    return toolReply("Unknown action " + action + ". Use one of: " + AI_SYSTEM_ACTIONS.join(", "), "", [])
+  }
+  let arg = action === "setVolume" ? argText(ta, "level") : m[1]
+  if (action === "setVolume" && arg === "") {
+    return toolReply("setVolume needs a level from 0 to 100.", "", [])
+  }
+  let r = systemCommand(m[0], arg)
+  if (r.ok && (m[0] === "lock" || m[0] === "screen-saver" || m[0] === "sleep-displays")) {
+    hide()
+  }
+  return toolReply(r.ok ? (r.message !== "" ? r.message : "Done.") : "Failed: " + r.message, "", [])
+}
+
 fn aiSystemInfo() {
   let s = systemInfo()
   if (s === null) {
@@ -1892,6 +1970,13 @@ fn runAiTool(name, argsJson) {
   }
   if (name === "runShortcut") {
     return aiRunShortcut(args)
+  }
+  if (name === "controlMac") {
+    return aiControlMac(args)
+  }
+  if (name === "calculate") {
+    let a = calculate(argText(args, "expression"))
+    return toolReply(a === null ? "Could not work that out; try a simpler expression such as 15% of 80 or 5 km in mi." : a.display + " (" + a.detail + ")", "", [])
   }
   return toolReply("Unknown tool " + name, "", [])
 }
@@ -2060,6 +2145,60 @@ fn runBuiltin(c) {
   }
 }
 
+let CONFIRM_MS = 4000
+let confirming = { path: "", query: "", at: 0 }
+
+// The selected row while it waits for its second Return: same row, same query, within CONFIRM_MS.
+fn confirmingRow() {
+  let r = shell.selected < shell.results.length ? shell.results[shell.selected] : null
+  if (r === null || r.mode !== "system" || r.path !== confirming.path || shell.query !== confirming.query || Date.now() - confirming.at > CONFIRM_MS) {
+    return null
+  }
+  return r
+}
+
+// `ask` is true when chosen in the panel: commands marked `confirm` then need a second Return.
+// Hotkeys and shortcuts run at once.
+fn runSystem(c, arg, ask) {
+  if (ask && c.confirm && confirmingRow() === null) {
+    confirming = { path: c.path, query: shell.query, at: Date.now() }
+    refresh()
+    return
+  }
+  confirming = { path: "", query: "", at: 0 }
+  if (c.hides) {
+    hide()
+    setQuery("")
+  } else if (c.system === "empty-trash" || c.system === "eject") {
+    shell.hud = c.name + "…"
+    refresh()
+  }
+  systemCommand(c.system, arg, (r) => {
+    if (r.message !== "") {
+      shell.hud = r.message
+      refresh()
+    }
+  })
+}
+
+// "volume 30", "vol 30%" set the volume from the root search.
+fn volumeRow(text) {
+  let w = text.trim().toLowerCase().split(" ")
+  if (w.length !== 2 || (w[0] !== "volume" && w[0] !== "vol")) {
+    return null
+  }
+  let n = w[1].indexOf("%") === w[1].length - 1 ? w[1].slice(0, w[1].length - 1) : w[1]
+  if (n === "" || n.length > 3) {
+    return null
+  }
+  for (let i = 0; i < n.length; i = i + 1) {
+    if ("0123456789".indexOf(n[i]) < 0) {
+      return null
+    }
+  }
+  return { name: "Set Volume to " + n + "%", path: "nimble:system:volume", icon: symbolIcon("speaker.wave.2.fill"), kind: "System", mode: "system", system: "volume", arg: n, hides: false, confirm: false, pluginTitle: "System" }
+}
+
 fn runCommand(c) {
   try {
     perform(c.plugin.run(c.command))
@@ -2081,6 +2220,13 @@ fn open(i) {
   }
   if (target.mode === "filter") {
     openCategory(target.category, target.query)
+    return
+  }
+  if (target.mode === "calc") {
+    addSearchHistory(shell.query)
+    copyText(target.copy)
+    hide()
+    setQuery("")
     return
   }
   if (shell.query.trim() !== "" && (shell.mode === null || categoryIndex() >= 0)) {
@@ -2121,6 +2267,8 @@ fn open(i) {
   recordUse(target.path)
   if (target.mode === "builtin") {
     runBuiltin(target)
+  } else if (target.mode === "system") {
+    runSystem(target, target.arg, true)
   } else if (target.mode === "ai") {
     enterAi(target, target.question)
   } else if (target.mode === "create") {
@@ -2477,8 +2625,14 @@ fn primaryAction(r) {
   if (r.kind === "Command") {
     return "Run Command"
   }
+  if (r.mode === "system") {
+    return r.confirm ? (confirmingRow() !== null ? "Confirm " + r.name : r.name) : "Run"
+  }
   if (r.mode === "ai") {
     return "Ask AI"
+  }
+  if (r.mode === "calc") {
+    return "Copy Answer"
   }
   return "Open"
 }
@@ -2616,6 +2770,10 @@ fn fileStatus() {
 }
 
 fn statusText() {
+  let pending = confirmingRow()
+  if (pending !== null) {
+    return "Press Return again to " + pending.name
+  }
   if (shell.hud !== "") {
     return shell.hud
   }
@@ -2980,6 +3138,30 @@ fn cliStatus(token, json) {
   cliEnd(token, 0)
 }
 
+// `nimble system` lists the commands; `nimble system <id> [arg]` runs one without asking.
+fn cliSystem(token, id, arg) {
+  if (id === "") {
+    let lines = []
+    for (let i = 0; i < SYSTEM_COMMANDS.length; i = i + 1) {
+      let d = SYSTEM_COMMANDS[i]
+      lines.push(d.system + (d.arg ? " " + d.arg : "") + "\t" + d.name)
+    }
+    cliOut(token, lines.join("\n") + "\n")
+    cliEnd(token, 0)
+    return
+  }
+  systemCommand(id, arg, (r) => {
+    if (!r.ok) {
+      cliFail(token, r.message)
+      return
+    }
+    if (r.message !== "") {
+      cliOut(token, r.message + "\n")
+    }
+    cliEnd(token, 0)
+  })
+}
+
 fn handleCli(argv, cwd, token) {
   let p = cliParse(argv)
   let w = p.words
@@ -3068,6 +3250,18 @@ fn handleCli(argv, cwd, token) {
     cliEnd(token, apps.length > 0 ? 0 : 1)
   } else if (cmd === "ask") {
     cliAsk(token, rest)
+  } else if (cmd === "system") {
+    cliSystem(token, w.length > 1 ? w[1] : "", w.slice(2).join(" "))
+  } else if (cmd === "volume" || cmd === "dark-mode" || cmd === "mute") {
+    cliSystem(token, cmd, rest)
+  } else if (cmd === "calc") {
+    let a = calculate(rest)
+    if (a === null) {
+      cliFail(token, "not a calculation, conversion or time: " + rest)
+    } else {
+      cliOut(token, (p.flags.json ? JSON.stringify(a) : a.copy) + "\n")
+      cliEnd(token, 0)
+    }
   } else if (cmd === "clipboard") {
     let items = clipboardHistory("", cliLimit(p.flags, 10))
     cliOut(token, p.flags.json ? JSON.stringify(items.map((c) => ({ text: c.text, app: c.app, ago: c.ago }))) + "\n" : items.map((c) => c.text).join("\n") + (items.length > 0 ? "\n" : ""))

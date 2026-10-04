@@ -38,6 +38,8 @@ export const THEME = {
   icon: {
     // SF Symbol in the field outside a category.
     search: "magnifyingglass",
+    // SF Symbol beside calculator and time zone answers.
+    calculator: "equal.circle.fill",
     row: 24,
     field: 22,
     category: 20,

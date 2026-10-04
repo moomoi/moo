@@ -51,6 +51,8 @@ expansion), window management, calculator, emoji, system commands and script com
 | Frecency ranking | Done: decayed use counts added to the fuzzy score |
 | File search | Done: own live name index, 0.7–3.6 ms over ~600K entries, 18 MB, idle CPU 0; Spotlight while it builds. "Search Files" with reveal (⌘↵) and copy path (⌥↵) |
 | Clipboard history | Done: in memory, skips concealed items |
+| System commands | Done: Lock Screen, Sleep, Sleep Displays, Screen Saver, Toggle Dark Mode, Toggle Mute, Volume Up / Down ("volume 30" sets it), Eject All Disks, Hide / Quit All Apps, Empty Trash, Restart, Shut Down, Log Out. Destructive ones need a second Return on the same row and query; hotkeys and shortcuts run them at once. Also `nimble system`, `nimble volume`, `nimble mute`, `nimble dark-mode` and the AI's `controlMac` |
+| Calculator | Done: an answer row above the results for arithmetic ("2^10", "15% of 80"), units ("5 km in mi"), currency ("100 usd to eur", ECB rates cached 12 h), number bases ("255 in hex") and time zones ("time in tokyo", "3pm pst to cet"). Return copies the plain answer. Also `nimble calc` and the AI's `calculate` tool |
 | Quicklinks, snippets, script commands | Done, in Universal Launcher's simpler form: a keyword bound to a `url`, `open`, `command`, `shell` or `text` target with a `{query}` template, in one hand-editable `shortcuts.json`. "Create Shortcut" builds one in a few keystrokes |
 | Hotkeys for any command | Done: any number of global hotkeys, each bound to a shortcut or command (with optional text), every ANSI key and F1–F20, conflict detection against other bindings and macOS shortcuts, recorder in the panel |
 | Deeplinks (`raycast://`) | A CLI instead: the `nimble` binary talks to the running app over a Unix socket in about 5 ms, so skhd, Karabiner, BetterTouchTool or any script can run shortcuts, search files, ask the AI and manage shortcuts |
@@ -66,7 +68,8 @@ Apps and files are already indexed when the panel first opens, so there is no on
 | Spotlight | Nimble |
 | --- | --- |
 | Opens as a compact search pill with Applications, Files, Actions and Clipboard buttons beside it | Done: a 52 pt bar, field capsule plus four Liquid Glass circles that spring out of the field when it opens |
-| Typing expands into results grouped by category, best match first | Done: Top Hit, then Applications, Files, Actions and Ask AI headings |
+| Typing expands into results grouped by category, best match first | Done: Calculator (when the text is a sum, conversion or time), Top Hit, then Applications, Files, Actions and Ask AI headings |
+| Inline answers for sums, conversions and the time elsewhere | Done: see Calculator above |
 | ⌘1–⌘4 (or a button) narrow to Applications, Files, Actions, Clipboard | Done: the field shows the category's symbol and "Search Files" etc.; the same key, ⌫ in an empty field, or esc goes back. Text already typed carries over |
 | Applications shows every app as a grid of icons | Done: 7 × 4 icons A–Z with names, arrows move, scrolls by rows; ⌘L switches to a list (remembered) |
 | "/" to filter the search | Done: "/" lists the categories; "/files report" opens Files searching "report" |
