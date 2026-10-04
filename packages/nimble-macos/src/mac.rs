@@ -49,7 +49,8 @@ thread_local! {
     static PANEL: RefCell<Option<Retained<NSWindow>>> = const { RefCell::new(None) };
     static ON_FILES: RefCell<Option<Value>> = const { RefCell::new(None) };
     static ICON_RING: RefCell<(usize, Vec<String>)> = const { RefCell::new((0, Vec::new())) };
-    static STATUS: RefCell<Option<(Retained<NSStatusItem>, Retained<MenuTarget>)>> = const { RefCell::new(None) };
+    static STATUS: RefCell<Option<StatusItem>> = const { RefCell::new(None) };
+    static STATUS_MENU: RefCell<Option<Box<dyn Fn(&str)>>> = const { RefCell::new(None) };
     /// Panel height and its rounded pieces; empty means one full rounded rect.
     static SHAPE: RefCell<(f64, Vec<Piece>)> = const { RefCell::new((0.0, Vec::new())) };
     /// Holds one glass (or blur) view per shape piece, behind the layout.
@@ -925,6 +926,11 @@ fn restore_focus() {
 
 pub fn show() {
     let Some(mtm) = MainThreadMarker::new() else { return };
+    // A CLI request can arrive before the panel exists (the socket opens first); setup shows it.
+    if PANEL.with(|p| p.borrow().is_none()) {
+        SHOWN.with(|s| s.set(true));
+        return;
+    }
     if let Some(w) = main_window(mtm) {
         position_panel(&w, mtm);
         refresh_edge(&w);
@@ -1188,7 +1194,7 @@ fn finish_setup(attempt: u32) {
     apply_shape(&w, mtm);
     hide_on_resign_key(&w);
     install_key_monitor();
-    if !START_HIDDEN.with(|c| c.get()) {
+    if !START_HIDDEN.with(|c| c.get()) || SHOWN.with(|s| s.get()) {
         show();
     }
 }
@@ -1474,9 +1480,35 @@ define_class!(
     struct MenuTarget;
 
     impl MenuTarget {
-        #[unsafe(method(showPanel:))]
-        fn show_panel(&self, _sender: Option<&AnyObject>) {
-            show();
+        #[unsafe(method(statusClicked:))]
+        fn status_clicked(&self, _sender: Option<&AnyObject>) {
+            let Some(mtm) = MainThreadMarker::new() else { return };
+            let menu_click = NSApplication::sharedApplication(mtm).currentEvent().is_some_and(|ev| {
+                ev.r#type() == NSEventType::RightMouseUp || ev.modifierFlags().contains(NSEventModifierFlags::Control)
+            });
+            if !menu_click {
+                show();
+                return;
+            }
+            STATUS.with(|s| {
+                let s = s.borrow();
+                let Some(st) = s.as_ref() else { return };
+                // A status item opens its menu below itself on click; set it just for this click.
+                st.item.setMenu(Some(&st.menu));
+                if let Some(button) = st.item.button(mtm) {
+                    unsafe { button.performClick(None) };
+                }
+                st.item.setMenu(None);
+            });
+        }
+
+        #[unsafe(method(openSettings:))]
+        fn open_settings(&self, _sender: Option<&AnyObject>) {
+            STATUS_MENU.with(|h| {
+                if let Some(h) = h.borrow().as_ref() {
+                    h("settings");
+                }
+            });
         }
 
         #[unsafe(method(quitNimble:))]
@@ -1492,12 +1524,20 @@ impl MenuTarget {
     }
 }
 
-/// Menu bar icon with Show / Quit, installed once the run loop is live. `hotkey` is shown next
-/// to Show as a reminder.
-pub fn status_item(hotkey: &str, symbol: &str) -> bool {
+pub struct StatusItem {
+    item: Retained<NSStatusItem>,
+    menu: Retained<NSMenu>,
+    _target: Retained<MenuTarget>,
+}
+
+/// Menu bar icon, installed once the run loop is live. A click shows the panel; a right click
+/// (or Control-click) opens Settings… / Quit Nimble, and Settings calls `on_menu("settings")`.
+/// `hotkey` goes in the tooltip as a reminder.
+pub fn status_item(hotkey: &str, symbol: &str, on_menu: Box<dyn Fn(&str)>) -> bool {
     if STATUS.with(|s| s.borrow().is_some()) {
         return false;
     }
+    STATUS_MENU.with(|h| *h.borrow_mut() = Some(on_menu));
     let (hotkey, symbol) = (hotkey.to_string(), symbol.to_string());
     DispatchQueue::main().exec_async(move || install_status_item(&hotkey, &symbol));
     true
@@ -1521,22 +1561,29 @@ fn install_status_item(hotkey: &str, symbol: &str) {
         }
     }
     let target = MenuTarget::new(mtm);
+    if let Some(button) = item.button(mtm) {
+        let tip = if hotkey.is_empty() { "Nimble".to_string() } else { format!("Nimble  ({hotkey})") };
+        button.setToolTip(Some(&NSString::from_str(&tip)));
+        unsafe {
+            button.setTarget(Some(&target));
+            button.setAction(Some(sel!(statusClicked:)));
+        }
+        button.sendActionOn(NSEventMask::LeftMouseUp | NSEventMask::RightMouseUp);
+    }
     let menu = NSMenu::new(mtm);
-    let show_title = if hotkey.is_empty() { "Show Nimble".to_string() } else { format!("Show Nimble  ({hotkey})") };
-    for (title, action) in [(show_title.as_str(), sel!(showPanel:)), ("Quit Nimble", sel!(quitNimble:))] {
+    let entries = [(Some("Settings…"), Some(sel!(openSettings:)), ","), (None, None, ""), (Some("Quit Nimble"), Some(sel!(quitNimble:)), "q")];
+    for (title, action, key) in entries {
+        let Some(title) = title else {
+            menu.addItem(&NSMenuItem::separatorItem(mtm));
+            continue;
+        };
         let mi = unsafe {
-            NSMenuItem::initWithTitle_action_keyEquivalent(
-                NSMenuItem::alloc(mtm),
-                &NSString::from_str(title),
-                Some(action),
-                &NSString::from_str(""),
-            )
+            NSMenuItem::initWithTitle_action_keyEquivalent(NSMenuItem::alloc(mtm), &NSString::from_str(title), action, &NSString::from_str(key))
         };
         unsafe { mi.setTarget(Some(&target)) };
         menu.addItem(&mi);
     }
-    item.setMenu(Some(&menu));
-    STATUS.with(|s| *s.borrow_mut() = Some((item, target)));
+    STATUS.with(|s| *s.borrow_mut() = Some(StatusItem { item, menu, _target: target }));
 }
 
 /// Register SF Symbol `symbol` as a named image (once) and return the name.

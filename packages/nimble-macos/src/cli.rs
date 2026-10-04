@@ -36,9 +36,24 @@ usage: nimble [command] [args]
   trash <path>                 move to the Trash; prints where it went
   open-with <path> [app]       list the apps that open it (* default), or open it in one
   apps <query> [-n N]          matching applications
-  ask <question>               ask the on-device model; the answer streams
+  ask [--model M] <question>   ask Ask AI's model (or M); the answer streams, tools included
+  ai                           the model Ask AI uses and each provider's sign-in
+  ai models [text] [--json]    every model (* current): Apple's, Hypery's (Claude, Grok, Gemini,
+                               GPT, …), OpenAI's, local Ollama and LM Studio ones
+  ai use <model>               make Ask AI use it: apple, hypery:<id>, ollama:<id>, … or default
+  ai login | logout [provider] sign in to Hypery in the browser, or forget its key and sign-in
+  ai key [provider] <key>      keep an API key in the Keychain (Hypery when no provider)
+  ai usage [provider]          Hypery balance and this month's spending
+  ai client-id <id> [provider] the OAuth app id browser sign-in uses
   calc <expression>            the plain answer: 2^10, 5 km in mi, 100 usd to eur, 255 in hex,
                                time in tokyo, 3pm pst to cet (--json adds display and detail)
+  web <text>                   search suggestions from the default engine
+  web engine [name]            list engines (* default) or pick one: google, duckduckgo, bing,
+                               brave
+  define <word>                the word's senses, pronunciation and origin from the macOS
+                               dictionary, every homograph (--json for the parsed entry)
+  contacts [name]              contacts whose name matches (all when empty); needs access,
+                               which Search Contacts in Nimble asks for
   system [command] [arg]       list system commands, or run one: lock, sleep, sleep-displays,
                                screen-saver, dark-mode, mute, volume, eject, hide-all, quit-all,
                                empty-trash, restart, shut-down, log-out
@@ -56,7 +71,9 @@ usage: nimble [command] [args]
                                kinds: url, open, command, shell, text; --expand makes a text
                                shortcut a snippet, replaced wherever its keyword is typed
   shortcut rm <keyword>
-  hotkey add <keys> <keyword|id> [text]
+  hotkey add <keys> <keyword|id|app> [text]
+                               bind a shortcut, a command id or an app's path
+                               (/Applications/Safari.app)
   hotkey rm <keys>
   config                       print the path of shortcuts.json
   status

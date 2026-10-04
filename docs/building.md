@@ -80,6 +80,13 @@ nimble run g rust traits                # run a shortcut or command with text
 nimble run nimble:clipboard             # open a built-in or plugin command (ids: nimble list commands)
 nimble search invoice                   # show the launcher with text typed
 nimble files invoice -n 3 --json        # file paths from the live index
+nimble files 'quarterly report' --contents   # files whose text has these words
+nimble open-with ~/notes.txt            # apps that open it (* default); add a name to open with one
+nimble trash ~/old.txt                  # move to the Trash (prints where it went)
+nimble define serendipity               # senses, pronunciation and origin from the macOS dictionary
+nimble web how to make sourdough        # the default engine's suggestions
+nimble web engine duckduckgo            # pick the engine (no name: list them, * default)
+nimble contacts ada                     # matching contacts (after allowing access in Search Contacts)
 nimble apps safari                      # matching applications
 nimble ask "summarize: $(pbpaste)"      # on-device model; the answer streams
 nimble clipboard -n 5                   # clipboard history
@@ -90,6 +97,7 @@ nimble shortcut add ';sig' text 'Best,\nA' --expand   # typing ;sig in any app b
 nimble shortcut rm ip
 nimble hotkey add cmd+shift+v nimble:clipboard
 nimble hotkey add f5 g weather          # a hotkey can carry the text too
+nimble hotkey add ctrl+alt+s /Applications/Safari.app   # open an app
 nimble hotkey rm f5
 nimble list [shortcuts|commands|hotkeys] [--json]
 nimble status [--json]

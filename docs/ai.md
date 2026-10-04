@@ -52,6 +52,7 @@ large files") rather than say so. The tools, defined in `aiTools()` in `main.tis
 | `controlMac` | Dark mode, volume and mute, lock screen, sleep displays, screen saver, hide all apps, eject disks. Restart, shut down, sleep, log out, quit all apps and empty Trash are choices too, but the tool refuses them and tells the model to name the command for the user: with no matching choice, the on-device model picked the nearest action and claimed it had restarted |
 | `arrangeWindow` | Move the window the user was working in: halves, quarters, thirds, maximize, center, another display, restore |
 | `calculate` | The launcher's calculator: arithmetic, percentages, units, currency (ECB rates), number bases, time zones. The instructions tell the model to use it for any maths, since it knows neither today's rates nor the time |
+| `define` | The Mac's dictionary: pronunciation, the first four senses with examples, and the origin. The instructions tell the model to answer word questions from it; without that line the on-device model answered "what does petrichor mean" from memory, at length and with invented detail |
 
 `findFiles` is `queryFiles` in Rust (`files::find`, an in-process `MDQuery`). Arguments arrive as
 text ("100 MB", "2 days") and are parsed in Tish. "Largest" with no size floor narrows from 1 GB

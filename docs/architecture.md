@@ -36,7 +36,7 @@ Tish binary) over a Unix-socket RPC. It does not exist yet.
 | `app/src/main.tish` | The launcher: state, search composition, plugin loading, key handling, view |
 | `app/src/theme.tish` | The whole look: colours, type, radii, icons, glass tints, panel geometry, motion |
 | `packages/nimble-macos` | Rust native module imported as `tish:nimble` |
-| `  src/mac.rs` | Panel, focus, key routing, Carbon hotkeys and the recorder, launch, icons, status item |
+| `  src/mac.rs` | Panel, focus, key routing, Carbon hotkeys and the recorder, launch, icons, status item (click shows the panel, right click opens Settings… / Quit) |
 | `  src/theme.rs` | Holds the theme set from Tish (`setTheme`) and resolves its colours; no values of its own |
 | `  src/keys.rs` | Key names, hotkey spec parsing and display (`cmd+shift+k` → ⇧⌘K) |
 | `  src/keymap.rs` | Per-keyboard modifier remaps and macOS system shortcut conflicts |
@@ -54,6 +54,9 @@ Tish binary) over a Unix-socket RPC. It does not exist yet.
 | `  src/snippets.rs` | Snippet keywords: the characters typed in other apps since the cursor last jumped, matched against expanding text shortcuts |
 | `  src/layout.rs` | Window layouts as pure geometry: halves, quarters, thirds, maximize, center, moving to another display |
 | `  src/calc.rs` | Calculator: arithmetic, percentages, units, currency, number bases |
+| `  src/dict.rs` | Word definitions: Dictionary Services text for every homograph (the private record functions, looked up at run time, with the public first-homograph call as fallback), parsed into senses, examples and origin |
+| `  src/websearch.rs` | Search suggestions: an engine's OpenSearch JSON over URLSession (portable parser) |
+| `  src/contacts.rs` | Contacts: access status and request, name search and the full list (Contacts framework); embeds the usage description the bare dev binary needs in `__TEXT,__info_plist` |
 | `  src/rates.rs` | ECB exchange rates, fetched on a background thread and cached for 12 h (`NIMBLE_RATES`) |
 | `  src/tz.rs` | Time zone answers ("time in tokyo", "3pm pst to cet") on `NSTimeZone` |
 | `  src/watch.rs` | FSEvents on the application folders |

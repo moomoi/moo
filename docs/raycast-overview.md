@@ -58,9 +58,14 @@ expansion), window management, calculator, emoji, system commands and script com
 | Selected text | Done: `{selection}` in shortcut templates and `nimble selection` read it through Accessibility |
 | Quit Applications / switcher | Done: "Running Apps" lists Dock apps by memory use; ↵ switches, ⌘H hides or shows, ⌘⌫ quits, ⌥↵ twice force quits. Also `nimble running [action name]` |
 | Calculator | Done: an answer row above the results for arithmetic ("2^10", "15% of 80"), units ("5 km in mi"), currency ("100 usd to eur", ECB rates cached 12 h), number bases ("255 in hex") and time zones ("time in tokyo", "3pm pst to cet"). Return copies the plain answer. Also `nimble calc` and the AI's `calculate` tool |
+| Define Word | Done, from the dictionaries macOS ships (Dictionary Services, in-process, 1–10 ms): "Define Word" lists every homograph's senses by part of speech with examples and the origin; Return copies a sense, ⌘↵ opens Dictionary.app. A one-word search adds a Definition row after the best matches, and "define <word>" puts it first. Also `nimble define <word>` and the AI's `define` tool |
+| Search the web | Done: "Search the Web" shows the engine's live suggestions while typing (OpenSearch over URLSession on a worker thread, 120 ms after typing pauses) and opens the search in the browser; with an empty field it lists Google, DuckDuckGo, Bing and Brave Search, and Return makes one the default. Every root search ends with an offline "Search Google for …" row. Also `nimble web <text>` (suggestions) and `nimble web engine [name]` |
+| Contacts | Done: "Search Contacts" lists the address book (Contacts framework, on a worker thread), filtered by name; Return shows a contact's emails and phone numbers (Return writes or calls, ⌥↵ copies) and "Open in Contacts". macOS asks for access only from the "Allow Access to Contacts" row. Also `nimble contacts [name]` |
+| Preferences window | Settings is a list in the panel (the menu bar icon's right-click menu, or the "Settings" command): launcher hotkey, shortcuts, search engine, Applications view, contacts access. A click on the menu bar icon shows the panel |
 | Quicklinks, snippets, script commands | Done, in Universal Launcher's simpler form: a keyword bound to a `url`, `open`, `command`, `shell` or `text` target with a `{query}` template, in one hand-editable `shortcuts.json`. "Create Shortcut" builds one in a few keystrokes |
 | Snippet expansion | Done: a `text` shortcut with `"expand": true` ("Expand a snippet as you type" in Create Shortcut, or `nimble shortcut add ';sig' text '…' --expand`) replaces its keyword wherever it is typed. Nimble watches typed characters with an AppKit global monitor (no events from password fields) and swaps the keyword through Accessibility after checking it is really before the cursor; no keystrokes are simulated, so apps that do not expose their text fields to Accessibility are left alone |
-| Hotkeys for any command | Done: any number of global hotkeys, each bound to a shortcut or command (with optional text), every ANSI key and F1–F20, conflict detection against other bindings and macOS shortcuts, recorder in the panel |
+| Action Panel (⌘K) | Done: ⌘K on any row lists what it can do. Apps: Open, Show in Finder, Copy Path / Name, Assign or Change Hotkey, Remove Hotkey, Quit when running. Commands and shortcuts: Run, Assign Hotkey, Copy CLI Command (`nimble run …`), and Edit / Delete for shortcuts (Delete asks for a second Return). Also calculator, definition, web, running-app and contact rows; files keep their own list. Assign Hotkey records the keys in the panel and checks them against other bindings and macOS shortcuts before saving |
+| Hotkeys for any command | Done: any number of global hotkeys, each bound to a shortcut, command or app (with optional text), every ANSI key and F1–F20, conflict detection against other bindings and macOS shortcuts, recorder in the panel |
 | Deeplinks (`raycast://`) | A CLI instead: the `nimble` binary talks to the running app over a Unix socket in about 5 ms, so skhd, Karabiner, BetterTouchTool or any script can run shortcuts, search files, ask the AI and manage shortcuts |
 | AI with BYOK and Ollama | Planned: Hypery remote, local Uzu, any OpenAI-compatible local server |
 | Reviewed source store | Planned: signed `.nimbleplugin` packages; third-party code runs as Tier A or in a sandboxed helper |
@@ -74,7 +79,7 @@ Apps and files are already indexed when the panel first opens, so there is no on
 | Spotlight | Nimble |
 | --- | --- |
 | Opens as a compact search pill with Applications, Files, Actions and Clipboard buttons beside it | Done: a 52 pt bar, field capsule plus four Liquid Glass circles that spring out of the field when it opens |
-| Typing expands into results grouped by category, best match first | Done: Calculator (when the text is a sum, conversion or time), Top Hit, then Applications, Files, Actions and Ask AI headings |
+| Typing expands into results grouped by category, best match first | Done: Calculator (when the text is a sum, conversion or time), Top Hit, then Applications, Definition, Files, Actions and Ask AI headings |
 | Inline answers for sums, conversions and the time elsewhere | Done: see Calculator above |
 | ⌘1–⌘4 (or a button) narrow to Applications, Files, Actions, Clipboard | Done: the field shows the category's symbol and "Search Files" etc.; the same key, ⌫ in an empty field, or esc goes back. Text already typed carries over |
 | Applications shows every app as a grid of icons | Done: 7 × 4 icons A–Z with names, arrows move, scrolls by rows; ⌘L switches to a list (remembered) |
@@ -87,7 +92,7 @@ Apps and files are already indexed when the panel first opens, so there is no on
 | Actions with parameter fields that run in the background | Planned, with AI Commands and system actions |
 | → cycles categories inside results; Space opens Quick Look | Quick Look is ⌘Y (Space belongs to the focused field); cycling categories with → is planned |
 | ⌥⌘Space opens a Finder search window | Not planned |
-| Calendar, Mail, Messages, Contacts, Music, web results | Planned: definitions, contacts, mail and web suggestions |
+| Calendar, Mail, Messages, Contacts, Music, web results | Definitions, web suggestions and contacts done as their own commands (see above); contacts in root results, mail, calendar and music planned |
 
 The CLI drives the same states for scripts and tests: `nimble search <text>`,
 `nimble category applications|files|actions|clipboard|recent [text]` and `nimble history [--clear]`.

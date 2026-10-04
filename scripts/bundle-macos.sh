@@ -35,6 +35,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>LSMinimumSystemVersion</key><string>14.0</string>
   <key>LSUIElement</key><true/>
   <key>NSHighResolutionCapable</key><true/>
+  <key>NSContactsUsageDescription</key><string>Nimble searches your contacts when you type a name.</string>
 </dict>
 </plist>
 PLIST

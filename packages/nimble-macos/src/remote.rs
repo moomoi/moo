@@ -25,9 +25,21 @@ pub struct Provider {
     pub key_env: String,
     /// Authorize and token paths on the URL's origin, for browser sign-in.
     pub oauth: Option<(&'static str, &'static str)>,
+    /// Scopes to ask for at sign-in.
+    pub scope: &'static str,
     pub client_id: String,
     pub local: bool,
+    /// Appended to `{url}/models`.
+    pub models_query: &'static str,
+    /// The model list needs no credential.
+    pub public_models: bool,
+    /// Hypery's balance and user endpoints on the URL's origin.
+    pub account: bool,
 }
+
+/// Nimble's OAuth app on hypery.ai (public client: PKCE, redirect `http://127.0.0.1/callback`,
+/// scopes `ai:chat ai:models`). Empty until registered; config and `NIMBLE_HYPERY_CLIENT_ID` win.
+const HYPERY_CLIENT_ID: &str = "";
 
 fn builtins() -> Vec<Provider> {
     let p = |id: &str, title: &str, url: &str, key_env: &str, local: bool| Provider {
@@ -36,11 +48,19 @@ fn builtins() -> Vec<Provider> {
         url: url.into(),
         key_env: key_env.into(),
         oauth: None,
+        scope: "",
         client_id: String::new(),
         local,
+        models_query: "",
+        public_models: false,
+        account: false,
     };
     let mut hypery = p("hypery", "Hypery", "https://hypery.ai/v1", "HYPERY_API_KEY", false);
     hypery.oauth = Some(("/api/oauth/authorize", "/api/oauth/token"));
+    hypery.scope = "ai:chat ai:models";
+    hypery.models_query = "?category=chat&limit=1000";
+    hypery.public_models = true;
+    hypery.account = true;
     vec![
         hypery,
         p("openai", "OpenAI", "https://api.openai.com/v1", "OPENAI_API_KEY", false),
@@ -61,7 +81,19 @@ pub fn providers(cfg: &AiConfig) -> Vec<Provider> {
         let i = match list.iter().position(|p| p.id == c.id) {
             Some(i) => i,
             None => {
-                list.push(Provider { id: c.id.clone(), title: c.id.clone(), url: String::new(), key_env: String::new(), oauth: None, client_id: String::new(), local: false });
+                list.push(Provider {
+                    id: c.id.clone(),
+                    title: c.id.clone(),
+                    url: String::new(),
+                    key_env: String::new(),
+                    oauth: None,
+                    scope: "",
+                    client_id: String::new(),
+                    local: false,
+                    models_query: "",
+                    public_models: false,
+                    account: false,
+                });
                 list.len() - 1
             }
         };
@@ -82,6 +114,9 @@ pub fn providers(cfg: &AiConfig) -> Vec<Provider> {
     }
     for p in list.iter_mut().filter(|p| p.client_id.is_empty() && p.oauth.is_some()) {
         p.client_id = std::env::var(format!("NIMBLE_{}_CLIENT_ID", p.id.to_uppercase())).unwrap_or_default();
+        if p.client_id.is_empty() && p.id == "hypery" {
+            p.client_id = HYPERY_CLIENT_ID.into();
+        }
     }
     list
 }
@@ -109,7 +144,7 @@ fn origin(url: &str) -> &str {
 pub fn endpoints(p: &Provider) -> Option<oauth::Endpoints> {
     let (auth, token) = p.oauth?;
     let o = origin(&p.url);
-    Some(oauth::Endpoints { authorize: format!("{o}{auth}"), token: format!("{o}{token}"), client_id: p.client_id.clone(), scope: String::new() })
+    Some(oauth::Endpoints { authorize: format!("{o}{auth}"), token: format!("{o}{token}"), client_id: p.client_id.clone(), scope: p.scope.into() })
 }
 
 fn oauth_account(id: &str) -> String {
@@ -306,13 +341,51 @@ pub fn error_message(status: u16, body: &str) -> String {
     }
 }
 
-/// Model ids from a `/models` response, sorted.
-pub fn parse_models(body: &str) -> Vec<String> {
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct ModelInfo {
+    pub id: String,
+    pub name: String,
+    pub owner: String,
+    /// Tokens; 0 when not given.
+    pub context: f64,
+    /// Hypery's price band: Budget, Standard or Premium.
+    pub tier: String,
+}
+
+/// A readable name: the gateway's display name without an "Author: " prefix, else the id's last part.
+fn display_name(name: &str, id: &str) -> String {
+    let name = name.trim();
+    if name.is_empty() || name == id {
+        return id.rsplit('/').next().unwrap_or(id).trim_start_matches('~').to_string();
+    }
+    match name.find(": ") {
+        Some(i) if i <= 24 && !name[i + 2..].trim().is_empty() => name[i + 2..].trim().to_string(),
+        _ => name.to_string(),
+    }
+}
+
+/// The models in a `/models` response with their details, in the server's order (Hypery's is by
+/// popularity), each id once.
+pub fn parse_model_info(body: &str) -> Vec<ModelInfo> {
     let Ok(v) = json_parse(body) else { return Vec::new() };
-    let mut ids: Vec<String> = list(&v, "data").iter().chain(list(&v, "models").iter()).map(|m| text(m, "id")).filter(|s| !s.is_empty()).collect();
-    ids.sort();
-    ids.dedup();
-    ids
+    let mut seen = HashSet::new();
+    let mut out = Vec::new();
+    for m in list(&v, "data").iter().chain(list(&v, "models").iter()) {
+        let id = text(m, "id");
+        if id.is_empty() || !seen.insert(id.clone()) {
+            continue;
+        }
+        let owner = text(m, "owned_by");
+        let owner = if owner.is_empty() { id.split('/').next().filter(|_| id.contains('/')).unwrap_or("").trim_start_matches('~').to_string() } else { owner };
+        out.push(ModelInfo {
+            name: display_name(&text(m, "name"), &id),
+            owner,
+            context: text(m, "context_length").parse().unwrap_or(0.0),
+            tier: text(m, "pricing_tier_label"),
+            id,
+        });
+    }
+    out
 }
 
 // ── Requests ────────────────────────────────────────────────────────────────
@@ -500,11 +573,12 @@ pub fn cancel(request: u64) {
 struct Listing {
     id: String,
     title: String,
-    models: Vec<String>,
+    models: Vec<ModelInfo>,
     error: String,
 }
 
-/// `cb([{ provider, title, models, error }])` on the main thread, for every provider but Apple's.
+/// `cb([{ provider, title, models: [{ id, name, owner, context, tier }], error }])` on the main
+/// thread, for every provider but Apple's.
 pub fn models(cb: Option<Value>) {
     let request = bridge::hold(cb);
     let list = providers(&load_config());
@@ -521,18 +595,23 @@ pub fn models(cb: Option<Value>) {
                             return l;
                         }
                     };
-                    if key.is_none() && !p.local {
+                    if key.is_none() && !p.local && !p.public_models {
                         l.error = "no API key".into();
                         return l;
                     }
-                    let url = format!("{}/models", p.url);
+                    let url = format!("{}/models{}", p.url, p.models_query);
                     let mut req = http::Request::get(&url);
-                    req.timeout = if p.local { 2.0 } else { 15.0 };
+                    req.timeout = if p.local { 2.0 } else { 20.0 };
                     if let Some(k) = key {
                         req = req.header("Authorization", format!("Bearer {k}"));
                     }
                     match http::fetch(&req) {
-                        Ok((200, body)) => l.models = parse_models(&body),
+                        Ok((200, body)) => {
+                            l.models = parse_model_info(&body);
+                            if p.models_query.is_empty() {
+                                l.models.sort_by(|a, b| a.id.cmp(&b.id));
+                            }
+                        }
                         Ok((st, body)) => l.error = error_message(st, &body),
                         Err(e) => l.error = if p.local { "not running".into() } else { e },
                     }
@@ -552,7 +631,15 @@ fn listings_value(results: Vec<Listing>) -> Value {
             obj(vec![
                 ("provider", s(&l.id)),
                 ("title", s(&l.title)),
-                ("models", Value::Array(VmRef::new(l.models.iter().map(|m| s(m)).collect()))),
+                (
+                    "models",
+                    Value::Array(VmRef::new(
+                        l.models
+                            .iter()
+                            .map(|m| obj(vec![("id", s(&m.id)), ("name", s(&m.name)), ("owner", s(&m.owner)), ("context", Value::Number(m.context)), ("tier", s(&m.tier))]))
+                            .collect(),
+                    )),
+                ),
                 ("error", s(&l.error)),
             ])
         })
@@ -578,9 +665,119 @@ pub fn providers_value() -> Value {
             ("local", Value::Bool(p.local)),
             ("credential", s(credential_source(&p))),
             ("oauth", Value::Bool(p.oauth.is_some())),
+            ("signIn", Value::Bool(p.oauth.is_some() && !p.client_id.is_empty())),
+            ("account", Value::Bool(p.account)),
         ]));
     }
     Value::Array(VmRef::new(rows))
+}
+
+#[derive(Default)]
+struct Account {
+    provider: String,
+    credential: String,
+    email: String,
+    name: String,
+    /// Settings URLs on the provider's site.
+    billing: String,
+    keys: String,
+    /// US dollars; -1 when unknown.
+    balance: f64,
+    month_spent: f64,
+    month_limit: f64,
+    error: String,
+}
+
+/// Credits as dollars (100 credits = $1).
+fn dollars(credits: &str) -> f64 {
+    credits.parse::<f64>().map(|c| c / 100.0).unwrap_or(-1.0)
+}
+
+fn fetch_account(p: &Provider) -> Account {
+    let mut a = Account { provider: p.id.clone(), credential: credential_source(p).into(), balance: -1.0, month_spent: -1.0, month_limit: -1.0, ..Default::default() };
+    let o = origin(&p.url).to_string();
+    a.billing = format!("{o}/dashboard");
+    a.keys = a.billing.clone();
+    if !p.account {
+        a.error = format!("{} has no account details", p.title);
+        return a;
+    }
+    let key = match credential(p) {
+        Ok(Some(k)) => k,
+        Ok(None) => {
+            a.error = "not signed in".into();
+            return a;
+        }
+        Err(e) => {
+            a.error = e;
+            return a;
+        }
+    };
+    let fetch_path = |path: &str| {
+        let url = format!("{o}{path}");
+        let mut req = http::Request::get(&url).header("Authorization", format!("Bearer {key}"));
+        req.timeout = 15.0;
+        http::fetch(&req)
+    };
+    if a.credential == "signed in" {
+        if let Ok((200, body)) = fetch_path("/api/user/me") {
+            if let Ok(v) = json_parse(&body) {
+                a.email = text(&v, "email");
+                a.name = text(&v, "name");
+                let slug = text(&v, "slug");
+                if !slug.is_empty() {
+                    a.billing = format!("{o}/settings/{slug}/billing");
+                    a.keys = format!("{o}/settings/{slug}/api-keys");
+                }
+            }
+        }
+    }
+    match fetch_path("/api/wallet/balance") {
+        Ok((200, body)) => match json_parse(&body).ok().and_then(|v| get(&v, "balance")) {
+            Some(b) => {
+                a.balance = dollars(&text(&b, "current"));
+                a.month_spent = dollars(&text(&b, "monthlySpent"));
+                a.month_limit = dollars(&text(&b, "monthlyLimit"));
+            }
+            None => a.error = "the balance reply had no balance".into(),
+        },
+        Ok((st, body)) => a.error = error_message(st, &body),
+        Err(e) => a.error = e,
+    }
+    a
+}
+
+/// `cb({ provider, credential, email, name, billing, keys, balance, monthSpent, monthLimit, error })`
+/// on the main thread. Amounts are US dollars, -1 when unknown.
+pub fn account(provider: &str, cb: Option<Value>) {
+    let request = bridge::hold(cb);
+    let p = providers(&load_config()).into_iter().find(|p| p.id == provider);
+    let name = provider.to_string();
+    std::thread::spawn(move || {
+        let a = match p {
+            Some(p) => fetch_account(&p),
+            None => Account { provider: name.clone(), balance: -1.0, month_spent: -1.0, month_limit: -1.0, error: format!("unknown AI provider `{name}`"), ..Default::default() },
+        };
+        bridge::post(
+            request,
+            a,
+            |a| {
+                obj(vec![
+                    ("provider", s(&a.provider)),
+                    ("credential", s(&a.credential)),
+                    ("email", s(&a.email)),
+                    ("name", s(&a.name)),
+                    ("billing", s(&a.billing)),
+                    ("keys", s(&a.keys)),
+                    ("balance", Value::Number(a.balance)),
+                    ("monthSpent", Value::Number(a.month_spent)),
+                    ("monthLimit", Value::Number(a.month_limit)),
+                    ("error", s(&a.error)),
+                ])
+            },
+            true,
+        );
+    });
 }
 
 pub fn set_key(provider: &str, key: &str) -> Result<(), String> {
@@ -668,7 +865,8 @@ mod tests {
         assert_eq!(error_message(401, r#"{"error":{"message":"Invalid key"}}"#), "HTTP 401: the API key was rejected (Invalid key)");
         assert_eq!(error_message(429, r#"{"error":{"code":"RATE_LIMITED","message":"slow down"}}"#), "HTTP 429: rate limited (RATE_LIMITED: slow down)");
         assert_eq!(error_message(502, "Bad Gateway"), "HTTP 502: the server failed (Bad Gateway)");
-        assert_eq!(parse_models(r#"{"object":"list","data":[{"id":"b"},{"id":"a"}]}"#), ["a", "b"]);
+        let ids = |body: &str| parse_model_info(body).into_iter().map(|m| m.id).collect::<Vec<_>>();
+        assert_eq!(ids(r#"{"object":"list","data":[{"id":"b"},{"id":"a"},{"id":"b"}]}"#), ["b", "a"]);
         assert_eq!(split_model("hypery:openai/gpt-5"), ("hypery".into(), "openai/gpt-5".into()));
         assert_eq!(split_model("ollama:llama3.2:3b"), ("ollama".into(), "llama3.2:3b".into()));
         assert_eq!(split_model(""), ("apple".into(), String::new()));
@@ -690,7 +888,53 @@ mod tests {
         assert_eq!((h.url.as_str(), h.local, h.client_id.as_str()), ("http://127.0.0.1:9/v1", true, "cid"));
         let ep = endpoints(h).unwrap();
         assert_eq!(ep.token, "http://127.0.0.1:9/api/oauth/token");
+        assert_eq!(ep.scope, "ai:chat ai:models", "Hypery's authorize requires a scope");
         let w = ps.iter().find(|p| p.id == "work").unwrap();
         assert_eq!((w.title.as_str(), w.key_env.as_str(), w.local), ("work", "WORK_KEY", false));
+    }
+
+    #[test]
+    fn model_details_from_hypery() {
+        let body = r#"{"object":"list","data":[
+            {"id":"~anthropic/claude-sonnet-latest","owned_by":"anthropic","name":"Anthropic: Claude Sonnet Latest","pricing_tier_label":"Standard","context_length":1000000},
+            {"id":"x-ai/grok-4.3","owned_by":"x-ai","name":"SpaceXAI: Grok 4.3","pricing_tier_label":"Standard","context_length":1000000},
+            {"id":"x-ai/grok-4.3","owned_by":"x-ai","name":"Grok 4.3 (again)"},
+            {"id":"google/gemma-3-12b-it","owned_by":"google","name":"google/gemma-3-12b-it","pricing_tier_label":"Budget"},
+            {"id":"anthropic/claude-sonnet-5","name":"Claude Sonnet 5"}
+        ],"has_more":false}"#;
+        let m = parse_model_info(body);
+        let names: Vec<_> = m.iter().map(|x| x.name.as_str()).collect();
+        assert_eq!(names, ["Claude Sonnet Latest", "Grok 4.3", "gemma-3-12b-it", "Claude Sonnet 5"]);
+        assert_eq!((m[0].owner.as_str(), m[0].context, m[0].tier.as_str()), ("anthropic", 1_000_000.0, "Standard"));
+        assert_eq!(m[3].owner, "anthropic", "the owner falls back to the id's author");
+        assert_eq!(display_name("Ratio: 1:2 Mixer Deluxe Model Name Long", "x/y"), "1:2 Mixer Deluxe Model Name Long");
+        assert_eq!(display_name("A very long model name that is long: with colon", "x/y"), "A very long model name that is long: with colon");
+    }
+
+    #[test]
+    fn account_balance_and_user() {
+        let base = crate::http::tests::serve(|line, headers, _b| {
+            let authed = headers.to_ascii_lowercase().contains("authorization: bearer ak_test");
+            if !authed {
+                (401, "application/json", vec![r#"{"error":{"code":"UNAUTHENTICATED","message":"Unauthorized"}}"#.into()])
+            } else if line.starts_with("GET /api/wallet/balance") {
+                (200, "application/json", vec![r#"{"success":true,"balance":{"current":1234,"reserved":0,"monthlySpent":56,"monthlyLimit":100000}}"#.into()])
+            } else {
+                (404, "text/plain", vec![])
+            }
+        });
+        let mut p = builtins().remove(0);
+        p.id = format!("hypery-test-{}", std::process::id());
+        p.url = format!("{base}/v1");
+        p.key_env = format!("NIMBLE_TEST_ACCOUNT_KEY_{}", std::process::id());
+        std::env::set_var(&p.key_env, "ak_test");
+        let a = fetch_account(&p);
+        assert_eq!(a.error, "");
+        assert_eq!((a.balance, a.month_spent, a.month_limit), (12.34, 0.56, 1000.0));
+        assert_eq!(a.credential, "environment");
+        std::env::set_var(&p.key_env, "ak_wrong");
+        let bad = fetch_account(&p);
+        assert!(bad.error.starts_with("HTTP 401"), "{}", bad.error);
+        std::env::remove_var(&p.key_env);
     }
 }

@@ -8,7 +8,7 @@
 
 import { loadModule } from "tish:ffi"
 import { macos, useState } from "tish:macos"
-import { reindex, search, launch, setup, setPanelShape, setArrowKeys, setTheme, typeText, getPref, setPref, searchHistory, addSearchHistory, clearSearchHistory, registerHotkey, quit, hide, appCount, searchFiles, watchApps, fuzzy, pluginPaths, copyText, loadBytecodePlugin, bundleResources, recordUse, frecency, statusItem, watchClipboard, clipboardHistory, clearClipboardHistory, aiAvailability, aiSession, aiEndSession, aiPrewarm, aiAsk, aiCancel, symbolIcon, fileIndexStart, findFiles, recentFiles, queryFiles, runningApps, systemInfo, calculate, systemCommand, appAction, arrangeWindow, selectedText, watchSnippets, replaceTyped, trashFile, appsFor, openWith, quickLook, quickLookVisible, searchContents, accessibilityTrusted, fileIcon, revealFile, fileIndexStatus, show, toggle, unregisterHotkey, checkHotkey, hotkeyDisplay, recordHotkey, loadShortcuts, saveShortcut, checkKeyword, ensureShortcutsFile, removeShortcut, bindHotkey, unbindHotkey, expandTemplate, watchShortcuts, runShell, cliMain, cliServe, cliWrite, cliEnd, cliUsage } from "tish:nimble"
+import { reindex, search, launch, setup, setPanelShape, setArrowKeys, setTheme, typeText, getPref, setPref, searchHistory, addSearchHistory, clearSearchHistory, registerHotkey, quit, hide, appCount, searchFiles, watchApps, fuzzy, pluginPaths, copyText, loadBytecodePlugin, bundleResources, recordUse, frecency, statusItem, watchClipboard, clipboardHistory, clearClipboardHistory, aiAvailability, aiSession, aiEndSession, aiPrewarm, aiAsk, aiCancel, aiProviders, aiModels, aiChat, aiChatCancel, aiSetKey, aiLogin, aiCancelLogin, aiLogout, aiAccount, aiSetModel, aiSetClientId, symbolIcon, fileIndexStart, findFiles, recentFiles, queryFiles, runningApps, systemInfo, calculate, define, dictionaryWarm, webSuggest, contactsAccess, contactsRequest, searchContacts, systemCommand, appAction, arrangeWindow, selectedText, watchSnippets, replaceTyped, trashFile, appsFor, openWith, quickLook, quickLookVisible, searchContents, accessibilityTrusted, fileIcon, revealFile, fileIndexStatus, show, toggle, unregisterHotkey, checkHotkey, hotkeyDisplay, recordHotkey, loadShortcuts, saveShortcut, checkKeyword, ensureShortcutsFile, removeShortcut, bindHotkey, unbindHotkey, expandTemplate, watchShortcuts, runShell, cliMain, cliServe, cliWrite, cliEnd, cliUsage } from "tish:nimble"
 import { env } from "tish:process"
 import { THEME } from "./theme.tish"
 
@@ -28,6 +28,7 @@ let AI_INSTRUCTIONS = "You are the assistant inside Nimble, a macOS launcher. An
   + "Use the tools to look things up on this Mac (files, apps, clipboard history, system facts) instead of guessing, and never say you searched without calling a tool. "
   + "When a tool lists results, the user also sees them as rows they can open, so summarise instead of repeating every path. "
   + "For any arithmetic, unit or currency conversion, or the time in another place, call the calculate tool and give its answer; you do not know today's exchange rates or the current time. "
+  + "When asked what a word means or how it is said, call the define tool and answer from its reply in a sentence or two. "
   + "Only say a setting was changed when a tool reply says so, and pass on what the reply says. "
   + "When the user asks to open an app, file, folder or website, call the open tool; when they ask to copy text, call the copyText tool. "
   + "The user's home folder is " + HOME + "."
@@ -76,7 +77,8 @@ fn aiTools() {
     { name: "arrangeWindow", description: "Move or resize the window the user was working in: halves, quarters, thirds, maximize, center, another display, or restore it.", params: [
       { name: "layout", description: "Where the window goes", choices: AI_WINDOW_LAYOUTS }
     ] },
-    { name: "calculate", description: "Work out arithmetic, percentages, unit and currency conversions, number bases and the time in other time zones exactly. Use it for any maths instead of calculating yourself.", params: [{ name: "expression", description: "e.g. 15% of 80, 5 km in mi, 100 usd to eur, 255 in hex, time in tokyo, 3pm pst to cet" }] }
+    { name: "calculate", description: "Work out arithmetic, percentages, unit and currency conversions, number bases and the time in other time zones exactly. Use it for any maths instead of calculating yourself.", params: [{ name: "expression", description: "e.g. 15% of 80, 5 km in mi, 100 usd to eur, 255 in hex, time in tokyo, 3pm pst to cet" }] },
+    { name: "define", description: "Look up what a word means in the dictionary on this Mac: its senses, pronunciation and origin. Use it when asked what a word means or how it is said.", params: [{ name: "word", description: "One word or a short phrase, e.g. serendipity" }] }
   ]
   let list = config.shortcuts.slice(0, 30).map((s) => s.keyword + " (" + s.name + ")")
   if (list.length > 0) {
@@ -104,6 +106,7 @@ let PLUGIN_DIR = env.NIMBLE_PLUGINS ? env.NIMBLE_PLUGINS : (resources ? resource
 let index = reindex()
 let watching = watchApps()
 fileIndexStart()
+dictionaryWarm()
 let hotkey = ""
 let hotkeyLabel = ""
 for (let i = 0; i < HOTKEYS.length && hotkey === ""; i = i + 1) {
@@ -116,18 +119,28 @@ for (let i = 0; i < HOTKEYS.length && hotkey === ""; i = i + 1) {
     console.log("nimble: hotkey " + r.error)
   }
 }
-statusItem(hotkeyLabel, THEME.statusIcon)
+statusItem(hotkeyLabel, THEME.statusIcon, (what) => onStatusMenu(what))
 watchClipboard()
 
 // ── Plugins: every module in PLUGIN_DIR contributes its manifest's commands to root search ──
 
-let aiIcon = symbolIcon("sparkles")
+let aiIcon = symbolIcon(THEME.icon.ai)
 let calcIcon = symbolIcon(THEME.icon.calculator)
 let APPS = { name: "Applications", path: "nimble:apps", icon: symbolIcon("square.grid.2x2"), kind: "Command", mode: "apps", pluginTitle: "Nimble" }
 let FILES = { name: "Search Files", path: "nimble:files", icon: symbolIcon("doc.text.magnifyingglass"), kind: "Command", mode: "files", pluginTitle: "Nimble" }
 let ACTIONS = { name: "Actions", path: "nimble:actions", icon: symbolIcon("square.2.layers.3d"), kind: "Command", mode: "actions", pluginTitle: "Nimble" }
 let CLIPBOARD = { name: "Clipboard History", path: "nimble:clipboard", icon: "NSMultipleDocuments", kind: "Command", mode: "clipboard", pluginTitle: "Nimble" }
 let HISTORY = { name: "Recent Searches", path: "nimble:history", icon: symbolIcon("clock.arrow.circlepath"), kind: "Command", mode: "history", pluginTitle: "Nimble" }
+let DICTIONARY = { name: "Define Word", path: "nimble:dictionary", icon: symbolIcon(THEME.icon.dictionary), kind: "Command", mode: "dictionary", pluginTitle: "Dictionary", entry: null }
+let webIcon = symbolIcon(THEME.icon.web)
+// suggestions: the last answer, for `suggested` (the text it was for); error: why there is none.
+let WEB = { name: "Search the Web", path: "nimble:web", icon: webIcon, kind: "Command", mode: "web", pluginTitle: "Web", suggestions: [], suggested: "", error: "" }
+let contactIcon = symbolIcon(THEME.icon.contact)
+// results: the last answer, for `searched` (the text it was for; null before the first).
+let CONTACTS = { name: "Search Contacts", path: "nimble:contacts", icon: contactIcon, kind: "Command", mode: "contacts", pluginTitle: "Contacts", results: [], searched: null, error: "" }
+let SETTINGS = { name: "Settings", path: "nimble:settings", icon: symbolIcon(THEME.icon.settings), kind: "Command", mode: "settings", pluginTitle: "Nimble" }
+let AI_MODELS = { name: "AI Models", path: "nimble:ai-models", icon: aiIcon, kind: "Command", mode: "ai-models", pluginTitle: "AI" }
+let HYPERY = { name: "Hypery Account", path: "nimble:hypery", icon: symbolIcon(THEME.icon.account), kind: "Command", mode: "hypery", pluginTitle: "Hypery" }
 // Spotlight's four category buttons, in ⌘1–⌘4 order. `symbol` is the SF Symbol on the button.
 let CATEGORIES = [
   { title: "Applications", command: APPS, symbol: "square.grid.2x2", key: "1" },
@@ -141,6 +154,12 @@ let commands = [
   FILES,
   ACTIONS,
   CLIPBOARD,
+  DICTIONARY,
+  WEB,
+  CONTACTS,
+  SETTINGS,
+  AI_MODELS,
+  HYPERY,
   { name: "Clear Clipboard History", path: "nimble:clipboard-clear", icon: "NSTrashEmpty", kind: "Command", mode: "builtin" },
   { name: "Create Shortcut", path: "nimble:create-shortcut", icon: symbolIcon("plus.square"), kind: "Command", mode: "create", pluginTitle: "Nimble" },
   { name: "Shortcuts", path: "nimble:shortcuts", icon: symbolIcon("command.square"), kind: "Command", mode: "shortcuts", pluginTitle: "Nimble" },
@@ -427,7 +446,15 @@ fn targetLabel(run) {
     return "the Nimble launcher"
   }
   let c = findCommand(run)
-  return c !== null ? "“" + c.name + "”" : run
+  if (c !== null) {
+    return "“" + c.name + "”"
+  }
+  if (run.indexOf("/") === 0) {
+    let name = run.split("/").pop()
+    let bare = name.length > 4 && name.slice(name.length - 4) === ".app" ? name.slice(0, name.length - 4) : name
+    return "“" + bare + "”"
+  }
+  return run
 }
 
 // Why `keys` cannot be given to something new, or "". Another entry of the config with the same
@@ -491,6 +518,7 @@ fn reloadShortcuts() {
   syncShortcutCommands()
   bindHotkeys()
   syncSnippets()
+  refreshProviders()
 }
 
 // Text shortcuts with "expand": true replace their keyword wherever it is typed.
@@ -699,6 +727,463 @@ fn outputResults(text) {
   return rows
 }
 
+// ── Dictionary: Define Word lists a word's senses; "define <word>" or a one-word root search
+// also gets a Definition row ──
+
+let dictIcon = symbolIcon(THEME.icon.dictionary)
+// One-word root searches at least this long are looked up too.
+const DEFINE_MIN_CHARS = 4
+// Where the Definition row goes among root results: after the best matches.
+const DEFINE_ROW_AT = 3
+const DEFINE_ROW_CHARS = 56
+// Continuation lines of a sense line up under its text, past the "1. ". Row text is trimmed, so
+// the indent starts with an invisible word joiner, which is not whitespace.
+const DICT_INDENT = "\u2060\u00a0\u00a0\u00a0\u00a0\u00a0"
+
+fn isWord(t) {
+  if (t.length < DEFINE_MIN_CHARS) {
+    return false
+  }
+  for (let i = 0; i < t.length; i = i + 1) {
+    let c = t[i]
+    if (c.toLowerCase() === c.toUpperCase() && c !== "-" && c !== "'") {
+      return false
+    }
+  }
+  return true
+}
+
+fn clip(s, n) {
+  return s.length > n ? s.slice(0, n - 1).trim() + "…" : s
+}
+
+// "define serendipity" → "serendipity"; "" for any other search.
+fn definePrefix(text) {
+  let t = text.trim()
+  return t.toLowerCase().indexOf("define ") === 0 ? t.slice(7).trim() : ""
+}
+
+// The root row for a word: its first sense, or (when `always`) a row that opens Define Word anyway.
+fn definitionRow(word, always) {
+  let e = define(word)
+  if (e === null) {
+    return always ? { name: "Define “" + word + "”", path: DICTIONARY.path, icon: dictIcon, kind: "Dictionary", mode: "define", word: word, pluginTitle: "Dictionary" } : null
+  }
+  let s = e.senses[0]
+  return { name: clip(e.word + " — " + s.definition, DEFINE_ROW_CHARS), path: DICTIONARY.path, icon: dictIcon, kind: s.part, mode: "define", word: word, pluginTitle: "Dictionary" }
+}
+
+fn openDefinition(word) {
+  leaveToRoot()
+  enterList(DICTIONARY)
+  setQuery(word)
+}
+
+fn partTitle(s) {
+  let p = s.part === "" ? "Definition" : s.part[0].toUpperCase() + s.part.slice(1)
+  return s.pronunciation !== "" ? p + " · " + s.pronunciation : p
+}
+
+fn indented(lines, first) {
+  let out = []
+  for (let i = 0; i < lines.length; i = i + 1) {
+    out.push((i === 0 ? first : DICT_INDENT) + lines[i])
+  }
+  return out
+}
+
+// Each sense as wrapped lines, numbered within its part of speech, its example in quotes under
+// it; every line of a sense copies its definition. The origin comes last.
+fn dictionaryResults(text) {
+  let word = text.trim()
+  shell.mode.entry = null
+  if (word === "") {
+    return [{ name: "Type a word to look it up", kind: "", icon: "", action: null }]
+  }
+  let e = define(word)
+  if (e === null) {
+    return [{ name: "No definition of “" + word + "” in the dictionary", kind: "", icon: "", action: null }]
+  }
+  shell.mode.entry = e
+  let rows = []
+  let n = 0
+  let prev = ""
+  for (let i = 0; i < e.senses.length; i = i + 1) {
+    let s = e.senses[i]
+    let group = partTitle(s)
+    n = group === prev ? n + 1 : 1
+    prev = group
+    let action = { copy: s.definition, hud: "Copied the definition" }
+    let width = AI_WRAP - DICT_INDENT.length
+    let lines = indented(wrapText(s.definition, width), n + ".\u00a0\u00a0")
+    for (let k = 0; k < lines.length; k = k + 1) {
+      rows.push({ name: lines[k], kind: "", icon: "", line: true, group: group, action: action })
+    }
+    if (s.example !== "") {
+      let ex = indented(wrapText("“" + s.example + "”", width), DICT_INDENT)
+      for (let k = 0; k < ex.length; k = k + 1) {
+        rows.push({ name: ex[k], kind: "", icon: "", line: true, dim: true, group: group, action: action })
+      }
+    }
+  }
+  if (e.origin !== "") {
+    let lines = wrapText(e.origin, AI_WRAP)
+    for (let k = 0; k < lines.length; k = k + 1) {
+      rows.push({ name: lines[k], kind: "", icon: "", line: true, group: "Origin", action: { copy: e.origin, hud: "Copied the origin" } })
+    }
+  }
+  return rows
+}
+
+// ── Web search: Search the Web suggests as you type (requests go out only in that view); a root
+// search ends with an offline "Search Google for …" row ──
+
+// {query} is URL-encoded. Every `suggest` URL answers in the OpenSearch format.
+let WEB_ENGINES = [
+  { id: "google", name: "Google", search: "https://www.google.com/search?q={query}", suggest: "https://suggestqueries.google.com/complete/search?client=firefox&q={query}" },
+  { id: "duckduckgo", name: "DuckDuckGo", search: "https://duckduckgo.com/?q={query}", suggest: "https://duckduckgo.com/ac/?q={query}&type=list" },
+  { id: "bing", name: "Bing", search: "https://www.bing.com/search?q={query}", suggest: "https://api.bing.com/osjson.aspx?query={query}" },
+  { id: "brave", name: "Brave Search", search: "https://search.brave.com/search?q={query}", suggest: "https://search.brave.com/api/suggest?q={query}" }
+]
+const WEB_QUERY_CHARS = 40
+
+// By id or the start of its name: "ddg" is not one, "duck" is.
+fn findEngine(name) {
+  let n = name.trim().toLowerCase()
+  for (let i = 0; i < WEB_ENGINES.length; i = i + 1) {
+    let e = WEB_ENGINES[i]
+    if (n !== "" && (e.id === n || e.name.toLowerCase().indexOf(n) === 0)) {
+      return e
+    }
+  }
+  return null
+}
+
+fn webEngine() {
+  let e = findEngine(getPref("webEngine"))
+  return e !== null ? e : WEB_ENGINES[0]
+}
+
+fn webSearchRow(text, group) {
+  let e = webEngine()
+  return { name: "Search " + e.name + " for “" + clip(text.trim(), WEB_QUERY_CHARS) + "”", path: WEB.path, icon: webIcon, kind: e.name, mode: "web-search", query: text.trim(), group: group, pluginTitle: "Web" }
+}
+
+fn openWebSearch(text) {
+  launch(expandTemplate(webEngine().search, text, "url"))
+  hide()
+  if (shell.mode !== null) {
+    leaveList()
+  } else {
+    setQuery("")
+  }
+}
+
+// Empty: the engines, Return makes one the default. Text: searching it, then the engine's
+// suggestions for it once they arrive (onWebSuggest).
+fn webRows(text) {
+  let t = text.trim()
+  let e = webEngine()
+  if (t === "") {
+    return WEB_ENGINES.map((x) => ({ name: x.name, kind: x.id === e.id ? "Default" : "", icon: webIcon, mode: "web-engine", engine: x, group: "Search Engine" }))
+  }
+  let rows = [webSearchRow(t, e.name)]
+  if (shell.mode.suggested === t) {
+    for (let i = 0; i < shell.mode.suggestions.length; i = i + 1) {
+      let s = shell.mode.suggestions[i]
+      rows.push({ name: s, kind: "", icon: webIcon, mode: "web-search", query: s, group: "Suggestions" })
+    }
+  }
+  return rows
+}
+
+fn webResults(text) {
+  let t = text.trim()
+  if (t !== "" && shell.mode.suggested !== t) {
+    webSuggest(expandTemplate(webEngine().suggest, t, "url"), t, onWebSuggest)
+  }
+  return webRows(text)
+}
+
+fn onWebSuggest(r) {
+  if (!modeIs("web") || r.query !== shell.query.trim()) {
+    return
+  }
+  shell.mode.suggestions = r.results
+  shell.mode.suggested = r.query
+  shell.mode.error = r.error
+  shell.apps = webRows(shell.query)
+  compose()
+  refresh()
+}
+
+fn cliWeb(token, w, rest) {
+  if (w.length > 1 && w[1] === "engine") {
+    if (w.length > 2) {
+      let e = findEngine(w.slice(2).join(" "))
+      if (e === null) {
+        cliFail(token, "unknown search engine; one of: " + WEB_ENGINES.map((x) => x.id).join(", "))
+        return
+      }
+      setPref("webEngine", e.id)
+      cliOut(token, "default search engine: " + e.name + "\n")
+    } else {
+      let cur = webEngine()
+      cliOut(token, WEB_ENGINES.map((x) => (x.id === cur.id ? "* " : "  ") + x.id + "  " + x.name).join("\n") + "\n")
+    }
+    cliEnd(token, 0)
+    return
+  }
+  let t = rest.trim()
+  if (t === "") {
+    cliFail(token, "usage: nimble web <text> | nimble web engine [name]")
+    return
+  }
+  let e = webEngine()
+  webSuggest(expandTemplate(e.suggest, t, "url"), t, (r) => {
+    if (r.error !== "") {
+      cliFail(token, e.name + " suggestions failed: " + r.error)
+    } else {
+      cliOut(token, r.results.join("\n") + (r.results.length > 0 ? "\n" : ""))
+      cliEnd(token, 0)
+    }
+  })
+}
+
+// ── Contacts: Search Contacts lists the address book; Return shows a contact's emails and
+// phone numbers. macOS asks for access only when the user picks "Allow Access to Contacts" ──
+
+const CONTACTS_MAX = 200
+const CONTACTS_PRIVACY = "x-apple.systempreferences:com.apple.preference.security?Privacy_Contacts"
+
+fn contactsAllowed() {
+  let a = contactsAccess()
+  return a === "authorized" || a === "limited"
+}
+
+fn contactDetail(c) {
+  if (c.org !== "" && c.title !== "") {
+    return c.title + ", " + c.org
+  }
+  if (c.org !== "" || c.title !== "") {
+    return c.org + c.title
+  }
+  if (c.emails.length > 0) {
+    return c.emails[0].value
+  }
+  return c.phones.length > 0 ? c.phones[0].value : ""
+}
+
+fn contactRows() {
+  return shell.mode.results.map((c) => ({ name: c.name, kind: contactDetail(c), icon: contactIcon, mode: "contact", contact: c, group: "Contacts" }))
+}
+
+fn contactsResults(text) {
+  if (!contactsAllowed()) {
+    let asked = contactsAccess() !== "notDetermined"
+    return [{ name: asked ? "Open Privacy Settings for Contacts" : "Allow Access to Contacts", kind: asked ? "Access was turned off" : "", icon: symbolIcon("lock"), mode: "contacts-allow", group: "Contacts" }]
+  }
+  let t = text.trim()
+  if (shell.mode.searched !== t) {
+    searchContacts(t, CONTACTS_MAX, onContacts)
+  }
+  return contactRows()
+}
+
+fn onContacts(r) {
+  if (!modeIs("contacts") || r.query !== shell.query.trim()) {
+    return
+  }
+  shell.mode.results = r.results
+  shell.mode.searched = r.query
+  shell.mode.error = r.error
+  shell.apps = contactRows()
+  compose()
+  refresh()
+}
+
+fn allowContacts() {
+  if (contactsAccess() !== "notDetermined") {
+    launch(CONTACTS_PRIVACY)
+    hide()
+    return
+  }
+  contactsRequest((granted) => {
+    if (modeIs("contacts") || modeIs("settings")) {
+      shell.hud = granted ? "" : "Nimble can't read contacts"
+      shell.apps = listResults(shell.query)
+      compose()
+      refresh()
+    }
+  })
+}
+
+// ── Settings: the menu bar icon's right-click menu and the Settings command open it ──
+
+fn onStatusMenu(what) {
+  if (what === "settings") {
+    openCommand(SETTINGS, "")
+  }
+}
+
+fn commandAt(path) {
+  for (let i = 0; i < commands.length; i = i + 1) {
+    if (commands[i].path === path) {
+      return commands[i]
+    }
+  }
+  return null
+}
+
+fn contactsAccessLabel() {
+  let a = contactsAccess()
+  if (a === "authorized" || a === "limited") {
+    return "Allowed"
+  }
+  return a === "notDetermined" ? "Not asked yet" : "Off"
+}
+
+fn settingsResults(text) {
+  let t = text.trim().toLowerCase()
+  let rows = [
+    { name: "Launcher Hotkey", kind: hotkeyLabel !== "" ? hotkeyLabel : "None", icon: symbolIcon("keyboard"), act: "shortcuts", group: "General" },
+    { name: "Shortcuts", kind: config.shortcuts.length + (config.shortcuts.length === 1 ? " shortcut" : " shortcuts"), icon: symbolIcon("command.square"), act: "shortcuts", group: "General" },
+    { name: "Edit shortcuts.json", kind: "", icon: "NSActionTemplate", act: "edit", group: "General" },
+    { name: "Search Engine", kind: webEngine().name, icon: webIcon, act: "engine", group: "Search" },
+    { name: "Applications View", kind: appsView === "grid" ? "Grid" : "List", icon: symbolIcon("square.grid.2x2"), act: "appsview", group: "Search" },
+    { name: "AI Model", kind: modelName(currentModel()), icon: aiIcon, act: "ai-models", group: "AI" },
+    { name: "Hypery Account", kind: hyperyLabel(), icon: HYPERY.icon, act: "hypery", group: "AI" },
+    { name: "Contacts Access", kind: contactsAccessLabel(), icon: contactIcon, act: "contacts", group: "Privacy" },
+    { name: "Quit Nimble", kind: "", icon: "NSStopProgressTemplate", act: "quit", group: "Nimble" }
+  ]
+  return rows.filter((r) => t === "" || r.name.toLowerCase().indexOf(t) >= 0).map((r) => ({ name: r.name, kind: r.kind, icon: r.icon, act: r.act, group: r.group, mode: "setting" }))
+}
+
+fn openSetting(r) {
+  if (r.act === "shortcuts") {
+    openCommand(commandAt("nimble:shortcuts"), "")
+  } else if (r.act === "edit") {
+    runBuiltin(commandAt("nimble:edit-shortcuts"))
+  } else if (r.act === "engine") {
+    openCommand(WEB, "")
+  } else if (r.act === "appsview") {
+    appsView = appsView === "grid" ? "list" : "grid"
+    setPref("appsView", appsView)
+    shell.apps = settingsResults(shell.query)
+    compose()
+    refresh()
+  } else if (r.act === "contacts") {
+    allowContacts()
+  } else if (r.act === "ai-models") {
+    enterSub(modelPicker(false))
+  } else if (r.act === "hypery") {
+    enterSub({ name: HYPERY.name, mode: "hypery", pluginTitle: "Hypery", icon: HYPERY.icon })
+  } else if (r.act === "quit") {
+    quit()
+  }
+}
+
+// One contact: Return emails or calls, ⌥↵ copies; the last row opens the card in Contacts.
+fn contactFieldResults(text) {
+  let c = shell.mode.contact
+  let t = text.trim().toLowerCase()
+  let rows = []
+  for (let i = 0; i < c.emails.length; i = i + 1) {
+    let e = c.emails[i]
+    rows.push({ name: e.value, kind: e.label, icon: symbolIcon(THEME.icon.email), mode: "contact-field", act: "mail", value: e.value, group: "Email" })
+  }
+  for (let i = 0; i < c.phones.length; i = i + 1) {
+    let p = c.phones[i]
+    rows.push({ name: p.value, kind: p.label, icon: symbolIcon(THEME.icon.phone), mode: "contact-field", act: "call", value: p.value, group: "Phone" })
+  }
+  rows.push({ name: "Open in Contacts", kind: "", icon: contactIcon, mode: "contact-field", act: "open", value: c.id, group: "Contact" })
+  return rows.filter((r) => t === "" || r.name.toLowerCase().indexOf(t) >= 0 || r.kind.toLowerCase().indexOf(t) >= 0)
+}
+
+fn contactField(r) {
+  if (r.act === "open") {
+    launch("addressbook://" + r.value)
+  } else if (r.act === "mail") {
+    launch("mailto:" + r.value)
+  } else {
+    launch("tel:" + r.value.split(" ").join(""))
+  }
+  hide()
+  leaveToRoot()
+}
+
+fn contactLine(c) {
+  let parts = [c.name]
+  if (c.org !== "") {
+    parts.push(c.org)
+  }
+  if (c.emails.length > 0) {
+    parts.push(c.emails[0].value)
+  }
+  if (c.phones.length > 0) {
+    parts.push(c.phones[0].value)
+  }
+  return parts.join("  ·  ") + "\n"
+}
+
+fn cliContacts(token, rest) {
+  if (!contactsAllowed()) {
+    cliFail(token, "no access to contacts (" + contactsAccess() + "); open Search Contacts in Nimble to allow it")
+    return
+  }
+  searchContacts(rest.trim(), CONTACTS_MAX, (r) => {
+    if (r.error !== "") {
+      cliFail(token, r.error)
+      return
+    }
+    cliOut(token, r.results.map(contactLine).join(""))
+    cliEnd(token, r.results.length > 0 ? 0 : 1)
+  })
+}
+
+// Senses the AI's define tool returns; enough for a short answer.
+const AI_SENSES = 4
+
+// Plain text for the AI and `nimble define`: the word, pronunciation, up to `limit` senses (0: all)
+// with examples, and the origin.
+fn definitionText(word, limit) {
+  let e = define(word)
+  if (e === null) {
+    return "The dictionary has no entry for “" + word + "”."
+  }
+  let out = e.word + (e.pronunciation !== "" ? "  |" + e.pronunciation + "|" : "") + "\n"
+  let prev = ""
+  let n = 0
+  let shown = limit > 0 ? Math.min(limit, e.senses.length) : e.senses.length
+  for (let i = 0; i < shown; i = i + 1) {
+    let s = e.senses[i]
+    let group = partTitle(s)
+    if (group !== prev) {
+      out = out + group.toLowerCase() + "\n"
+      n = 0
+    }
+    prev = group
+    n = n + 1
+    out = out + "  " + n + ". " + s.definition + (s.example !== "" ? " (“" + s.example + "”)" : "") + "\n"
+  }
+  if (shown < e.senses.length) {
+    out = out + "  … " + (e.senses.length - shown) + " more senses\n"
+  }
+  return out + (e.origin !== "" ? "origin: " + e.origin + "\n" : "")
+}
+
+// Dictionary.app on the word, for phrases, derivatives and usage notes.
+fn openInDictionary() {
+  let e = shell.mode.entry
+  let word = e !== null ? e.word : shell.query.trim()
+  if (word === "") {
+    return
+  }
+  launch(expandTemplate("dict://{query}", word, "url"))
+  hide()
+  leaveList()
+}
+
 // Anything runnable by name: a shortcut keyword, a command id or name ("nimble:clipboard",
 // "plugin:convert/units", "Clipboard History"), or nimble:show / nimble:hide / nimble:toggle.
 // Returns "done", "pending" or an error message.
@@ -727,6 +1212,13 @@ fn runTarget(id, query, cli) {
   if (c !== null) {
     recordUse(c.path)
     openCommand(c, query)
+    return "done"
+  }
+  if (k.indexOf("/") === 0) {
+    if (!launch(k)) {
+      return "Could not open " + k
+    }
+    recordUse(k)
     return "done"
   }
   return "No shortcut or command called “" + id + "” (nimble list)"
@@ -796,9 +1288,20 @@ fn rootResults(text) {
       j = j + 1
     }
   }
+  // "define <word>" puts the definition first; a plain word adds it after the best matches.
+  let asked = definePrefix(text)
+  let word = asked !== "" ? asked : (answer === null && isWord(text.trim()) ? text.trim() : "")
+  let def = word !== "" ? definitionRow(word, asked !== "") : null
+  if (def !== null) {
+    let at = asked !== "" ? 0 : Math.min(out.length, DEFINE_ROW_AT)
+    out = out.slice(0, at).concat([def]).concat(out.slice(at)).slice(0, ROWS)
+  }
   // Fallback when there is room, as in Raycast; tab asks from anywhere.
   if (out.length < ROWS && text.trim() !== "") {
-    out.push({ name: "Ask AI “" + text.trim() + "”", path: ASK_AI.path, icon: ASK_AI.icon, kind: AI_TITLE, mode: "ai", pluginTitle: AI_TITLE, question: text })
+    out.push({ name: "Ask AI “" + text.trim() + "”", path: ASK_AI.path, icon: ASK_AI.icon, kind: aiTitle(), mode: "ai", pluginTitle: aiTitle(), question: text })
+  }
+  if (out.length < ROWS && text.trim() !== "") {
+    out.push(webSearchRow(text, ""))
   }
   return out
 }
@@ -894,6 +1397,12 @@ fn rootGroup(r) {
   if (r.mode === "calc") {
     return "Calculator"
   }
+  if (r.mode === "define") {
+    return "Definition"
+  }
+  if (r.mode === "web-search") {
+    return "Search the Web"
+  }
   if (r.mode === "ai" && r.question !== "") {
     return "Ask AI"
   }
@@ -903,7 +1412,7 @@ fn rootGroup(r) {
   return r.kind === "Application" ? "Applications" : "Actions"
 }
 
-let ROOT_GROUPS = ["Filter Search", "Calculator", "Applications", "Files", "Actions", "Ask AI"]
+let ROOT_GROUPS = ["Filter Search", "Calculator", "Applications", "Definition", "Files", "Actions", "Ask AI", "Search the Web"]
 
 // Keeps list[0..from) in place and gathers the rest by group: groups named in `ranked` first, in
 // that order, then any others in order of first appearance.
@@ -928,7 +1437,7 @@ fn groupInOrder(list, groupOf, from, ranked) {
 
 fn groupAt(r, i) {
   if (shell.mode === null) {
-    return i === 0 && r.mode !== "filter" && r.mode !== "calc" ? "Top Hit" : rootGroup(r)
+    return i === 0 && r.mode !== "filter" && r.mode !== "calc" && r.mode !== "define" ? "Top Hit" : rootGroup(r)
   }
   if (modeIs("actions")) {
     return r.mode === "shortcut" ? "Quick Keys" : "Actions"
@@ -1404,6 +1913,36 @@ fn listResults(text) {
   if (m.mode === "running") {
     return runningResults(text)
   }
+  if (m.mode === "dictionary") {
+    return dictionaryResults(text)
+  }
+  if (m.mode === "web") {
+    return webResults(text)
+  }
+  if (m.mode === "contacts") {
+    return contactsResults(text)
+  }
+  if (m.mode === "contact-card") {
+    return contactFieldResults(text)
+  }
+  if (m.mode === "settings") {
+    return settingsResults(text)
+  }
+  if (m.mode === "ai-models") {
+    return aiModelResults(text)
+  }
+  if (m.mode === "hypery") {
+    return hyperyResults(text)
+  }
+  if (m.mode === "ai-key") {
+    return keyResults(text)
+  }
+  if (m.mode === "rowactions") {
+    return rowActionResults(text)
+  }
+  if (m.mode === "assign-hotkey") {
+    return assignHotkeyResults(text)
+  }
   if (m.mode === "create") {
     return wizardResults(text)
   }
@@ -1681,6 +2220,247 @@ fn runningAction(row, action) {
   refresh()
 }
 
+// ── ⌘K on any other row: what can be done with it, including Assign Hotkey for apps, commands and
+// shortcuts. Rows that are files have their own list (FILE_ACTIONS) ──
+
+// What a hotkey runs for row `r`: an app's path, a command id or a shortcut keyword; "" when the
+// row cannot have one.
+fn hotkeyTarget(r) {
+  if (r.kind === "Application") {
+    return r.path
+  }
+  if (r.mode === "shortcut") {
+    return r.shortcut.keyword
+  }
+  return r.path && findCommand(r.path) !== null ? r.path : ""
+}
+
+// The keys bound to row `r` now, or "".
+fn rowHotkey(r) {
+  if (r.mode === "shortcut") {
+    return r.shortcut.hotkey
+  }
+  let target = hotkeyTarget(r).toLowerCase()
+  for (let i = 0; i < hotkeyStatus.length; i = i + 1) {
+    if (!hotkeyStatus[i].shortcut && hotkeyStatus[i].run.toLowerCase() === target) {
+      return hotkeyStatus[i].keys
+    }
+  }
+  return ""
+}
+
+fn runningPid(path) {
+  let apps = runningApps()
+  for (let i = 0; i < apps.length; i = i + 1) {
+    if (apps[i].path === path) {
+      return apps[i].pid
+    }
+  }
+  return 0
+}
+
+fn act(id, name, key, symbol) {
+  return { act: id, name: name, key: key, symbol: symbol }
+}
+
+fn rowActions(r) {
+  let list = [act("open", primaryAction(r), "↵", "arrow.up.forward.app")]
+  if (r.mode === "running-app") {
+    list = [act("switch", "Switch To", "↵", "arrow.up.forward.app"), act(r.hidden ? "unhide" : "hide", r.hidden ? "Show" : "Hide", "⌘H", "eye.slash"), act("quit", "Quit", "⌘⌫", "xmark.app"), act("force-quit", "Force Quit", "⌥↵", "exclamationmark.octagon")]
+    return list
+  }
+  if (r.kind === "Application") {
+    list.push(act("reveal", "Show in Finder", "⌘R", "folder"))
+    list.push(act("copypath", "Copy Path", "", "doc.on.clipboard"))
+    list.push(act("copyname", "Copy Name", "", "textformat"))
+  }
+  if (r.mode === "shortcut") {
+    list.push(act("edit", "Edit Shortcut…", "", "pencil"))
+  }
+  if (hotkeyTarget(r) !== "") {
+    let keys = rowHotkey(r)
+    list.push(act("hotkey", keys === "" ? "Assign Hotkey…" : "Change Hotkey (" + hotkeyDisplay(keys) + ")…", "", "keyboard"))
+    if (keys !== "") {
+      list.push(act("unbind", "Remove Hotkey", "", "keyboard.badge.ellipsis"))
+    }
+    if (r.kind !== "Application") {
+      list.push(act("copycli", "Copy CLI Command", "", "terminal"))
+    }
+  }
+  if (r.kind === "Application" && runningPid(r.path) > 0) {
+    list.push(act("quit-app", "Quit " + r.name, "", "xmark.app"))
+  }
+  if (r.mode === "shortcut") {
+    list.push(act("delete", "Delete Shortcut", "", "trash"))
+  }
+  if (r.mode === "calc") {
+    list.push(act("copyline", "Copy Sum and Answer", "", "doc.on.clipboard"))
+  }
+  if (r.mode === "define") {
+    list.push(act("dictionary", "Open in Dictionary", "", THEME.icon.dictionary))
+  }
+  if (r.mode === "web-search") {
+    list.push(act("copyquery", "Copy Text", "", "doc.on.clipboard"))
+  }
+  if (r.mode === "contact") {
+    list.push(act("card", "Open in Contacts", "", THEME.icon.contact))
+    list.push(act("copyname", "Copy Name", "", "textformat"))
+    if (r.contact.emails.length > 0) {
+      list.push(act("copyemail", "Copy " + r.contact.emails[0].value, "", THEME.icon.email))
+    }
+  }
+  return list
+}
+
+fn rowActionResults(text) {
+  let t = text.trim().toLowerCase()
+  return shell.mode.actions.filter((a) => t === "" || a.name.toLowerCase().indexOf(t) >= 0).map((a) => ({ name: a.name, kind: a.key, icon: symbolIcon(a.symbol), act: a.act, mode: "rowaction" }))
+}
+
+fn openRowActions(row) {
+  enterSub({ name: "Actions", mode: "rowactions", pluginTitle: row.name, icon: row.icon, row: row, actions: rowActions(row), query: shell.query, deleting: false })
+}
+
+// Leave the actions list and say what happened.
+fn actionDone(message) {
+  leaveSub()
+  shell.hud = message
+  refresh()
+}
+
+fn copied(text) {
+  copyText(text)
+  actionDone("Copied " + text)
+}
+
+fn rowAction(id) {
+  let m = shell.mode
+  let r = m.row
+  if (id === "open") {
+    leaveSub()
+    open(shell.selected)
+  } else if (id === "switch" || id === "hide" || id === "unhide" || id === "quit" || id === "force-quit") {
+    leaveSub()
+    runningAction(r, id)
+  } else if (id === "reveal") {
+    recordUse(r.path)
+    revealFile(r.path)
+    leaveToRoot()
+  } else if (id === "copypath") {
+    copied(r.path)
+  } else if (id === "copyname") {
+    copied(r.name)
+  } else if (id === "copyemail") {
+    copied(r.contact.emails[0].value)
+  } else if (id === "copyquery") {
+    copied(r.query)
+  } else if (id === "copyline") {
+    copied(m.query.trim() + " = " + r.copy)
+  } else if (id === "copycli") {
+    copied("nimble run " + hotkeyTarget(r))
+  } else if (id === "edit") {
+    startWizard(r.shortcut)
+  } else if (id === "delete") {
+    if (!m.deleting) {
+      m.deleting = true
+      shell.hud = "Press Return again to delete “" + r.shortcut.name + "”"
+      refresh()
+      return
+    }
+    let res = removeShortcut(r.shortcut.keyword)
+    reloadShortcuts()
+    leaveSub()
+    shell.hud = res.ok ? "Deleted “" + r.shortcut.name + "”" : res.error
+    setQuery(shell.query)
+  } else if (id === "hotkey") {
+    enterSub({ name: "Assign Hotkey", mode: "assign-hotkey", pluginTitle: r.name, icon: r.icon, row: r, keys: "", check: null, current: rowHotkey(r) })
+    recordHotkey(true)
+  } else if (id === "unbind") {
+    let res = saveRowHotkey(r, "", rowHotkey(r))
+    actionDone(res !== "" ? res : "Removed the hotkey of “" + r.name + "”")
+  } else if (id === "quit-app") {
+    let res = appAction(runningPid(r.path), "quit")
+    actionDone(res.message)
+  } else if (id === "dictionary") {
+    launch(expandTemplate("dict://{query}", r.word, "url"))
+    hide()
+    leaveToRoot()
+  } else if (id === "card") {
+    launch("addressbook://" + r.contact.id)
+    hide()
+    leaveToRoot()
+  }
+}
+
+// Bind `keys` to row `r` in place of `current` ("" removes it). Returns an error, or "".
+fn saveRowHotkey(r, keys, current) {
+  let res = null
+  if (r.mode === "shortcut") {
+    let s = r.shortcut
+    res = saveShortcut({ keyword: s.keyword, name: s.name, kind: s.kind, target: s.target, hotkey: keys, expand: s.expand }, s.keyword)
+  } else {
+    if (current !== "") {
+      res = unbindHotkey(current)
+    }
+    if (keys !== "") {
+      res = bindHotkey(keys, hotkeyTarget(r), "")
+    }
+  }
+  reloadShortcuts()
+  return res !== null && !res.ok ? res.error : ""
+}
+
+fn assignHotkeyResults(text) {
+  let m = shell.mode
+  let label = targetLabel(hotkeyTarget(m.row))
+  if (m.keys === "") {
+    let now = m.current !== "" ? "now " + hotkeyDisplay(m.current) + " · ⌫ removes it" : ""
+    return [{ name: "Press the keys for " + label, kind: now, icon: symbolIcon("keyboard"), mode: "hotkey-prompt" }]
+  }
+  let ok = m.check === null || m.check.ok
+  return [{ name: hotkeyDisplay(m.keys) + "  →  " + label, kind: ok ? "free · Return saves" : m.check.error, icon: symbolIcon(ok ? "keyboard" : "exclamationmark.triangle"), mode: "hotkey-prompt" }]
+}
+
+// Keys pressed while Assign Hotkey records.
+fn assignRecord(spec) {
+  let m = shell.mode
+  if (spec === "escape") {
+    recordHotkey(false)
+    leaveSub()
+    return
+  }
+  if (spec === "delete") {
+    if (m.keys === "" && m.current !== "") {
+      recordHotkey(false)
+      let err = saveRowHotkey(m.row, "", m.current)
+      leaveSub()
+      actionDone(err !== "" ? err : "Removed the hotkey of “" + m.row.name + "”")
+      return
+    }
+    m.keys = ""
+    m.check = null
+  } else if (spec === "return") {
+    if (m.keys === "" || (m.check !== null && !m.check.ok)) {
+      return
+    }
+    recordHotkey(false)
+    let err = saveRowHotkey(m.row, m.keys, m.current)
+    let msg = err !== "" ? err : hotkeyDisplay(m.keys) + " now opens " + targetLabel(hotkeyTarget(m.row))
+    leaveSub()
+    actionDone(msg)
+    return
+  } else {
+    m.keys = spec
+    if (m.current !== "" && hotkeyDisplay(spec) === hotkeyDisplay(m.current)) {
+      m.check = null
+    } else {
+      let conflict = hotkeyConflict(spec, m.current)
+      m.check = conflict !== "" ? { ok: false, error: conflict } : checkHotkey(spec)
+    }
+  }
+  setQuery("")
+}
+
 // The file index answers synchronously; while it builds (or is busy applying changes), Spotlight
 // answers asynchronously through onFiles. An empty query in Search Files lists recent files.
 fn fileResults(text, limit, icons) {
@@ -1730,7 +2510,7 @@ fn compose() {
 }
 
 fn wideRows() {
-  return inAi() || modeIs("output")
+  return inAi() || modeIs("output") || modeIs("dictionary")
 }
 
 // The list from result `offset` on: a heading wherever the group changes (and above the first
@@ -1817,11 +2597,558 @@ fn onContents(r) {
 // ── Ask AI: one session per visit, so follow-up questions keep context ──
 // items: rows from the last tool call, shown under the answer; pick: the selected one (-1: none,
 // arrows scroll the answer); itemOff: the first one showing.
+// model: what this visit asks ("apple" or provider:model). With a remote model, messages is the
+// conversation so far, turnStart where the current question's messages begin and turnId its turn.
 fn freshAi() {
-  return { session: 0, request: 0, question: "", answer: "", error: "", scroll: 0, t0: 0, ms: 0, stopped: false, items: [], itemsTitle: "", pick: -1, itemOff: 0 }
+  return { session: 0, request: 0, question: "", answer: "", error: "", scroll: 0, t0: 0, ms: 0, stopped: false, items: [], itemsTitle: "", pick: -1, itemOff: 0, model: "", messages: [], turnStart: 0, turnId: 0 }
 }
 
 let ai = freshAi()
+
+// ── AI models: Apple's on-device model, Hypery (one account for Claude, Grok, Gemini, GPT and
+// hundreds more), OpenAI, and local Ollama and LM Studio servers. The choice is ai.model in
+// shortcuts.json; without one, Hypery once it has a key or sign-in, else Apple's. ──
+
+let APPLE_MODEL = "apple"
+let HYPERY_MODEL = "hypery:~anthropic/claude-sonnet-latest"
+let HYPERY_SITE = "https://hypery.ai"
+// Tool rounds a remote model may take before it has to answer.
+let AI_ROUNDS = 6
+let CATALOG_MS = 600000
+let ACCOUNT_MS = 60000
+let MODEL_ROWS = 120
+let OWNERS = [["anthropic", "Anthropic"], ["google", "Google"], ["openai", "OpenAI"], ["x-ai", "xAI"], ["spacexai", "xAI"], ["meta-llama", "Meta"], ["meta", "Meta"], ["mistralai", "Mistral"], ["mistral", "Mistral"], ["deepseek", "DeepSeek"], ["deepseek-ai", "DeepSeek"], ["qwen", "Qwen"], ["moonshotai", "Moonshot"], ["z-ai", "Z.ai"], ["zai", "Z.ai"], ["amazon", "Amazon"], ["nvidia", "NVIDIA"], ["minimax", "MiniMax"], ["alibaba", "Alibaba"], ["microsoft", "Microsoft"], ["cohere", "Cohere"], ["perplexity", "Perplexity"]]
+// models: [{ model, name, owner, tier, context, provider, providerTitle }] from the last aiModels.
+let aiCatalog = { models: [], errors: [], loading: false, at: 0 }
+let hyperyState = { account: null, loading: false, at: 0, signingIn: false }
+let aiProvs = aiProviders()
+let turnCount = 0
+let keyEntry = ""
+
+fn refreshProviders() {
+  aiProvs = aiProviders()
+  ASK_AI.kind = aiTitle()
+  ASK_AI.pluginTitle = ASK_AI.kind
+}
+
+fn providerInfo(id) {
+  for (let i = 0; i < aiProvs.length; i = i + 1) {
+    if (aiProvs[i].id === id) {
+      return aiProvs[i]
+    }
+  }
+  return null
+}
+
+fn hyperyCredential() {
+  let p = providerInfo("hypery")
+  return p !== null ? p.credential : ""
+}
+
+fn currentModel() {
+  if (config.aiModel) {
+    return config.aiModel
+  }
+  return hyperyCredential() !== "" ? HYPERY_MODEL : APPLE_MODEL
+}
+
+fn isRemote(model) {
+  return model !== APPLE_MODEL && model !== ""
+}
+
+fn modelProvider(model) {
+  let i = model.indexOf(":")
+  return i > 0 ? model.slice(0, i) : model
+}
+
+fn catalogEntry(model) {
+  for (let i = 0; i < aiCatalog.models.length; i = i + 1) {
+    if (aiCatalog.models[i].model === model) {
+      return aiCatalog.models[i]
+    }
+  }
+  return null
+}
+
+// "hypery:~anthropic/claude-sonnet-latest": "Claude Sonnet Latest" from the catalog, else the id's
+// last part.
+fn modelName(model) {
+  if (!isRemote(model)) {
+    return AI_TITLE
+  }
+  let e = catalogEntry(model)
+  if (e !== null) {
+    return e.name
+  }
+  let parts = model.slice(model.indexOf(":") + 1).split("/")
+  let last = parts[parts.length - 1]
+  return last.indexOf("~") === 0 ? last.slice(1) : last
+}
+
+fn providerTitle(id) {
+  let p = providerInfo(id)
+  return p !== null ? p.title : id
+}
+
+fn aiTitle() {
+  return modelName(ai.model !== "" ? ai.model : currentModel())
+}
+
+fn aiWhere() {
+  let m = ai.model !== "" ? ai.model : currentModel()
+  return isRemote(m) ? "via " + providerTitle(modelProvider(m)) : "on-device"
+}
+
+fn ownerLabel(owner) {
+  let o = owner.toLowerCase()
+  for (let i = 0; i < OWNERS.length; i = i + 1) {
+    if (OWNERS[i][0] === o) {
+      return OWNERS[i][1]
+    }
+  }
+  return owner === "" ? "" : owner[0].toUpperCase() + owner.slice(1)
+}
+
+// Set this visit's model; Apple's needs a session (and can be unavailable).
+fn beginAi() {
+  ai.model = currentModel()
+  if (isRemote(ai.model)) {
+    loadCatalog(false)
+    return true
+  }
+  let why = aiAvailability()
+  if (why !== "available") {
+    ai.error = AI_TITLE + " is unavailable: " + why + " · ⌘K picks another model"
+    return false
+  }
+  ai.session = aiSession(AI_INSTRUCTIONS, aiTools(), onAiTool)
+  return true
+}
+
+// Lists the models of every provider, at most every CATALOG_MS unless forced.
+fn loadCatalog(force) {
+  if (aiCatalog.loading || (!force && aiCatalog.at > 0 && Date.now() - aiCatalog.at < CATALOG_MS)) {
+    return
+  }
+  aiCatalog.loading = true
+  aiModels((lists) => onCatalog(lists))
+}
+
+fn onCatalog(lists) {
+  aiCatalog.models = catalogModels(lists)
+  aiCatalog.errors = lists.filter((l) => l.error !== "" && l.error !== "not running" && l.error !== "no API key").map((l) => l.title + ": " + l.error)
+  aiCatalog.loading = false
+  aiCatalog.at = Date.now()
+  refreshProviders()
+  if (modeIs("ai-models") || modeIs("settings") || modeIs("hypery")) {
+    relist()
+  } else if (inAi()) {
+    showAi()
+  }
+}
+
+fn catalogModels(lists) {
+  let out = []
+  for (let i = 0; i < lists.length; i = i + 1) {
+    let l = lists[i]
+    for (let j = 0; j < l.models.length; j = j + 1) {
+      let m = l.models[j]
+      out.push({ model: l.provider + ":" + m.id, name: m.name, owner: m.owner, tier: m.tier, context: m.context, provider: l.provider, providerTitle: l.title })
+    }
+  }
+  return out
+}
+
+// Rebuild the open list in place, keeping the selection and any message.
+fn relist() {
+  let hud = shell.hud
+  let sel = shell.selected
+  shell.apps = listResults(shell.query)
+  compose()
+  shell.selected = Math.min(sel, Math.max(0, shell.results.length - 1))
+  shell.hud = hud
+  refresh()
+}
+
+// fromAi: opened with ⌘K from Ask AI, which it returns to.
+fn modelPicker(fromAi) {
+  return { name: AI_MODELS.name, mode: "ai-models", pluginTitle: "AI", icon: aiIcon, fromAi: fromAi }
+}
+
+fn modelRow(e, current, group) {
+  let bits = [current === e.model ? "Current" : "", e.provider === "hypery" ? ownerLabel(e.owner) : e.providerTitle, e.tier, e.context > 0 ? shortCount(e.context) : ""]
+  return { name: e.name, kind: bits.filter((b) => b !== "").join(" · "), icon: aiIcon, mode: "ai-model", model: e.model, group: group }
+}
+
+fn infoRow(name, group) {
+  return { name: name, kind: "", icon: symbolIcon(THEME.icon.warning), mode: "ai-info", group: group, dim: true }
+}
+
+// Hypery's "latest" aliases first (they follow each family's newest model), then Apple's and local
+// models, then Hypery's catalog by popularity. Typing searches every model by name, id and maker.
+fn aiModelResults(text) {
+  loadCatalog(false)
+  let current = currentModel()
+  let t = text.trim().toLowerCase()
+  let ms = aiCatalog.models
+  let apple = { name: AI_TITLE, kind: (current === APPLE_MODEL ? "Current · " : "") + "On-device · Free", icon: aiIcon, mode: "ai-model", model: APPLE_MODEL, group: "On This Mac" }
+  if (t !== "") {
+    let rows = (AI_TITLE + " apple on-device").toLowerCase().indexOf(t) >= 0 ? [apple] : []
+    let hits = fuzzy(t, ms.map((e) => e.name + " " + e.model + " " + ownerLabel(e.owner)), MODEL_ROWS)
+    return rows.concat(hits.map((h) => modelRow(ms[h.index], current, "Models")))
+  }
+  let hy = ms.filter((e) => e.provider === "hypery")
+  let latest = hy.filter((e) => e.model.indexOf("hypery:~") === 0).map((e) => modelRow(e, current, "Hypery · Latest"))
+  let local = ms.filter((e) => e.provider !== "hypery").map((e) => modelRow(e, current, e.providerTitle))
+  let rest = hy.filter((e) => e.model.indexOf("hypery:~") !== 0).slice(0, MODEL_ROWS).map((e) => modelRow(e, current, "Hypery · Popular"))
+  let rows = latest.concat([apple]).concat(local).concat(rest)
+  if (aiCatalog.loading && ms.length === 0) {
+    rows.push(infoRow("Loading models…", "Hypery"))
+  }
+  return rows.concat(aiCatalog.errors.map((e) => infoRow(e, "Unavailable")))
+}
+
+fn chooseModel(model) {
+  let r = aiSetModel(model)
+  if (!r.ok) {
+    shell.hud = "Could not save the model: " + r.error
+    refresh()
+    return
+  }
+  config.aiModel = model
+  refreshProviders()
+  let msg = "Ask AI uses " + modelName(model)
+  if (modelProvider(model) === "hypery" && hyperyCredential() === "") {
+    msg = msg + "; sign in to Hypery to use it"
+  }
+  if (shell.mode.fromAi) {
+    let keep = isRemote(ai.model) && isRemote(model) && ai.request === 0
+    let saved = { question: ai.question, answer: ai.answer, messages: ai.messages }
+    leaveSub()
+    resetAi()
+    if (keep) {
+      ai.question = saved.question
+      ai.answer = saved.answer
+      ai.messages = saved.messages
+    }
+    beginAi()
+    shell.hud = msg
+    showAi()
+    return
+  }
+  shell.hud = msg
+  relist()
+}
+
+// ── Remote models: a question is a turn that streams the reply and runs the tools the model calls,
+// sending their results back, up to AI_ROUNDS times ──
+
+// Ask AI's tools in the OpenAI function format.
+fn openAiTools() {
+  return JSON.stringify(JSON.parse(aiTools()).map((t) => ({ type: "function", "function": { name: t.name, description: t.description, parameters: toolParams(t.params) } })))
+}
+
+fn toolParams(params) {
+  let props = {}
+  let required = []
+  for (let i = 0; i < params.length; i = i + 1) {
+    let p = params[i]
+    let schema = { type: "string", description: p.description }
+    if (p.choices) {
+      schema["enum"] = p.choices
+    }
+    props[p.name] = schema
+    if (!p.optional) {
+      required.push(p.name)
+    }
+  }
+  return { type: "object", properties: props, required: required }
+}
+
+// t: { id, model, messages, tools, onTool(name, argsJson) -> text, onEvent(t, e), rounds, request }.
+// onEvent gets aiChat's events, plus kind "tools" when tool results went back.
+fn newTurn(model, messages, onTool, onEvent) {
+  turnCount = turnCount + 1
+  return { id: turnCount, model: model, messages: messages, tools: openAiTools(), onTool: onTool, onEvent: onEvent, rounds: 0, request: 0 }
+}
+
+fn turnSend(t) {
+  t.request = aiChat(t.model, JSON.stringify(t.messages), t.tools, (e) => turnEvent(t, e))
+  return t.request
+}
+
+fn turnEvent(t, e) {
+  if (e.kind === "done" && e.calls.length > 0 && t.rounds < AI_ROUNDS) {
+    t.rounds = t.rounds + 1
+    t.messages.push(callMessage(e))
+    let results = toolResults(e.calls, t.onTool)
+    for (let i = 0; i < results.length; i = i + 1) {
+      t.messages.push(results[i])
+    }
+    t.onEvent(t, { request: e.request, kind: "tools", text: e.text, calls: e.calls, finish: e.finish })
+    turnSend(t)
+    return
+  }
+  if (e.kind === "done") {
+    t.messages.push({ role: "assistant", content: e.text })
+  }
+  t.onEvent(t, e)
+}
+
+fn callMessage(e) {
+  return { role: "assistant", content: e.text !== "" ? e.text : null, tool_calls: e.calls.map((c) => ({ id: c.id, type: "function", "function": { name: c.name, arguments: c.arguments !== "" ? c.arguments : "{}" } })) }
+}
+
+fn toolResults(calls, onTool) {
+  return calls.map((c) => ({ role: "tool", tool_call_id: c.id, content: callTool(onTool, c.name, c.arguments) }))
+}
+
+fn callTool(onTool, name, args) {
+  try {
+    return onTool(name, args !== "" ? args : "{}")
+  } catch (err) {
+    return "The " + name + " tool failed: " + err.message
+  }
+}
+
+fn remoteErrorText(model, raw) {
+  let p = modelProvider(model)
+  let who = providerTitle(p)
+  if (raw.indexOf("needs an API key") >= 0) {
+    return p === "hypery" ? "Sign in to Hypery or add an API key: Settings › Hypery Account" : who + " needs an API key: nimble ai key " + p + " <key>"
+  }
+  if (raw.indexOf("HTTP 402") >= 0 || raw.indexOf("INSUFFICIENT") >= 0) {
+    return who + " is out of credit · add credits in Hypery Account"
+  }
+  if (raw.indexOf("HTTP 401") >= 0) {
+    return who + " rejected the key or sign-in · " + (p === "hypery" ? "sign in again in Hypery Account" : "nimble ai key " + p + " <key>")
+  }
+  return who + ": " + (raw.length > 140 ? raw.slice(0, 140) + "…" : raw)
+}
+
+fn remoteAsk(question) {
+  ai.question = question.trim()
+  ai.answer = ""
+  ai.items = []
+  ai.itemsTitle = ""
+  ai.pick = -1
+  ai.itemOff = 0
+  ai.error = ""
+  ai.stopped = false
+  ai.scroll = 0
+  ai.t0 = Date.now()
+  if (ai.messages.length === 0) {
+    ai.messages.push({ role: "system", content: AI_INSTRUCTIONS })
+  }
+  ai.turnStart = ai.messages.length
+  ai.messages.push({ role: "user", content: ai.question })
+  let t = newTurn(ai.model, ai.messages, onAiTool, onTurnEvent)
+  ai.turnId = t.id
+  ai.request = turnSend(t)
+  shell.query = ""
+  shell.hud = ""
+  showAi()
+}
+
+fn onTurnEvent(t, e) {
+  if (t.id !== ai.turnId) {
+    return
+  }
+  ai.request = t.request
+  if (e.kind === "partial" || e.kind === "tools") {
+    if (e.text !== "") {
+      ai.answer = e.text
+    }
+    showAi()
+    return
+  }
+  if (e.kind === "error") {
+    ai.error = remoteErrorText(t.model, e.text)
+    ai.messages = ai.messages.slice(0, ai.turnStart)
+    if (shell.query === "") {
+      shell.query = ai.question
+    }
+  } else if (e.kind === "cancelled") {
+    ai.messages = ai.messages.slice(0, ai.turnStart)
+    ai.stopped = true
+  } else {
+    ai.answer = e.text
+  }
+  ai.request = 0
+  ai.ms = Date.now() - ai.t0
+  showAi()
+}
+
+// ── Hypery Account: sign in (browser or API key), balance and this month's spending ──
+
+fn hyperyLabel() {
+  let c = hyperyCredential()
+  let a = hyperyState.account
+  if (c === "signed in") {
+    return a !== null && a.email !== "" ? a.email : "Signed in"
+  }
+  if (c === "key") {
+    return "API key"
+  }
+  return c === "environment" ? "$HYPERY_API_KEY" : "Not signed in"
+}
+
+fn loadAccount() {
+  if (hyperyState.loading || hyperyCredential() === "") {
+    return
+  }
+  hyperyState.loading = true
+  aiAccount("hypery", (a) => {
+    hyperyState.loading = false
+    hyperyState.account = a
+    hyperyState.at = Date.now()
+    if (modeIs("hypery") || modeIs("settings")) {
+      relist()
+    }
+  })
+}
+
+fn money(n) {
+  return "$" + n.toFixed(2)
+}
+
+fn hyperyRow(name, kind, symbol, act, group) {
+  return { name: name, kind: kind, icon: symbolIcon(symbol), mode: "hypery-act", act: act, group: group }
+}
+
+fn hyperyResults(text) {
+  let t = text.trim().toLowerCase()
+  let c = hyperyCredential()
+  let p = providerInfo("hypery")
+  let a = hyperyState.account
+  let I = THEME.icon
+  if (c !== "" && (a === null || Date.now() - hyperyState.at > ACCOUNT_MS)) {
+    loadAccount()
+  }
+  let rows = []
+  if (hyperyState.signingIn) {
+    rows.push(hyperyRow("Waiting for the browser…", "esc cancels", I.waiting, "cancel-signin", "Account"))
+  } else if (c === "") {
+    rows.push(hyperyRow("Sign In with Hypery", p !== null && p.signIn ? "Opens your browser" : "Not set up in this build", I.account, "signin", "Account"))
+    rows.push(hyperyRow("Use an API Key…", "hypery.ai › Settings › API Keys", I.apiKey, "key", "Account"))
+    rows.push(hyperyRow("Create a Hypery Account", "hypery.ai", I.signUp, "signup", "Account"))
+  } else {
+    rows.push(hyperyRow(hyperyLabel(), c === "signed in" ? "Signed in" : (c === "key" ? "Saved in the Keychain" : "From the environment"), I.signedIn, "none", "Account"))
+    rows.push(hyperyRow("Manage API Keys", "hypery.ai", I.apiKey, "keys", "Account"))
+    if (c !== "environment") {
+      rows.push(hyperyRow(c === "key" ? "Remove API Key" : "Sign Out", "", I.signOut, "signout", "Account"))
+    }
+    if (a !== null && a.error === "" && a.balance >= 0) {
+      let month = a.monthSpent >= 0 ? "This month " + money(a.monthSpent) + (a.monthLimit > 0 ? " of " + money(a.monthLimit) : "") : ""
+      rows.push(hyperyRow("Balance " + money(a.balance), month, I.balance, "billing", "Usage"))
+    } else if (a !== null && a.error !== "") {
+      rows.push(hyperyRow("Usage unavailable", a.error, I.warning, "account", "Usage"))
+    } else {
+      rows.push(hyperyRow("Loading usage…", "", I.balance, "none", "Usage"))
+    }
+    rows.push(hyperyRow("Add Credits", "Billing on hypery.ai", I.addCredits, "billing", "Usage"))
+  }
+  rows.push(hyperyRow("AI Model", modelName(currentModel()), THEME.icon.ai, "models", "Ask AI"))
+  return rows.filter((r) => t === "" || r.name.toLowerCase().indexOf(t) >= 0)
+}
+
+fn hyperyPage(which) {
+  let a = hyperyState.account
+  if (a !== null && a.error === "" && which === "keys") {
+    return a.keys
+  }
+  if (a !== null && a.error === "" && which === "billing") {
+    return a.billing
+  }
+  return HYPERY_SITE + "/dashboard"
+}
+
+fn hyperyAct(act) {
+  if (act === "signin") {
+    signInHypery()
+  } else if (act === "cancel-signin") {
+    aiCancelLogin()
+  } else if (act === "key") {
+    keyEntry = ""
+    enterSub({ name: "Hypery API Key", mode: "ai-key", pluginTitle: "Hypery", icon: symbolIcon(THEME.icon.apiKey), provider: "hypery" })
+  } else if (act === "signup") {
+    launch(HYPERY_SITE)
+    hide()
+  } else if (act === "billing" || act === "keys") {
+    launch(hyperyPage(act))
+    hide()
+  } else if (act === "signout") {
+    let wasKey = hyperyCredential() === "key"
+    aiLogout("hypery")
+    hyperyState.account = null
+    refreshProviders()
+    shell.hud = wasKey ? "Removed the Hypery API key" : "Signed out of Hypery"
+    relist()
+  } else if (act === "account") {
+    hyperyState.at = 0
+    loadAccount()
+  } else if (act === "models") {
+    enterSub(modelPicker(false))
+  }
+}
+
+fn signInHypery() {
+  let p = providerInfo("hypery")
+  if (p === null || !p.signIn) {
+    shell.hud = "Browser sign-in needs Nimble's Hypery app id (ai.providers.hypery.clientId); use an API key meanwhile"
+    refresh()
+    return
+  }
+  hyperyState.signingIn = true
+  relist()
+  aiLogin("hypery", (r) => {
+    hyperyState.signingIn = false
+    refreshProviders()
+    show()
+    shell.hud = r.ok ? "Signed in to Hypery" : "Sign-in failed: " + r.error
+    if (r.ok) {
+      hyperyState.at = 0
+      loadAccount()
+    }
+    if (modeIs("hypery")) {
+      relist()
+    } else {
+      refresh()
+    }
+  })
+}
+
+fn maskKey(k) {
+  return k.length <= 10 ? "••••" : k.slice(0, 3) + "…" + k.slice(k.length - 4)
+}
+
+fn keyResults(text) {
+  let k = keyEntry
+  if (k === "") {
+    return [{ name: "Paste your Hypery API key", kind: "hypery.ai › Settings › API Keys", icon: symbolIcon(THEME.icon.apiKey), mode: "ai-info", group: "Hypery" }]
+  }
+  return [{ name: "Save API Key " + maskKey(k), kind: "Kept in the Keychain", icon: symbolIcon(THEME.icon.apiKey), mode: "ai-key-save", group: "Hypery" }]
+}
+
+fn saveKey() {
+  let k = keyEntry
+  if (k === "") {
+    return
+  }
+  keyEntry = ""
+  let r = aiSetKey(shell.mode.provider, k)
+  if (!r.ok) {
+    shell.hud = "Could not save the key: " + r.error
+    refresh()
+    return
+  }
+  refreshProviders()
+  leaveSub()
+  hyperyState.account = null
+  hyperyState.at = 0
+  shell.hud = "Saved the Hypery API key"
+  relist()
+}
 
 fn wrapText(text, width) {
   let out = []
@@ -2339,6 +3666,9 @@ fn runAiTool(name, argsJson) {
     let a = calculate(argText(args, "expression"))
     return toolReply(a === null ? "Could not work that out; try a simpler expression such as 15% of 80 or 5 km in mi." : a.display + " (" + a.detail + ")", "", [])
   }
+  if (name === "define") {
+    return toolReply(definitionText(argText(args, "word"), AI_SENSES), "", [])
+  }
   return toolReply("Unknown tool " + name, "", [])
 }
 
@@ -2363,14 +3693,17 @@ fn askAi(question) {
   if (ai.request !== 0 || question.trim() === "") {
     return
   }
-  if (ai.session === 0) {
-    let why = aiAvailability()
-    if (why !== "available") {
-      ai.error = AI_TITLE + " is unavailable: " + why
-      showAi()
-      return
-    }
-    ai.session = aiSession(AI_INSTRUCTIONS, aiTools(), onAiTool)
+  if (ai.model === "" && !beginAi()) {
+    showAi()
+    return
+  }
+  if (isRemote(ai.model)) {
+    remoteAsk(question)
+    return
+  }
+  if (ai.session === 0 && !beginAi()) {
+    showAi()
+    return
   }
   ai.question = question.trim()
   ai.answer = ""
@@ -2392,17 +3725,38 @@ fn askAi(question) {
 }
 
 fn resetAi() {
-  if (ai.request !== 0) {
-    aiCancel(ai.request)
-  }
+  stopAi()
   if (ai.session !== 0) {
     aiEndSession(ai.session)
   }
   ai = freshAi()
 }
 
+fn stopAi() {
+  if (ai.request === 0) {
+    return
+  }
+  if (ai.turnId !== 0) {
+    aiChatCancel(ai.request)
+  } else {
+    aiCancel(ai.request)
+  }
+}
+
 fn inAi() {
   return shell.mode !== null && shell.mode.mode === "ai"
+}
+
+// Setting the field's value (going back to a list, for one) reports it as typed; only real
+// edits search again, so a message shown after going back stays.
+fn onFieldChange(text) {
+  if (text === shell.query) {
+    return
+  }
+  if (modeIs("ai-key")) {
+    keyEntry = text.trim()
+  }
+  setQuery(text)
 }
 
 fn setQuery(text) {
@@ -2452,17 +3806,16 @@ fn leaveList() {
 fn enterAi(c, question) {
   shell.mode = c
   setQuery("")
-  let why = aiAvailability()
-  if (why !== "available") {
-    ai.error = AI_TITLE + " is unavailable: " + why
+  if (!beginAi()) {
     refresh()
     return
   }
-  ai.session = aiSession(AI_INSTRUCTIONS, aiTools(), onAiTool)
   if (question.trim() !== "") {
     askAi(question)
-  } else {
+  } else if (ai.session !== 0) {
     aiPrewarm(ai.session)
+  } else {
+    refresh()
   }
 }
 
@@ -2609,6 +3962,63 @@ fn open(i) {
     runningAction(target, "switch")
     return
   }
+  if (target.mode === "define") {
+    addSearchHistory(shell.query)
+    openDefinition(target.word)
+    return
+  }
+  if (target.mode === "web-search") {
+    if (shell.mode === null) {
+      addSearchHistory(shell.query)
+    }
+    openWebSearch(target.query)
+    return
+  }
+  if (target.mode === "web-engine") {
+    setPref("webEngine", target.engine.id)
+    setQuery("")
+    shell.hud = target.engine.name + " is the search engine"
+    refresh()
+    return
+  }
+  if (target.mode === "contacts-allow") {
+    allowContacts()
+    return
+  }
+  if (target.mode === "setting") {
+    openSetting(target)
+    return
+  }
+  if (target.mode === "ai-model") {
+    chooseModel(target.model)
+    return
+  }
+  if (target.mode === "ai-info") {
+    return
+  }
+  if (target.mode === "hypery-act") {
+    hyperyAct(target.act)
+    return
+  }
+  if (target.mode === "ai-key-save") {
+    saveKey()
+    return
+  }
+  if (target.mode === "rowaction") {
+    rowAction(target.act)
+    return
+  }
+  if (target.mode === "hotkey-prompt") {
+    return
+  }
+  if (target.mode === "contact") {
+    enterSub({ name: target.contact.name, mode: "contact-card", pluginTitle: "Contacts", icon: contactIcon, contact: target.contact })
+    return
+  }
+  if (target.mode === "contact-field") {
+    contactField(target)
+    return
+  }
   if (target.mode === "fileaction") {
     fileAction(shell.mode.file, target.act)
     return
@@ -2663,7 +4073,7 @@ fn open(i) {
     enterAi(target, target.question)
   } else if (target.mode === "create") {
     startWizard(null)
-  } else if (target.mode === "list" || target.mode === "clipboard" || target.mode === "files" || target.mode === "shortcuts" || target.mode === "running") {
+  } else if (target.mode === "list" || target.mode === "clipboard" || target.mode === "files" || target.mode === "shortcuts" || target.mode === "running" || target.mode === "dictionary" || target.mode === "web" || target.mode === "contacts" || target.mode === "settings" || target.mode === "ai-models" || target.mode === "hypery") {
     enterList(target)
   } else if (target.mode === "view") {
     enterView(target)
@@ -2712,10 +4122,12 @@ fn onAiKey(name) {
     }
   } else if (name === "escape") {
     if (ai.request !== 0) {
-      aiCancel(ai.request)
+      stopAi()
     } else {
       leaveList()
     }
+  } else if (name === "cmd+k" && ai.request === 0) {
+    enterSub(modelPicker(true))
   }
 }
 
@@ -2750,9 +4162,15 @@ fn onKey(name) {
   if (name.indexOf("record:") === 0) {
     if (modeIs("create")) {
       wizRecord(name.slice(7))
+    } else if (modeIs("assign-hotkey")) {
+      assignRecord(name.slice(7))
     } else {
       recordHotkey(false)
     }
+    return
+  }
+  if (name === "escape" && hyperyState.signingIn) {
+    aiCancelLogin()
     return
   }
   if (name === "escape" && lookingAt !== "" && quickLookVisible()) {
@@ -2812,6 +4230,14 @@ fn onKey(name) {
     }
     return
   }
+  if (name === "cmd+k") {
+    if (modeIs("rowactions")) {
+      leaveSub()
+    } else if (row !== null && !modeIs("create") && !modeIs("view") && !modeIs("assign-hotkey") && row.mode !== "contacts-allow" && row.mode !== "setting" && row.mode !== "hotkey-prompt" && row.mode !== "ai-model" && row.mode !== "ai-info" && row.mode !== "hypery-act" && row.mode !== "ai-key-save") {
+      openRowActions(row)
+    }
+    return
+  }
   if (modeIs("shortcuts") && row !== null && (name === "cmd+enter" || name === "alt+enter" || name === "cmd+delete")) {
     openShortcutsRow(row, name)
     return
@@ -2823,6 +4249,16 @@ fn onKey(name) {
   if (modeIs("output") && name === "cmd+enter") {
     copyText(shell.mode.all)
     shell.hud = "Copied all output"
+    refresh()
+    return
+  }
+  if (modeIs("dictionary") && name === "cmd+enter") {
+    openInDictionary()
+    return
+  }
+  if (modeIs("contact-card") && row !== null && row.act !== "open" && name === "alt+enter") {
+    copyText(row.value)
+    shell.hud = "Copied " + row.value
     refresh()
     return
   }
@@ -2940,7 +4376,7 @@ fn SlotRow(props) {
       paddingLeft={icons ? 10 : 12}
       paddingRight={12}
     ><image src={r !== null ? r.icon : ""} height={row ? THEME.icon.row : 1} /><text
-      fontSize={header ? T.section : T.row} fontWeight={header ? THEME.weight.section : THEME.weight.row} color={header ? C.secondaryText : C.text} paddingLeft={icons ? 4 : 0} height={textH} textAlign={props.center ? "center" : "left"}
+      fontSize={header ? T.section : T.row} fontWeight={header ? THEME.weight.section : THEME.weight.row} color={header || (r !== null && r.dim) ? C.secondaryText : C.text} paddingLeft={icons ? 4 : 0} height={textH} textAlign={props.center ? "center" : "left"}
     >{header ? slot.title : (r !== null ? r.name : "")}</text><text fontSize={T.detail} color={C.secondaryText} textAlign="right" height={textH}>{kindLabel(r)}</text></row>
   )
 }
@@ -3051,6 +4487,12 @@ fn primaryAction(r) {
   if (r.mode === "calc") {
     return "Copy Answer"
   }
+  if (r.mode === "define") {
+    return "Show Definition"
+  }
+  if (r.mode === "web-search") {
+    return "Search the Web"
+  }
   if (r.mode === "shortcut" && r.shortcut.kind === "text") {
     return "Copy Text"
   }
@@ -3083,10 +4525,22 @@ fn footerHints() {
     if (ai.answer !== "" && shell.query === "") {
       return [["Copy Answer", "↵"], [ai.items.length > 0 ? "Results" : "Scroll", "↑↓"], ["Back", "esc"]]
     }
-    return [["Ask", "↵"], ["Back", "esc"]]
+    return [["Ask", "↵"], ["Model", "⌘K"], ["Back", "esc"]]
   }
-  if (modeIs("fileactions")) {
+  if (modeIs("ai-models")) {
+    return [["Use Model", "↵"], ["Back", "esc"]]
+  }
+  if (modeIs("hypery")) {
+    return hyperyState.signingIn ? [["Cancel Sign-In", "esc"]] : [["Open", "↵"], ["Back", "esc"]]
+  }
+  if (modeIs("ai-key")) {
+    return [["Save", "↵"], ["Back", "esc"]]
+  }
+  if (modeIs("fileactions") || modeIs("rowactions")) {
     return [["Run", "↵"], ["Back", "esc"]]
+  }
+  if (modeIs("assign-hotkey")) {
+    return [["Save", "↵"], [shell.mode.current !== "" && shell.mode.keys === "" ? "Remove" : "Clear", "⌫"], ["Back", "esc"]]
   }
   if (modeIs("openwith")) {
     return [["Open", "↵"], ["Back", "esc"]]
@@ -3100,11 +4554,29 @@ fn footerHints() {
   if (modeIs("running")) {
     return [["Switch To", "↵"], [r !== null && r.hidden ? "Show" : "Hide", "⌘H"], ["Quit", "⌘⌫"]]
   }
+  if (modeIs("dictionary")) {
+    return shell.mode.entry !== null ? [["Copy", "↵"], ["Open in Dictionary", "⌘↵"], ["Back", "esc"]] : [["Back", "esc"]]
+  }
+  if (modeIs("web")) {
+    return [[r !== null && r.mode === "web-engine" ? "Make Default" : "Search", "↵"], ["Back", "esc"]]
+  }
+  if (modeIs("settings")) {
+    return [[r !== null && r.act === "appsview" ? "Switch" : "Open", "↵"], ["Back", "esc"]]
+  }
+  if (modeIs("contacts")) {
+    return [[r !== null && r.mode === "contacts-allow" ? (contactsAccess() === "notDetermined" ? "Allow" : "Open Settings") : "Show Contact", "↵"], ["Back", "esc"]]
+  }
+  if (modeIs("contact-card")) {
+    if (r === null || r.act === "open") {
+      return [["Open", "↵"], ["Back", "esc"]]
+    }
+    return [[r.act === "mail" ? "Email" : "Call", "↵"], ["Copy", "⌥↵"], ["Back", "esc"]]
+  }
   if (modeIs("apps")) {
-    return [[primaryAction(r), "↵"], ["Show in Finder", "⌘R"], [appsView === "grid" ? "List View" : "Grid View", "⌘L"]]
+    return [[primaryAction(r), "↵"], ["Actions", "⌘K"], [appsView === "grid" ? "List View" : "Grid View", "⌘L"]]
   }
   if (r !== null && r.kind === "Application") {
-    return [[primaryAction(r), "↵"], ["Show in Finder", "⌘R"], shell.mode !== null ? ["Back", "esc"] : ["Ask AI", "⇥"]]
+    return [[primaryAction(r), "↵"], ["Actions", "⌘K"], shell.mode !== null ? ["Back", "esc"] : ["Ask AI", "⇥"]]
   }
   if (shell.mode !== null && !modeIs("actions")) {
     return [[shell.mode.mode === "clipboard" ? "Copy" : "Run", "↵"], ["Back", "esc"]]
@@ -3113,14 +4585,14 @@ fn footerHints() {
     return [["Filter", "↵"], ["Clear", "esc"]]
   }
   if (shell.mode === null && shell.query.trim() !== "") {
-    return [[primaryAction(r), "↵"], ["Ask AI", "⇥"]]
+    return [[primaryAction(r), "↵"], ["Actions", "⌘K"], ["Ask AI", "⇥"]]
   }
   return [[primaryAction(r), "↵"], ["Back", "esc"]]
 }
 
 fn sectionTitle() {
   if (inAi()) {
-    return AI_TITLE
+    return aiTitle()
   }
   if (inFiles()) {
     return shell.query.trim() === "" ? "Recent Files" : "Files"
@@ -3148,6 +4620,24 @@ fn placeholder() {
   if (modeIs("history")) {
     return "Search Recent Searches"
   }
+  if (modeIs("web")) {
+    return "Search " + webEngine().name + "…"
+  }
+  if (modeIs("dictionary")) {
+    return "Look up a word…"
+  }
+  if (modeIs("contacts")) {
+    return "Search Contacts…"
+  }
+  if (modeIs("assign-hotkey")) {
+    return "Press a key combination…"
+  }
+  if (modeIs("ai-models")) {
+    return "Search models: Claude, Grok, Gemini, GPT…"
+  }
+  if (modeIs("ai-key")) {
+    return "Paste your Hypery API key…"
+  }
   if (shell.view !== null && shell.view.list !== null && propText(shell.view.list, "searchBarPlaceholder") !== "") {
     return propText(shell.view.list, "searchBarPlaceholder")
   }
@@ -3169,13 +4659,13 @@ fn aiStatusText() {
     more = " · " + (ai.pick + 1) + " of " + ai.items.length + " " + ai.itemsTitle.toLowerCase()
   }
   if (ai.request !== 0) {
-    return AI_TITLE + " · " + (ai.answer === "" ? "thinking" : "answering") + more + " · “" + q + "”"
+    return aiTitle() + " · " + (ai.answer === "" ? "thinking" : "answering") + more + " · “" + q + "”"
   }
   if (ai.answer !== "") {
     let took = (ai.stopped ? "stopped after " : "") + (ai.ms / 1000).toFixed(1) + " s"
-    return AI_TITLE + " · " + took + more + " · “" + q + "”"
+    return aiTitle() + " · " + took + more + " · “" + q + "”"
   }
-  return AI_TITLE + " · on-device · type a question"
+  return aiTitle() + " · " + aiWhere() + " · type a question"
 }
 
 fn shortCount(n) {
@@ -3237,6 +4727,25 @@ fn statusText() {
       }
     }
     return where + " · " + config.shortcuts.length + " shortcuts · " + (hotkeyStatus.length - broken) + " hotkeys" + (broken > 0 ? " · " + broken + " not active" : "")
+  }
+  if (modeIs("web") && shell.hud === "") {
+    let t = shell.query.trim()
+    let more = t === "" ? "Return makes one the default" : (shell.mode.error !== "" && shell.mode.suggested === t ? "no suggestions (offline?)" : (shell.mode.suggested === t ? shell.mode.suggestions.length + " suggestions" : "suggesting…"))
+    return where + " · " + webEngine().name + " · " + more
+  }
+  if (modeIs("contacts")) {
+    let m = shell.mode
+    let more = !contactsAllowed() ? "no access" : (m.error !== "" ? m.error : (m.searched !== shell.query.trim() ? "searching…" : m.results.length + (m.results.length === 1 ? " contact" : " contacts")))
+    return where + " · " + more
+  }
+  if (modeIs("contact-card")) {
+    let d = contactDetail(shell.mode.contact)
+    return where + (d !== "" ? " · " + d : "")
+  }
+  if (modeIs("dictionary") && shell.mode.entry !== null) {
+    let e = shell.mode.entry
+    let count = e.senses.length + (e.senses.length === 1 ? " sense" : " senses")
+    return where + " · " + e.word + (e.pronunciation !== "" ? " · " + e.pronunciation : "") + " · " + count
   }
   if (modeIs("output")) {
     let r = shell.mode.result
@@ -3312,7 +4821,7 @@ fn App() {
   }
   let header = (
     <row columnWidths={headerWidths} alignItems="center" height={HEADER_H} backgroundColor={CLEAR}
-    ><image src={cat >= 0 ? CATEGORIES[cat].symbol : THEME.icon.search} symbol={true} symbolScale={THEME.icon.symbolScale} tint={cat >= 0 ? C.accent : C.secondaryText} height={THEME.icon.field} /><textinput value={shell.query} onChange={setQuery} bezeled={false} fontSize={T.field} placeholder={placeholder()} />{buttons}</row>
+    ><image src={cat >= 0 ? CATEGORIES[cat].symbol : THEME.icon.search} symbol={true} symbolScale={THEME.icon.symbolScale} tint={cat >= 0 ? C.accent : C.secondaryText} height={THEME.icon.field} /><textinput value={shell.query} onChange={onFieldChange} bezeled={false} fontSize={T.field} placeholder={placeholder()} />{buttons}</row>
   )
   let footer = (
     <row columnWidths={widths} alignItems="center" height={FOOTER_H} paddingLeft={18} paddingRight={12} backgroundColor={CLEAR}
@@ -3337,7 +4846,7 @@ fn cliFail(token, message) {
 // Words plus flags: --json, --expand, --contents, -n N, --name N, --hotkey K, --output O, --input T.
 fn cliParse(argv) {
   let words = []
-  let flags = { json: false, expand: false, contents: false, n: 0, name: "", hotkey: "", output: "", input: "" }
+  let flags = { json: false, expand: false, contents: false, n: 0, name: "", hotkey: "", output: "", input: "", model: "" }
   for (let i = 0; i < argv.length; i = i + 1) {
     let a = argv[i]
     if (a === "--json") {
@@ -3349,7 +4858,7 @@ fn cliParse(argv) {
     } else if ((a === "-n" || a === "--limit") && i + 1 < argv.length) {
       flags.n = Number(argv[i + 1])
       i = i + 1
-    } else if ((a === "--name" || a === "--hotkey" || a === "--output" || a === "--input") && i + 1 < argv.length) {
+    } else if ((a === "--name" || a === "--hotkey" || a === "--output" || a === "--input" || a === "--model") && i + 1 < argv.length) {
       flags[a.slice(2)] = argv[i + 1]
       i = i + 1
     } else {
@@ -3459,9 +4968,17 @@ fn cliOpenWith(token, w, cwd) {
   cliEnd(token, 0)
 }
 
-fn cliAsk(token, question) {
+fn cliAsk(token, question, model) {
   if (question.trim() === "") {
-    cliFail(token, "usage: nimble ask <question>")
+    cliFail(token, "usage: nimble ask [--model provider:model] <question>")
+    return
+  }
+  let m = model !== "" ? model : currentModel()
+  if (isRemote(m)) {
+    let t = newTurn(m, [{ role: "system", content: AI_INSTRUCTIONS }, { role: "user", content: question.trim() }], cliAiTool, onCliTurn)
+    t.token = token
+    t.printed = 0
+    turnSend(t)
     return
   }
   let why = aiAvailability()
@@ -3490,6 +5007,170 @@ fn cliAsk(token, question) {
   if (request === 0) {
     aiEndSession(session)
     cliFail(token, "the model is busy")
+  }
+}
+
+// Prints the reply as it streams; text from before a tool round stays on its own line.
+fn onCliTurn(t, e) {
+  if (e.kind === "error") {
+    cliFail(t.token, remoteErrorText(t.model, e.text))
+    return
+  }
+  if (e.text.length > t.printed) {
+    cliOut(t.token, e.text.slice(t.printed))
+    t.printed = e.text.length
+  }
+  if (e.kind === "partial") {
+    return
+  }
+  if (e.kind === "tools") {
+    if (t.printed > 0) {
+      cliOut(t.token, "\n")
+    }
+    t.printed = 0
+    return
+  }
+  cliOut(t.token, t.printed > 0 ? "\n" : "")
+  cliEnd(t.token, e.kind === "done" ? 0 : 1)
+}
+
+fn credentialLabel(p) {
+  if (p.id === APPLE_MODEL) {
+    let why = aiAvailability()
+    return why === "available" ? "available" : "unavailable: " + why
+  }
+  if (p.credential === "signed in") {
+    return "signed in"
+  }
+  if (p.credential === "key") {
+    return "API key in the Keychain"
+  }
+  if (p.credential === "environment") {
+    return "API key from the environment"
+  }
+  return p.local ? "local" : "not signed in"
+}
+
+// `nimble ai`: the model Ask AI uses and each provider's state.
+fn cliAiStatus(token) {
+  let m = currentModel()
+  let lines = ["model\t" + m + (config.aiModel ? "" : " (default)")]
+  for (let i = 0; i < aiProvs.length; i = i + 1) {
+    let p = aiProvs[i]
+    lines.push(p.id + "\t" + p.title + "\t" + credentialLabel(p))
+  }
+  cliOut(token, lines.join("\n") + "\n")
+  cliEnd(token, 0)
+}
+
+fn cliAiModels(token, query, flags) {
+  aiModels((lists) => {
+    onCatalog(lists)
+    let q = query.toLowerCase()
+    let current = currentModel()
+    let all = [{ model: APPLE_MODEL, name: AI_TITLE, owner: "apple", tier: "Free", context: 0 }].concat(aiCatalog.models)
+    let hits = all.filter((e) => q === "" || (e.model + " " + e.name + " " + ownerLabel(e.owner)).toLowerCase().indexOf(q) >= 0)
+    let shown = flags.n > 0 ? hits.slice(0, flags.n) : hits
+    if (flags.json) {
+      cliOut(token, JSON.stringify(shown.map((e) => ({ model: e.model, name: e.name, owner: e.owner, tier: e.tier, context: e.context, current: e.model === current }))) + "\n")
+    } else {
+      cliOut(token, shown.map((e) => (e.model === current ? "* " : "  ") + e.model + "\t" + e.name + "\t" + ownerLabel(e.owner) + (e.tier !== "" ? "\t" + e.tier : "")).join("\n") + (shown.length > 0 ? "\n" : ""))
+      if (aiCatalog.errors.length > 0) {
+        cliOut(token, "# " + aiCatalog.errors.join("\n# ") + "\n")
+      }
+    }
+    cliEnd(token, shown.length > 0 ? 0 : 1)
+  })
+}
+
+fn cliAiUsage(token, provider) {
+  aiAccount(provider, (a) => {
+    if (a.error !== "") {
+      cliFail(token, providerTitle(provider) + ": " + a.error)
+      return
+    }
+    let who = a.email !== "" ? "signed in as " + a.email : (a.credential === "key" ? "API key" : (a.credential === "environment" ? "API key from the environment" : a.credential))
+    let lines = [providerTitle(provider) + ": " + who, "balance\t" + money(a.balance)]
+    if (a.monthSpent >= 0) {
+      lines.push("this month\t" + money(a.monthSpent) + (a.monthLimit > 0 ? " of " + money(a.monthLimit) : ""))
+    }
+    lines.push("billing\t" + a.billing)
+    cliOut(token, lines.join("\n") + "\n")
+    cliEnd(token, 0)
+  })
+}
+
+fn cliAi(token, w, flags) {
+  let sub = w.length > 1 ? w[1] : "status"
+  let args = w.slice(2)
+  if (sub === "status") {
+    cliAiStatus(token)
+  } else if (sub === "models") {
+    cliAiModels(token, args.join(" "), flags)
+  } else if (sub === "use") {
+    let m = args.join(" ").trim()
+    if (m === "" || (m !== APPLE_MODEL && m !== "default" && m.indexOf(":") <= 0)) {
+      cliFail(token, "usage: nimble ai use apple|default|<provider:model> (nimble ai models)")
+      return
+    }
+    let r = aiSetModel(m === "default" ? "" : m)
+    if (!r.ok) {
+      cliFail(token, r.error)
+      return
+    }
+    config.aiModel = m === "default" ? "" : m
+    refreshProviders()
+    cliOut(token, "Ask AI uses " + currentModel() + "\n")
+    cliEnd(token, 0)
+  } else if (sub === "key") {
+    let provider = args.length > 1 ? args[0] : "hypery"
+    let key = args.length > 1 ? args[1] : (args.length > 0 ? args[0] : "")
+    if (key === "") {
+      cliFail(token, "usage: nimble ai key [provider] <key>  (hypery by default; nimble ai logout removes it)")
+      return
+    }
+    let r = aiSetKey(provider, key)
+    if (!r.ok) {
+      cliFail(token, r.error)
+      return
+    }
+    refreshProviders()
+    cliOut(token, "Saved the " + providerTitle(provider) + " API key in the Keychain\n")
+    cliEnd(token, 0)
+  } else if (sub === "login") {
+    let provider = args.length > 0 ? args[0] : "hypery"
+    aiLogin(provider, (r) => {
+      refreshProviders()
+      if (r.ok) {
+        cliOut(token, "Signed in to " + providerTitle(provider) + "\n")
+        cliEnd(token, 0)
+      } else {
+        cliFail(token, r.error)
+      }
+    })
+  } else if (sub === "logout") {
+    let provider = args.length > 0 ? args[0] : "hypery"
+    aiLogout(provider)
+    hyperyState.account = null
+    refreshProviders()
+    cliOut(token, "Signed out of " + providerTitle(provider) + "\n")
+    cliEnd(token, 0)
+  } else if (sub === "usage" || sub === "account") {
+    cliAiUsage(token, args.length > 0 ? args[0] : "hypery")
+  } else if (sub === "client-id") {
+    if (args.length === 0) {
+      cliFail(token, "usage: nimble ai client-id <id> [provider]")
+      return
+    }
+    let r = aiSetClientId(args.length > 1 ? args[1] : "hypery", args[0])
+    if (!r.ok) {
+      cliFail(token, r.error)
+      return
+    }
+    refreshProviders()
+    cliEnd(token, 0)
+  } else {
+    cliFail(token, "usage: nimble ai [status|models [text]|use <model>|key [provider] <key>|login|logout|usage|client-id <id>]")
   }
 }
 
@@ -3582,7 +5263,7 @@ fn cliHotkey(token, words) {
     let target = words[3]
     let t = target.indexOf("shortcut:") === 0 ? target.slice(9) : target
     let builtin = ["show", "hide", "toggle", "nimble:show", "nimble:hide", "nimble:toggle"].indexOf(t) >= 0
-    if (!builtin && findShortcut(t) === null && findCommand(t) === null) {
+    if (!builtin && t.indexOf("/") !== 0 && findShortcut(t) === null && findCommand(t) === null) {
       cliFail(token, "No shortcut or command called “" + target + "” (nimble list)")
       return
     }
@@ -3818,7 +5499,9 @@ fn handleCli(argv, cwd, token) {
     cliOut(token, p.flags.json ? JSON.stringify(apps.map((a) => ({ name: a.name, path: a.path, score: a.score }))) + "\n" : apps.map((a) => a.name + "\t" + a.path).join("\n") + (apps.length > 0 ? "\n" : ""))
     cliEnd(token, apps.length > 0 ? 0 : 1)
   } else if (cmd === "ask") {
-    cliAsk(token, rest)
+    cliAsk(token, rest, p.flags.model)
+  } else if (cmd === "ai") {
+    cliAi(token, w, p.flags)
   } else if (cmd === "trash") {
     cliTrash(token, rest, cwd)
   } else if (cmd === "open-with") {
@@ -3845,6 +5528,18 @@ fn handleCli(argv, cwd, token) {
       cliFail(token, "not a calculation, conversion or time: " + rest)
     } else {
       cliOut(token, (p.flags.json ? JSON.stringify(a) : a.copy) + "\n")
+      cliEnd(token, 0)
+    }
+  } else if (cmd === "web") {
+    cliWeb(token, w, rest)
+  } else if (cmd === "contacts") {
+    cliContacts(token, rest)
+  } else if (cmd === "define") {
+    let e = rest.trim() !== "" ? define(rest) : null
+    if (e === null) {
+      cliFail(token, rest.trim() === "" ? "usage: nimble define <word>" : "no dictionary entry for " + rest.trim())
+    } else {
+      cliOut(token, p.flags.json ? JSON.stringify(e) + "\n" : definitionText(rest, 0))
       cliEnd(token, 0)
     }
   } else if (cmd === "clipboard") {
@@ -3878,10 +5573,16 @@ fn onCli(argv, cwd, token) {
   }
 }
 
+// The message of the change that wrote the file ("Saved …") outlives the refreshed rows.
 fn onShortcutsChanged() {
   reloadShortcuts()
   if (shell.mode === null || modeIs("shortcuts")) {
+    let hud = shell.hud
     setQuery(shell.query)
+    if (hud !== "") {
+      shell.hud = hud
+      refresh()
+    }
   }
 }
 
@@ -3894,10 +5595,13 @@ watchShortcuts(onShortcutsChanged)
 let served = cliServe(onCli)
 console.log("nimble: " + config.shortcuts.length + " shortcuts, " + hotkeyStatus.length + " hotkeys; cli " + (served.ok ? served.path : served.error))
 
+refreshProviders()
 shell.apps = rootResults("")
 compose()
 syncShape()
 setTheme(THEME)
 setup({ width: PANEL_W, height: PANEL_H, onKey: onKey, onShow: onShow, onHotkey: onHotkey, hidden: env.NIMBLE_START_HIDDEN === "1" })
 syncSnippets()
-macos.run(App)
+// The host window is never shown: setup moves its content into the launcher panel, and Nimble is
+// a menu bar app (no Dock icon), so the window and the Regular activation policy would only flash.
+macos.run(App, { autoShow: false, skipActivationPolicy: true })

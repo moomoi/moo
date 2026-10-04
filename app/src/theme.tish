@@ -40,6 +40,27 @@ export const THEME = {
     search: "magnifyingglass",
     // SF Symbol beside calculator and time zone answers.
     calculator: "equal.circle.fill",
+    // SF Symbol of Define Word and dictionary answers.
+    dictionary: "character.book.closed.fill",
+    // SF Symbol of Search the Web, its suggestions and the root "Search Google" row.
+    web: "globe",
+    // SF Symbol of Settings.
+    settings: "gearshape",
+    // SF Symbols of Search Contacts: a contact, its email addresses and phone numbers.
+    contact: "person.crop.circle.fill",
+    email: "envelope",
+    phone: "phone",
+    // SF Symbols of Ask AI and AI Models, and of the Hypery Account rows.
+    ai: "sparkles",
+    account: "person.crop.circle",
+    signedIn: "person.crop.circle.fill",
+    apiKey: "key",
+    signUp: "person.badge.plus",
+    balance: "creditcard",
+    addCredits: "plus.circle",
+    signOut: "rectangle.portrait.and.arrow.right",
+    waiting: "globe",
+    warning: "exclamationmark.triangle",
     row: 24,
     field: 22,
     category: 20,

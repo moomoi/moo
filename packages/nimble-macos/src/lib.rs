@@ -15,6 +15,10 @@ mod cli;
 #[cfg(target_os = "macos")]
 mod clip;
 #[cfg(target_os = "macos")]
+mod contacts;
+#[cfg(target_os = "macos")]
+mod dict;
+#[cfg(target_os = "macos")]
 mod fileops;
 #[cfg(target_os = "macos")]
 mod files;
@@ -58,6 +62,7 @@ mod tz;
 mod vmplug;
 #[cfg(target_os = "macos")]
 mod watch;
+mod websearch;
 
 use std::sync::Arc;
 
@@ -383,13 +388,14 @@ mod natives {
             ("error", s(error)),
             ("path", s(&path)),
             ("launcher", s(&cfg.launcher)),
+            ("aiModel", s(&cfg.ai.model)),
             ("shortcuts", arr(list)),
             ("hotkeys", arr(hotkeys)),
             ("warnings", arr(warnings.iter().map(|w| s(w)).collect())),
         ])
     }
 
-    /// `loadShortcuts()` -> `{ ok, error, path, launcher, shortcuts, hotkeys, warnings }`.
+    /// `loadShortcuts()` -> `{ ok, error, path, launcher, aiModel, shortcuts, hotkeys, warnings }`.
     pub fn load_shortcuts(_a: &[Value]) -> Value {
         let Some(path) = shortcuts::config_path() else { return config_value(&Default::default(), &[], "HOME is not set") };
         match shortcuts::load(&path) {
@@ -743,6 +749,43 @@ mod natives {
         }
     }
 
+    /// `define(word)` -> `{ word, pronunciation, senses: [{ part, pronunciation, definition, example }],
+    /// origin }` or null: every homograph's main senses from the system dictionary.
+    pub fn define(args: &[Value]) -> Value {
+        match crate::dict::define(&str_arg(args, 0)) {
+            Some(e) => obj(vec![
+                ("word", s(&e.word)),
+                ("pronunciation", s(&e.pronunciation)),
+                (
+                    "senses",
+                    arr(e
+                        .senses
+                        .iter()
+                        .map(|x| {
+                            obj(vec![
+                                ("part", s(&x.part)),
+                                ("pronunciation", s(&x.pronunciation)),
+                                ("definition", s(&x.definition)),
+                                ("example", s(&x.example)),
+                            ])
+                        })
+                        .collect()),
+                ),
+                ("origin", s(&e.origin)),
+            ]),
+            None => Value::Null,
+        }
+    }
+
+    /// `dictionaryWarm()`: loads the dictionary on a background thread, so the first lookup while
+    /// typing does not wait for it (about 60 ms cold).
+    pub fn dictionary_warm(_a: &[Value]) -> Value {
+        std::thread::spawn(|| {
+            crate::dict::define("a");
+        });
+        Value::Null
+    }
+
     /// `runningApps()` -> `[{ name, path, icon, pid, bundleId, active, hidden, memory, memoryText }]`:
     /// apps with a Dock icon, Nimble left out, most memory first.
     pub fn running_apps(_a: &[Value]) -> Value {
@@ -859,6 +902,49 @@ mod natives {
         Value::Bool(mac::quick_look_visible())
     }
 
+    static SUGGEST_GEN: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    /// Typing pauses this long before a suggestion request goes out.
+    const SUGGEST_DELAY: std::time::Duration = std::time::Duration::from_millis(120);
+
+    thread_local! {
+        static ON_SUGGEST: std::cell::RefCell<Option<Value>> = const { std::cell::RefCell::new(None) };
+    }
+
+    /// `webSuggest(url, query, cb)`: fetches OpenSearch suggestions from `url` on a worker thread
+    /// once typing pauses; `cb({ query, results, error })` unless a newer request started.
+    pub fn web_suggest(args: &[Value]) -> Value {
+        use std::sync::atomic::Ordering;
+        let (url, query) = (str_arg(args, 0), str_arg(args, 1));
+        ON_SUGGEST.with(|c| *c.borrow_mut() = args.get(2).cloned());
+        let generation = SUGGEST_GEN.fetch_add(1, Ordering::SeqCst) + 1;
+        std::thread::spawn(move || {
+            std::thread::sleep(SUGGEST_DELAY);
+            if SUGGEST_GEN.load(Ordering::SeqCst) != generation {
+                return;
+            }
+            let got = crate::websearch::suggest(&url, &query);
+            dispatch2::DispatchQueue::main().exec_async(move || {
+                if SUGGEST_GEN.load(Ordering::SeqCst) != generation {
+                    return;
+                }
+                let Some(Value::Function(f)) = ON_SUGGEST.with(|c| c.borrow().clone()) else { return };
+                let (results, error) = match got {
+                    Ok(list) => (list, String::new()),
+                    Err(e) => (Vec::new(), e),
+                };
+                let payload = obj(vec![
+                    ("query", s(&query)),
+                    ("results", arr(results.iter().map(|r| s(r)).collect())),
+                    ("error", s(&error)),
+                ]);
+                mac::with_ui(|| {
+                    let _ = f.call(&[payload]);
+                });
+            });
+        });
+        Value::Number(generation as f64)
+    }
+
     static CONTENTS_GEN: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
     thread_local! {
@@ -895,6 +981,84 @@ mod natives {
                     })
                     .collect();
                 let payload = obj(vec![("query", s(&query)), ("results", arr(rows))]);
+                mac::with_ui(|| {
+                    let _ = f.call(&[payload]);
+                });
+            });
+        });
+        Value::Number(generation as f64)
+    }
+
+    /// `contactsAccess()` -> notDetermined, restricted, denied, authorized or limited.
+    pub fn contacts_access(_a: &[Value]) -> Value {
+        s(crate::contacts::status())
+    }
+
+    thread_local! {
+        static ON_CONTACTS_ACCESS: std::cell::RefCell<Option<Value>> = const { std::cell::RefCell::new(None) };
+    }
+
+    /// `contactsRequest(cb)`: shows the Contacts permission prompt the first time; `cb(granted)`
+    /// runs on the main thread.
+    pub fn contacts_request(args: &[Value]) -> Value {
+        ON_CONTACTS_ACCESS.with(|c| *c.borrow_mut() = args.first().cloned());
+        crate::contacts::request(|granted| {
+            dispatch2::DispatchQueue::main().exec_async(move || {
+                let Some(Value::Function(f)) = ON_CONTACTS_ACCESS.with(|c| c.borrow_mut().take()) else { return };
+                mac::with_ui(|| {
+                    let _ = f.call(&[Value::Bool(granted)]);
+                });
+            });
+        });
+        Value::Null
+    }
+
+    static CONTACTS_GEN: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+    thread_local! {
+        static ON_CONTACTS: std::cell::RefCell<Option<Value>> = const { std::cell::RefCell::new(None) };
+    }
+
+    /// `searchContacts(text, limit, cb)`: name search on a worker thread (every contact when text
+    /// is empty); `cb({ query, results: [{ id, name, given, family, org, title,
+    /// emails: [{ label, value }], phones: [{ label, value }] }], error })` unless a newer search
+    /// started.
+    pub fn search_contacts(args: &[Value]) -> Value {
+        use std::sync::atomic::Ordering;
+        let (query, limit) = (str_arg(args, 0), num_arg(args, 1, 20.0).clamp(1.0, 500.0) as usize);
+        ON_CONTACTS.with(|c| *c.borrow_mut() = args.get(2).cloned());
+        let generation = CONTACTS_GEN.fetch_add(1, Ordering::SeqCst) + 1;
+        std::thread::spawn(move || {
+            let got = crate::contacts::search(&query, limit);
+            dispatch2::DispatchQueue::main().exec_async(move || {
+                if CONTACTS_GEN.load(Ordering::SeqCst) != generation {
+                    return;
+                }
+                let Some(Value::Function(f)) = ON_CONTACTS.with(|c| c.borrow().clone()) else { return };
+                let fields = |list: &[crate::contacts::Field]| {
+                    arr(list.iter().map(|x| obj(vec![("label", s(&x.label)), ("value", s(&x.value))])).collect())
+                };
+                let (rows, error) = match got {
+                    Ok(list) => (
+                        list.iter()
+                            .map(|c| {
+                                obj(vec![
+                                    ("id", s(&c.id)),
+                                    ("name", s(&c.name())),
+                                    ("given", s(&c.given)),
+                                    ("family", s(&c.family)),
+                                    ("org", s(&c.org)),
+                                    ("title", s(&c.title)),
+                                    ("emails", fields(&c.emails)),
+                                    ("phones", fields(&c.phones)),
+                                ])
+                            })
+                            .collect(),
+                        String::new(),
+                    ),
+                    Err(e) => (Vec::new(), e),
+                };
+                let payload = obj(vec![("query", s(&query)), ("results", arr(rows)), ("error", s(&error))]);
                 mac::with_ui(|| {
                     let _ = f.call(&[payload]);
                 });
@@ -1013,9 +1177,23 @@ mod natives {
         Value::Bool(mac::watch_apps())
     }
 
-    /// `statusItem(hotkey, symbol)`: menu bar icon (an SF Symbol name) with Show / Quit.
+    /// `statusItem(hotkey, symbol, onMenu)`: menu bar icon (an SF Symbol name). A click shows the
+    /// panel; a right click offers Settings… (calls `onMenu("settings")`) and Quit Nimble.
     pub fn status_item(args: &[Value]) -> Value {
-        Value::Bool(mac::status_item(&str_arg(args, 0), &str_arg(args, 1)))
+        thread_local! {
+            static ON_MENU: std::cell::RefCell<Option<Value>> = const { std::cell::RefCell::new(None) };
+        }
+        ON_MENU.with(|c| *c.borrow_mut() = args.get(2).cloned());
+        let handler = Box::new(|what: &str| {
+            let what = what.to_string();
+            dispatch2::DispatchQueue::main().exec_async(move || {
+                let Some(Value::Function(f)) = ON_MENU.with(|c| c.borrow().clone()) else { return };
+                mac::with_ui(|| {
+                    let _ = f.call(&[s(&what)]);
+                });
+            });
+        });
+        Value::Bool(mac::status_item(&str_arg(args, 0), &str_arg(args, 1), handler))
     }
 
     /// `watchClipboard()`: start recording text clipboard history (in memory only).
@@ -1089,6 +1267,92 @@ mod natives {
         Value::Null
     }
 
+    fn callback(args: &[Value], i: usize) -> Option<Value> {
+        args.get(i).filter(|v| matches!(v, Value::Function(_))).cloned()
+    }
+    // ── Remote models (Hypery, OpenAI, Ollama, LM Studio, ai.providers) ──
+
+    fn result(r: Result<(), String>) -> Value {
+        match r {
+            Ok(()) => obj(vec![("ok", Value::Bool(true)), ("error", s(""))]),
+            Err(e) => obj(vec![("ok", Value::Bool(false)), ("error", s(&e))]),
+        }
+    }
+
+    /// `aiProviders()` -> `[{ id, title, url, local, credential, oauth, signIn, account }]`, Apple's
+    /// on-device model first. `credential`: "key", "signed in", "environment" or "".
+    pub fn ai_providers(_a: &[Value]) -> Value {
+        remote::providers_value()
+    }
+
+    /// `aiModels(cb)`: `cb([{ provider, title, models: [{ id, name, owner, context, tier }], error }])`.
+    pub fn ai_models(args: &[Value]) -> Value {
+        remote::models(callback(args, 0));
+        Value::Null
+    }
+
+    /// `aiChat(model, messagesJson, toolsJson, cb)` -> request id. `model` is `provider:model`;
+    /// `cb({ request, kind, text, calls: [{ id, name, arguments }], finish })`, kind "partial", then
+    /// "done", "error" or "cancelled".
+    pub fn ai_chat(args: &[Value]) -> Value {
+        Value::Number(remote::chat(&str_arg(args, 0), &str_arg(args, 1), &str_arg(args, 2), callback(args, 3)) as f64)
+    }
+
+    pub fn ai_chat_cancel(args: &[Value]) -> Value {
+        remote::cancel(num_arg(args, 0, 0.0) as u64);
+        Value::Null
+    }
+
+    /// `aiSetKey(provider, key)` -> `{ ok, error }`; an empty key removes it.
+    pub fn ai_set_key(args: &[Value]) -> Value {
+        result(remote::set_key(&str_arg(args, 0), &str_arg(args, 1)))
+    }
+
+    /// `aiLogin(provider, cb)`: browser sign-in; `cb({ ok, error })`.
+    pub fn ai_login(args: &[Value]) -> Value {
+        remote::login(&str_arg(args, 0), callback(args, 1));
+        Value::Null
+    }
+
+    pub fn ai_cancel_login(_a: &[Value]) -> Value {
+        remote::cancel_login();
+        Value::Null
+    }
+
+    /// `aiLogout(provider)`: forget its API key and sign-in.
+    pub fn ai_logout(args: &[Value]) -> Value {
+        remote::logout(&str_arg(args, 0));
+        Value::Null
+    }
+
+    /// `aiAccount(provider, cb)`: `cb({ provider, credential, email, name, billing, keys, balance,
+    /// monthSpent, monthLimit, error })`, amounts in US dollars (-1 unknown).
+    pub fn ai_account(args: &[Value]) -> Value {
+        remote::account(&str_arg(args, 0), callback(args, 1));
+        Value::Null
+    }
+
+    /// `aiSetModel(model)` -> `{ ok, error }`: `ai.model` in shortcuts.json (`apple` or
+    /// `provider:model`; empty lets Nimble choose).
+    pub fn ai_set_model(args: &[Value]) -> Value {
+        let model = str_arg(args, 0).trim().to_string();
+        edit_config(move |cfg| {
+            cfg.ai.model = model;
+            Ok(())
+        })
+    }
+
+    /// `aiSetClientId(provider, id)` -> `{ ok, error }`: the OAuth client id for browser sign-in.
+    pub fn ai_set_client_id(args: &[Value]) -> Value {
+        let (provider, id) = (str_arg(args, 0), str_arg(args, 1).trim().to_string());
+        edit_config(move |cfg| {
+            let mut p = cfg.ai.providers.iter().find(|p| p.id == provider).cloned().unwrap_or(shortcuts::ProviderConfig { id: provider.clone(), ..Default::default() });
+            p.client_id = id;
+            shortcuts::set_provider(cfg, p);
+            Ok(())
+        })
+    }
+
     /// `symbolIcon(name)` -> an image name for `<image src>` showing SF Symbol `name`.
     pub fn symbol_icon(args: &[Value]) -> Value {
         Value::String(mac::symbol_icon(&str_arg(args, 0)).as_str().into())
@@ -1145,6 +1409,8 @@ mod natives {
         obj(vec![("results", Value::Array(VmRef::new(vec![]))), ("total", Value::Number(0.0)), ("ms", Value::Number(0.0))])
     }
     pub fn running_apps(_a: &[Value]) -> Value { Value::Array(VmRef::new(vec![])) }
+    pub fn define(_a: &[Value]) -> Value { Value::Null }
+    pub fn dictionary_warm(_a: &[Value]) -> Value { Value::Null }
     pub use unsupported as app_action;
     pub fn calculate(a: &[Value]) -> Value {
         match calc::answer(&str_arg(a, 0), None) {
@@ -1164,6 +1430,10 @@ mod natives {
     pub fn quick_look(_a: &[Value]) -> Value { Value::Bool(false) }
     pub fn quick_look_visible(_a: &[Value]) -> Value { Value::Bool(false) }
     pub fn search_contents(_a: &[Value]) -> Value { Value::Number(0.0) }
+    pub fn web_suggest(_a: &[Value]) -> Value { Value::Number(0.0) }
+    pub fn contacts_access(_a: &[Value]) -> Value { Value::String("restricted".into()) }
+    pub fn contacts_request(_a: &[Value]) -> Value { Value::Null }
+    pub fn search_contacts(_a: &[Value]) -> Value { Value::Number(0.0) }
     pub fn selected_text(_a: &[Value]) -> Value { Value::Null }
     pub fn accessibility_trusted(_a: &[Value]) -> Value { Value::Bool(false) }
     pub fn dark_mode(_a: &[Value]) -> Value { Value::Null }
@@ -1181,6 +1451,17 @@ mod natives {
     pub fn ai_prewarm(_a: &[Value]) -> Value { Value::Null }
     pub fn ai_ask(_a: &[Value]) -> Value { Value::Number(0.0) }
     pub fn ai_cancel(_a: &[Value]) -> Value { Value::Null }
+    pub fn ai_providers(_a: &[Value]) -> Value { Value::Array(VmRef::new(Vec::new())) }
+    pub fn ai_chat(_a: &[Value]) -> Value { Value::Number(0.0) }
+    pub use ai_cancel as ai_models;
+    pub use ai_cancel as ai_chat_cancel;
+    pub use ai_cancel as ai_login;
+    pub use ai_cancel as ai_cancel_login;
+    pub use ai_cancel as ai_logout;
+    pub use ai_cancel as ai_account;
+    pub use unsupported as ai_set_key;
+    pub use unsupported as ai_set_model;
+    pub use unsupported as ai_set_client_id;
     pub fn symbol_icon(_a: &[Value]) -> Value { Value::String("".into()) }
 }
 
@@ -1237,6 +1518,12 @@ pub fn nimble_object() -> Value {
     m.insert(Arc::from("runningApps"), Value::native(natives::running_apps));
     m.insert(Arc::from("appAction"), Value::native(natives::app_action));
     m.insert(Arc::from("calculate"), Value::native(natives::calculate));
+    m.insert(Arc::from("define"), Value::native(natives::define));
+    m.insert(Arc::from("webSuggest"), Value::native(natives::web_suggest));
+    m.insert(Arc::from("contactsAccess"), Value::native(natives::contacts_access));
+    m.insert(Arc::from("contactsRequest"), Value::native(natives::contacts_request));
+    m.insert(Arc::from("searchContacts"), Value::native(natives::search_contacts));
+    m.insert(Arc::from("dictionaryWarm"), Value::native(natives::dictionary_warm));
     m.insert(Arc::from("systemInfo"), Value::native(natives::system_info));
     m.insert(Arc::from("systemCommand"), Value::native(natives::system_command));
     m.insert(Arc::from("volume"), Value::native(natives::volume));
@@ -1269,6 +1556,17 @@ pub fn nimble_object() -> Value {
     m.insert(Arc::from("aiPrewarm"), Value::native(natives::ai_prewarm));
     m.insert(Arc::from("aiAsk"), Value::native(natives::ai_ask));
     m.insert(Arc::from("aiCancel"), Value::native(natives::ai_cancel));
+    m.insert(Arc::from("aiProviders"), Value::native(natives::ai_providers));
+    m.insert(Arc::from("aiModels"), Value::native(natives::ai_models));
+    m.insert(Arc::from("aiChat"), Value::native(natives::ai_chat));
+    m.insert(Arc::from("aiChatCancel"), Value::native(natives::ai_chat_cancel));
+    m.insert(Arc::from("aiSetKey"), Value::native(natives::ai_set_key));
+    m.insert(Arc::from("aiLogin"), Value::native(natives::ai_login));
+    m.insert(Arc::from("aiCancelLogin"), Value::native(natives::ai_cancel_login));
+    m.insert(Arc::from("aiLogout"), Value::native(natives::ai_logout));
+    m.insert(Arc::from("aiAccount"), Value::native(natives::ai_account));
+    m.insert(Arc::from("aiSetModel"), Value::native(natives::ai_set_model));
+    m.insert(Arc::from("aiSetClientId"), Value::native(natives::ai_set_client_id));
     m.insert(Arc::from("symbolIcon"), Value::native(natives::symbol_icon));
     Value::object(m)
 }
