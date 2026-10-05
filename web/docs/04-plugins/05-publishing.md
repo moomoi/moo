@@ -2,28 +2,79 @@
 title: Publishing
 summary: Get your plugin into moo and the marketplace with a pull request.
 ---
-Every official plugin lives in [moomoi/plugins](https://github.com/moomoi/plugins). A plugin merged there ships inside the next moo release and gets a page in the [marketplace](/marketplace).
+Official plugins live in one public repo, [moomoi/plugins](https://github.com/moomoi/plugins). Publishing means getting your plugin merged there. Once it's merged, it ships inside the next moo release and gets its own page in the [marketplace](/marketplace).
 
-## Submit a plugin
+## 1. Fork and clone
 
-1. Fork [moomoi/plugins](https://github.com/moomoi/plugins) and add a folder with `moo.json` and `src/plugin.tish`.
-2. Build everything with `bash build.sh` and try it in moo with `MOO_PLUGINS=$PWD/dist`.
-3. Open a pull request. CI builds every plugin on each push.
+```sh
+gh repo fork moomoi/plugins --clone
+cd plugins
+```
+
+Or fork on [GitHub](https://github.com/moomoi/plugins/fork) and `git clone` your fork.
+
+## 2. Build the compiler
+
+```sh
+bash toolchain/build.sh
+```
+
+This builds the exact Tish compiler moo uses into `.toolchain/`, and takes a few minutes the first time.
+
+## 3. Add your plugin
+
+Make a folder named after your plugin's id:
+
+```
+my-plugin/
+  moo.json
+  src/plugin.tish
+```
+
+```json
+{ "id": "my-plugin", "tier": "A", "entry": "src/plugin.tish" }
+```
+
+Write `src/plugin.tish` following [Your first plugin](/docs/first-plugin) and the [Plugin API](/docs/plugin-api). The [weather](https://github.com/moomoi/plugins/tree/main/weather) and [github](https://github.com/moomoi/plugins/tree/main/github) plugins are good models for network calls and sign-in.
+
+## 4. Build and try it
+
+```sh
+TISH=.toolchain/tish/target/release/tish bash build.sh
+MOO_PLUGINS="$PWD/dist" open -a Moo
+```
+
+Quit moo first so it starts with your folder. Then check every command:
+
+- each one works with an empty query, a normal query and nonsense
+- nothing hangs: a call that runs past 250 ms shows "exceeded its 250 ms budget"
+- missing setup, like a token, appears as a row that fixes it
+
+## 5. Open a pull request
+
+```sh
+git checkout -b add-my-plugin
+git add my-plugin
+git commit -m "feat: add my-plugin"
+git push -u origin add-my-plugin
+gh pr create --repo moomoi/plugins
+```
+
+In the description, say what the plugin does, list its commands, and say why it needs each host in `permissions.network`. A screenshot of it in moo helps. CI builds every plugin on each push, so the build must pass.
 
 ## What gets merged
 
-- **Tish only.** Plugin source is Tish, with no Rust and no JavaScript.
+- **Tish only.** No Rust and no JavaScript.
 - **Tier A.** Sandboxed bytecode. Native Tier B plugins are first-party only.
-- **Declared hosts.** List every host you call in `permissions.network`, and nothing more.
-- **Fast.** Stay well under the 250 ms budget per call; `list` runs on every keystroke.
-- **Offer, don't instruct.** Missing setup, like a token, is a `blocker()` row that does it.
+- **Least access.** Every host you call is in `permissions.network`, and nothing else is.
+- **Fast.** `list` runs on every keystroke. Start a request, return "Loading…", and call `moo.refresh()` when the answer arrives.
+- **One folder.** Your plugin doesn't change anything outside its own folder.
 
-## Sharing before it's merged
+## After it's merged
 
-Send people the built `.tishc` and have them put it in their `MOO_PLUGINS` folder. Tier A plugins are sandboxed, so that's safe to try.
+- It's bundled into the next moo release, and anyone who updates gets it.
+- It gets a marketplace page at `moo.moi/marketplace/<id>`, whose Install button opens it in moo.
 
-## What's coming
+## Before it's merged
 
-- **Install without a release:** signed `.mooplugin` packages, installed from the marketplace's Install button.
-- **Manifest in `moo.json`**, so the marketplace can read commands, hotkeys and preferences without running code.
-- **Views:** list, detail and form components rendered natively.
+Anyone can try your plugin now: send them the built `dist/my-plugin.tishc` and have them put it in their `MOO_PLUGINS` folder. Tier A plugins are sandboxed, so that's safe.
