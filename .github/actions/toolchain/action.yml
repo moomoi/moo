@@ -1,0 +1,46 @@
+name: Moo toolchain
+description: >-
+  Rust (both Mac targets), ripgrep, and the pinned Tish compiler plus vendored tish-apple from
+  scripts/ci-toolchain.sh, with the compiler and Moo's native builds cached.
+
+runs:
+  using: composite
+  steps:
+    - uses: dtolnay/rust-toolchain@stable
+      with:
+        targets: aarch64-apple-darwin,x86_64-apple-darwin
+
+    # plugins/build.sh and scripts/vendor-tish-apple.sh read manifests with rg.
+    - name: ripgrep
+      shell: bash
+      run: command -v rg >/dev/null || brew install ripgrep
+
+    # packages/moo-macos/Cargo.toml names ../../tish/tish-nimble from the repo, so the compiler is
+    # built there (see scripts/ci-toolchain.sh), outside the workspace.
+    - name: Toolchain paths
+      id: paths
+      shell: bash
+      run: echo "tish=$(cd "$GITHUB_WORKSPACE/../.." && pwd)/tish/tish-nimble" >> "$GITHUB_OUTPUT"
+
+    - uses: actions/cache@v6
+      with:
+        path: |
+          ~/.cargo/registry/index
+          ~/.cargo/registry/cache
+          ~/.cargo/git/db
+          ${{ steps.paths.outputs.tish }}/target
+        key: tish-${{ runner.os }}-${{ hashFiles('toolchain.env', 'patches/tish-*.patch') }}
+
+    - uses: actions/cache@v6
+      with:
+        path: |
+          target
+          packages/moo-macos/target
+        key: moo-native-${{ runner.os }}-${{ hashFiles('toolchain.env', 'patches/*.patch', 'packages/moo-macos/Cargo.lock') }}-${{ github.sha }}
+        restore-keys: |
+          moo-native-${{ runner.os }}-${{ hashFiles('toolchain.env', 'patches/*.patch', 'packages/moo-macos/Cargo.lock') }}-
+          moo-native-${{ runner.os }}-
+
+    - name: Tish compiler and tish-apple
+      shell: bash
+      run: bash scripts/ci-toolchain.sh

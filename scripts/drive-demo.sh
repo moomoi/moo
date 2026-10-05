@@ -1,23 +1,23 @@
 #!/usr/bin/env bash
-# Drive a running Nimble through hotkey -> type -> edit shortcuts -> select -> launch, with screenshots.
-# Every keystroke step first checks that Nimble is frontmost, so nothing is typed into other apps.
+# Drive a running Moo through hotkey -> type -> edit shortcuts -> select -> launch, with screenshots.
+# Every keystroke step first checks that Moo is frontmost, so nothing is typed into other apps.
 # Needs Accessibility permission for the app running this script (System Events keystrokes).
 set -euo pipefail
-OUT="${1:-/tmp/nimble-demo}"
+OUT="${1:-/tmp/moo-demo}"
 mkdir -p "$OUT"
 
 SAVED_CLIP="$(pbpaste || true)"
 trap 'printf %s "$SAVED_CLIP" | pbcopy' EXIT
 
-# Nimble is a non-activating panel: it takes keystrokes while another app stays frontmost, so
-# "is it safe to type" comes from Nimble's own key-window log (run it with NIMBLE_DEBUG=1).
-LOG="${NIMBLE_LOG:-/tmp/nimble.log}"
+# Moo is a non-activating panel: it takes keystrokes while another app stays frontmost, so
+# "is it safe to type" comes from Moo's own key-window log (run it with MOO_DEBUG=1).
+LOG="${MOO_LOG:-/tmp/moo.log}"
 front() { osascript -e 'tell application "System Events" to get name of first process whose frontmost is true'; }
 has_keys() { [ "$(rg -o 'panel key=(true|false)' "$LOG" | tail -1)" = "panel key=true" ]; }
 shot() { screencapture -x "$OUT/$1.png"; sips -Z 1600 "$OUT/$1.png" --out "$OUT/$1.png" >/dev/null; echo "shot $1"; }
 guard() {
   if ! has_keys; then
-    echo "abort: nimble panel does not have keyboard focus (frontmost app: $(front))"
+    echo "abort: moo panel does not have keyboard focus (frontmost app: $(front))"
     exit 1
   fi
 }

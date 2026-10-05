@@ -1,0 +1,161 @@
+# When a prerelease in this PRIVATE repo (knoeone/moo) is promoted to a full release (Edit release
+# -> uncheck "Set as a pre-release"), mirror it to the PUBLIC download repo (moomoi/moo):
+#   - copy the assets (Moo-macos-universal.dmg / .zip, SHA256SUMS)
+#   - publish a full release whose notes cover EVERYTHING since the last public release
+#   - trigger the Homebrew tap (moomoi/homebrew-moo) to regenerate Casks/moo.rb
+#
+# Prereleases never leave this repo. Cross-repo writes use a GitHub App token (secrets:
+# MOO_RELEASE_APP_ID + MOO_RELEASE_APP_PRIVATE_KEY) installed on moomoi/moo and
+# moomoi/homebrew-moo with contents: write. Same as dune-ide and popcraft-desktop.
+
+name: Publish public release
+
+on:
+  release:
+    types: [released, edited]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to (re)publish to moomoi/moo, e.g. v0.1.0"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-public
+  cancel-in-progress: false
+
+env:
+  PUBLIC_REPO: moomoi/moo
+  TAP_REPO: moomoi/homebrew-moo
+
+jobs:
+  publish:
+    # Only full releases. Editing a prerelease's notes fires `edited` too; it is skipped here.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.release.prerelease == false && github.event.release.draft == false)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Resolve tag and version
+        id: ver
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TAG="$INPUT_TAG"
+          else
+            TAG="$RELEASE_TAG"
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Mint GitHub App token (public repo + tap)
+        id: app
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ secrets.MOO_RELEASE_APP_ID }}
+          private-key: ${{ secrets.MOO_RELEASE_APP_PRIVATE_KEY }}
+          owner: moomoi
+          repositories: |
+            moo
+            homebrew-moo
+
+      - name: Download the release assets from this repo
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p assets
+          gh release download "${{ steps.ver.outputs.tag }}" --repo "$GITHUB_REPOSITORY" --dir assets --clobber
+          ls -la assets
+          test -f assets/Moo-macos-universal.dmg
+
+      - name: Release notes since the last public release
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+        run: |
+          set -euo pipefail
+          TAG="${{ steps.ver.outputs.tag }}"
+          LAST_PUBLIC=$(gh api "repos/${PUBLIC_REPO}/releases" \
+            --jq '[.[] | select(.draft==false and .prerelease==false)][0].tag_name' 2>/dev/null || echo "")
+          echo "Last public release: ${LAST_PUBLIC:-<none>}"
+          if [ -n "$LAST_PUBLIC" ] && [ "$LAST_PUBLIC" != "$TAG" ] && git rev-parse -q --verify "refs/tags/$LAST_PUBLIC" >/dev/null; then
+            RANGE="$LAST_PUBLIC..$TAG"
+          else
+            RANGE="$TAG"
+          fi
+          # User-facing changes only: what conventional commits say shipped.
+          LOG=$(git log "$RANGE" --pretty=format:"%s" --no-merges | grep -E '^(feat|fix|perf)(\(.+\))?!?:' | sed 's/^/- /' || true)
+          [ -z "$LOG" ] && LOG="- Maintenance release"
+          {
+            echo "## Moo $TAG"
+            echo ""
+            echo "**Install:** download \`Moo-macos-universal.dmg\`, open it and drag Moo to Applications (Apple silicon and Intel, macOS 14 or later)."
+            echo "Or with Homebrew: \`brew install --cask moomoi/moo/moo\`"
+            echo ""
+            if [ -n "$LAST_PUBLIC" ] && [ "$LAST_PUBLIC" != "$TAG" ]; then echo "### Changes since ${LAST_PUBLIC}"; else echo "### Changes"; fi
+            echo ""
+            echo "$LOG"
+          } > public-notes.md
+          cat public-notes.md
+
+      - name: Create or update the public release
+        id: pub
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+        run: |
+          set -euo pipefail
+          TAG="${{ steps.ver.outputs.tag }}"
+          BODY=$(cat public-notes.md)
+          DEFAULT_BRANCH=$(gh api "repos/${PUBLIC_REPO}" --jq .default_branch)
+          PAYLOAD=$(jq -n --arg tag "$TAG" --arg branch "$DEFAULT_BRANCH" --arg body "$BODY" \
+            '{tag_name:$tag, target_commitish:$branch, name:("Moo " + $tag), body:$body, prerelease:false, draft:false}')
+          CODE=$(curl -s -o resp.json -w "%{http_code}" -X POST \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${PUBLIC_REPO}/releases" \
+            -d "$PAYLOAD")
+          if [ "$CODE" = "201" ]; then
+            RELEASE_ID=$(jq -r .id resp.json)
+          else
+            RELEASE_ID=$(gh api "repos/${PUBLIC_REPO}/releases/tags/$TAG" --jq .id 2>/dev/null || echo "")
+            if [ -z "$RELEASE_ID" ] || [ "$RELEASE_ID" = "null" ]; then
+              echo "Failed to create or find public release $TAG (HTTP $CODE)"; cat resp.json; exit 1
+            fi
+            curl -s -X PATCH \
+              -H "Authorization: Bearer $GH_TOKEN" \
+              -H "Accept: application/vnd.github+json" \
+              -H "X-GitHub-Api-Version: 2022-11-28" \
+              "https://api.github.com/repos/${PUBLIC_REPO}/releases/$RELEASE_ID" \
+              -d "$(jq -n --arg body "$BODY" '{body:$body, prerelease:false, draft:false}')" >/dev/null
+          fi
+          echo "release_id=$RELEASE_ID" >> "$GITHUB_OUTPUT"
+
+      - name: Upload assets to the public release
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+        run: bash scripts/upload-assets.sh "$PUBLIC_REPO" "${{ steps.pub.outputs.release_id }}" assets
+
+      - name: Trigger the Homebrew tap bump
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+        run: |
+          set -euo pipefail
+          curl -sS --fail -X POST \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${TAP_REPO}/dispatches" \
+            -d "$(jq -n --arg v "${{ steps.ver.outputs.version }}" --arg r "$PUBLIC_REPO" \
+              '{event_type:"release", client_payload:{version:$v, source_repo:$r}}')"
+          echo "Dispatched the tap bump for ${{ steps.ver.outputs.version }}"

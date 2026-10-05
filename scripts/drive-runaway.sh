@@ -1,24 +1,24 @@
 #!/usr/bin/env bash
 # Exercise the Tier A call budget with a deliberately hanging plugin (scripts/fixtures/runaway.tish).
-#   bash scripts/drive-runaway.sh build    # /tmp/nimble-runaway/plugins: runaway.tishc + convert.tishc
-#   NIMBLE_DEBUG=1 NIMBLE_PLUGINS=/tmp/nimble-runaway/plugins app/dist/nimble 2>/tmp/nimble.log &
+#   bash scripts/drive-runaway.sh build    # /tmp/moo-runaway/plugins: runaway.tishc + convert.tishc
+#   MOO_DEBUG=1 MOO_PLUGINS=/tmp/moo-runaway/plugins app/dist/moo 2>/tmp/moo.log &
 #   bash scripts/drive-runaway.sh
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 if [ "${1:-}" = "build" ]; then
   TISH="${TISH:-/Users/a_/Projects/tish/tish-nimble/target/release/tish}"
-  mkdir -p /tmp/nimble-runaway/plugins
-  "$TISH" build "$ROOT/scripts/fixtures/runaway.tish" --target bytecode -o /tmp/nimble-runaway/plugins/runaway.tishc
-  cp "$ROOT/plugins/dist/convert.tishc" /tmp/nimble-runaway/plugins/
+  mkdir -p /tmp/moo-runaway/plugins
+  "$TISH" build "$ROOT/scripts/fixtures/runaway.tish" --target bytecode -o /tmp/moo-runaway/plugins/runaway.tishc
+  cp "$ROOT/plugins/dist/convert.tishc" /tmp/moo-runaway/plugins/
   exit 0
 fi
-OUT="${1:-/tmp/nimble-runaway/shots}"
+OUT="${1:-/tmp/moo-runaway/shots}"
 mkdir -p "$OUT"
-LOG="${NIMBLE_LOG:-/tmp/nimble.log}"
+LOG="${MOO_LOG:-/tmp/moo.log}"
 
 has_keys() { [ "$(rg -o 'panel key=(true|false)' "$LOG" | tail -1)" = "panel key=true" ]; }
 shot() { screencapture -x "$OUT/$1.png"; sips -Z 1600 "$OUT/$1.png" --out "$OUT/$1.png" >/dev/null; echo "shot $1"; }
-guard() { has_keys || { echo "abort: nimble panel does not have keyboard focus"; exit 1; }; }
+guard() { has_keys || { echo "abort: moo panel does not have keyboard focus"; exit 1; }; }
 type() { guard; osascript -e "tell application \"System Events\" to keystroke \"$1\""; sleep "${2:-0.7}"; }
 key() { guard; osascript -e "tell application \"System Events\" to key code $1"; sleep "${2:-0.5}"; }
 stamp() { python3 -c 'import time; print(f"{time.time():.3f}")'; }

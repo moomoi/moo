@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
-# Show Nimble, type file queries, and screenshot the merged app + Spotlight results.
-# Same safety guard as drive-demo.sh: keystrokes are only sent while Nimble's panel has keys.
+# Show Moo, type file queries, and screenshot the merged app + Spotlight results.
+# Same safety guard as drive-demo.sh: keystrokes are only sent while Moo's panel has keys.
 set -euo pipefail
-OUT="${1:-/tmp/nimble-files}"
+OUT="${1:-/tmp/moo-files}"
 mkdir -p "$OUT"
-LOG="${NIMBLE_LOG:-/tmp/nimble.log}"
+LOG="${MOO_LOG:-/tmp/moo.log}"
 
 has_keys() { [ "$(rg -o 'panel key=(true|false)' "$LOG" | tail -1)" = "panel key=true" ]; }
 shot() { screencapture -x "$OUT/$1.png"; sips -Z 1600 "$OUT/$1.png" --out "$OUT/$1.png" >/dev/null; echo "shot $1"; }
-guard() { has_keys || { echo "abort: nimble panel does not have keyboard focus"; exit 1; }; }
+guard() { has_keys || { echo "abort: moo panel does not have keyboard focus"; exit 1; }; }
 type() { guard; osascript -e "tell application \"System Events\" to keystroke \"$1\""; sleep "${2:-0.8}"; }
 clear_query() { guard; osascript -e 'tell application "System Events" to keystroke "a" using {command down}'; osascript -e 'tell application "System Events" to key code 51'; sleep 0.3; }
 

@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Exercise status item, clipboard history and frecency in a running Nimble (NIMBLE_DEBUG=1,
-# ideally NIMBLE_FRECENCY pointing at a scratch file). Restores the clipboard on exit.
+# Exercise status item, clipboard history and frecency in a running Moo (MOO_DEBUG=1,
+# ideally MOO_FRECENCY pointing at a scratch file). Restores the clipboard on exit.
 set -euo pipefail
-OUT="${1:-/tmp/nimble-features}"
+OUT="${1:-/tmp/moo-features}"
 mkdir -p "$OUT"
-LOG="${NIMBLE_LOG:-/tmp/nimble.log}"
+LOG="${MOO_LOG:-/tmp/moo.log}"
 MODS="${HOTKEY_MODS:-option down}"
 
 SAVED_CLIP="$(pbpaste || true)"
@@ -24,10 +24,10 @@ concealed_copy() {
 }
 
 echo "== status item"
-osascript -e 'tell application "System Events" to tell process "nimble" to click menu bar item 1 of menu bar 2'
+osascript -e 'tell application "System Events" to tell process "moo" to click menu bar item 1 of menu bar 2'
 sleep 0.6
 shot 1-status-menu
-osascript -e 'tell application "System Events" to tell process "nimble" to click menu item 1 of menu 1 of menu bar item 1 of menu bar 2'
+osascript -e 'tell application "System Events" to tell process "moo" to click menu item 1 of menu 1 of menu bar item 1 of menu bar 2'
 sleep 0.8
 has_keys && echo "panel shown from status menu"
 
@@ -36,7 +36,7 @@ osascript -e "tell application \"System Events\" to key code 53"; sleep 0.5
 printf 'first clip: hello from the clipboard' | pbcopy; sleep 0.7
 printf 'https://tishlang.com/docs' | pbcopy; sleep 0.7
 concealed_copy "hunter2-secret-password"; sleep 0.7
-printf 'SELECT * FROM launches WHERE app = %s' "'nimble'" | pbcopy; sleep 0.7
+printf 'SELECT * FROM launches WHERE app = %s' "'moo'" | pbcopy; sleep 0.7
 summon
 clear_query
 type "clip"

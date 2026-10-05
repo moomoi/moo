@@ -1,0 +1,190 @@
+# On a main push whose commits warrant a release (feat / fix / perf / BREAKING CHANGE, see
+# CONTRIBUTING.md), build Moo for Apple silicon and Intel, sign it with the Developer ID, notarize
+# it, and publish a PRERELEASE here in the PRIVATE repo (knoeone/moo) with the assets attached.
+# Promote it (Edit release -> uncheck "Set as a pre-release") to trigger publish-public.yml, which
+# mirrors it to the PUBLIC download repo (moomoi/moo) and bumps the Homebrew cask. Same pattern as
+# dune-ide and popcraft-desktop.
+#
+#   version -> build-mac (universal, signed, notarized) -> release (sem tags vX.Y.Z, prerelease)
+#
+# Secrets: APPLE_CERTIFICATE (base64 .p12), APPLE_CERTIFICATE_PASSWORD, APPLE_SIGNING_IDENTITY
+# ("Developer ID Application: …"), APPLE_ID, APPLE_PASSWORD (app-specific), APPLE_TEAM_ID.
+
+name: Release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "Release even without feat/fix commits: an exact version (0.1.0) or major / minor / patch"
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+# One run per commit, never cancelled: a cancelled run would leave a half-made prerelease.
+concurrency:
+  group: release-${{ github.sha }}
+  cancel-in-progress: false
+
+jobs:
+  version:
+    name: Next version
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      version: ${{ steps.gate.outputs.version }}
+      publish: ${{ steps.gate.outputs.publish }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Next version via sem (dry run)
+        id: sem
+        uses: tishlang/sem@v1
+        with:
+          dry_run: true
+          force: ${{ inputs.force }}
+          config: |
+            branches: [main]
+            plugins:
+              - "@sem/commit-analyzer"
+              - "@sem/release-notes-generator"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Skip when there is no bump
+        id: gate
+        run: |
+          if [ "${{ steps.sem.outputs.new_release_published }}" != "true" ]; then
+            echo "::notice::No version bump (no feat / fix / perf / BREAKING CHANGE since the last release); nothing to build."
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "publish=true" >> "$GITHUB_OUTPUT"
+          echo "version=${{ steps.sem.outputs.new_release_version }}" >> "$GITHUB_OUTPUT"
+          echo "::notice::Building Moo ${{ steps.sem.outputs.new_release_version }}"
+
+  build-mac:
+    name: Build, sign, notarize
+    needs: version
+    if: needs.version.outputs.publish == 'true'
+    runs-on: macos-26
+    timeout-minutes: 120
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+      # `secrets` is not available in a step `if:`; hoist the presence check here.
+      HAS_APPLE_CERT: ${{ secrets.APPLE_CERTIFICATE != '' }}
+    steps:
+      - uses: actions/checkout@v7
+
+      # A prerelease is a download; one Gatekeeper refuses to open is worse than none.
+      - name: Refuse to release unsigned
+        run: |
+          if [ "$HAS_APPLE_CERT" != "true" ]; then
+            echo "::error::APPLE_CERTIFICATE is not set on this repo. Add the APPLE_* secrets (see the header of this workflow) before releasing."
+            exit 1
+          fi
+
+      - name: Refuse to package without a licence
+        run: |
+          if [ ! -f LICENSE ]; then
+            echo "::error::LICENSE is missing; it ships in the release and the Homebrew cask declares it."
+            exit 1
+          fi
+
+      - uses: ./.github/actions/toolchain
+
+      # The Developer ID goes into a keychain this job owns, on the search list for codesign.
+      - name: Import the Developer ID certificate
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        run: |
+          set -euo pipefail
+          KC="$(mktemp -d)/moo.keychain"
+          KCPASS="$(uuidgen)"
+          security create-keychain -p "$KCPASS" "$KC"
+          security set-keychain-settings -lut 21600 "$KC"
+          security unlock-keychain -p "$KCPASS" "$KC"
+          P12="$(mktemp -d)/cert.p12"
+          echo "$APPLE_CERTIFICATE" | base64 -d > "$P12"
+          security import "$P12" -k "$KC" -P "${APPLE_CERTIFICATE_PASSWORD:-}" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KCPASS" "$KC" >/dev/null
+          # Each existing keychain is its own argument, so the split is intended.
+          # shellcheck disable=SC2046
+          security list-keychains -d user -s "$KC" $(security list-keychains -d user | tr -d '"')
+          rm -f "$P12"
+          security find-identity -v -p codesigning "$KC" | head -3
+
+      - name: Build (arm64 + x86_64, lipo)
+        env:
+          MOO_VERSION: ${{ needs.version.outputs.version }}
+        run: bash scripts/build-universal.sh
+
+      # Bundles with entitlements and hardened runtime, notarizes and staples the app, packs the
+      # DMG and zip, notarizes and staples the DMG, then checks it like a user's Mac would.
+      - name: Sign, notarize, package
+        env:
+          BUILD: ${{ github.run_number }}
+          SIGN_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          REQUIRE_NOTARIZED: "1"
+        run: bash scripts/package-release.sh
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: moo-macos-universal
+          path: dist/release/*
+          if-no-files-found: error
+
+  release:
+    name: Prerelease
+    needs: [version, build-mac]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      # @sem/github opens a failure issue when a release throws; without this the real error is
+      # buried under a 403 from the issues API.
+      issues: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: moo-macos-universal
+          path: dist/release
+
+      # actions/checkout configures no identity, and sem cannot create the tag without one.
+      - name: Configure git identity for the release tag
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      # Tags vX.Y.Z, writes the notes from the conventional commits and publishes the prerelease
+      # with the assets .semrc.json lists.
+      - name: Publish the prerelease via sem
+        id: sem
+        uses: tishlang/sem@v1
+        with:
+          force: ${{ needs.version.outputs.version }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Summary
+        run: |
+          {
+            echo "## Moo ${{ needs.version.outputs.version }} prerelease"
+            echo ""
+            echo "Test it, then promote it: Releases -> v${{ needs.version.outputs.version }} -> Edit -> uncheck **Set as a pre-release**."
+            echo "Promoting publishes it to moomoi/moo and the Homebrew cask (publish-public.yml)."
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -1,0 +1,346 @@
+diff -ruN a/crates/tish-macos/src/appkit/build.rs b/crates/tish-macos/src/appkit/build.rs
+--- a/crates/tish-macos/src/appkit/build.rs	2026-10-04 16:25:46
++++ b/crates/tish-macos/src/appkit/build.rs	2026-10-04 11:33:19
+@@ -50,8 +50,8 @@
+ use super::toolbar_delegate::ToolbarEntry;
+ use super::style::{
+     apply_layer_style_to_view, apply_nstext_view_document_background_from_props,
+-    apply_static_label_text_field, has_container_layer_style, resolve_ns_color,
+-    single_line_label_height_after_style,
++    apply_static_label_text_field, apply_text_input_chrome, has_container_layer_style, resolve_ns_color,
++    single_line_label_height_after_style, text_input_height,
+ };
+ use super::canonical_host_tag;
+ use super::text_delegate::TextFieldDelegate;
+@@ -1365,7 +1365,8 @@
+                             align,
+                         );
+                         if click_overlay {
+-                            let overlay = NSButton::new(ctx.mtm);
++                            let overlay: Retained<NSButton> =
++                                Retained::into_super(super::hover::HoverButton::new(ctx.mtm));
+                             overlay.setTitle(&NSString::from_str("\u{200b}"));
+                             overlay.setBezelStyle(NSBezelStyle::AccessoryBarAction);
+                             overlay.setBordered(false);
+@@ -1376,6 +1377,7 @@
+                             place(&overlay, 0.0, 0.0, avail_w, row_h);
+                             freeze_autoresizing_for_manual_frames(&overlay);
+                             shell_ns.addSubview(&overlay);
++                            super::hover::sync_hover(&overlay, &props);
+                         }
+                         shell.setFrameSize(CGSize::new(avail_w, row_h));
+                         place(shell_ns, x, y_top, avail_w, row_h);
+@@ -1596,6 +1598,7 @@
+                     ));
+                     tf.setBezeled(true);
+                     tf.setEditable(true);
++                    apply_text_input_chrome(&tf, &props, ctx.mtm);
+                     if let Some(Value::Function(f)) =
+                         props.get("onChange").or_else(|| props.get("onInput"))
+                     {
+@@ -1613,7 +1616,7 @@
+                             )));
+                         }
+                     }
+-                    let h = 24.0;
++                    let h = text_input_height(&tf, &props);
+                     place(&tf, ix, iy, iw, h);
+                     freeze_autoresizing_for_manual_frames(&tf);
+                     parent.addSubview(&tf);
+diff -ruN a/crates/tish-macos/src/appkit/hover.rs b/crates/tish-macos/src/appkit/hover.rs
+--- a/crates/tish-macos/src/appkit/hover.rs	1969-12-31 16:00:00
++++ b/crates/tish-macos/src/appkit/hover.rs	2026-10-04 11:34:23
+@@ -0,0 +1,158 @@
++//! `hoverBackgroundColor` on clickable rows: the row's transparent click overlay tracks the
++//! pointer and repaints the row's layer while it is inside. Only one row is hovered at a time.
++
++use std::cell::{Cell, RefCell};
++
++use objc2::rc::{Retained, Weak};
++use objc2::runtime::AnyObject;
++use objc2::{define_class, msg_send, AnyThread, ClassType, DefinedClass, MainThreadMarker, MainThreadOnly};
++use objc2_app_kit::{NSButton, NSColor, NSControl, NSEvent, NSResponder, NSTrackingArea, NSTrackingAreaOptions, NSView};
++use objc2_foundation::{NSObject, NSObjectProtocol, NSRect};
++use tishlang_apple_common::style::props_string;
++use tishlang_core::PropMap;
++
++use super::style::resolve_ns_color;
++
++pub struct HoverButtonIvars {
++    hover: RefCell<Option<Retained<NSColor>>>,
++    base: RefCell<Option<Retained<NSColor>>>,
++    inside: Cell<bool>,
++}
++
++thread_local! {
++    static CURRENT: RefCell<Option<Weak<HoverButton>>> = const { RefCell::new(None) };
++}
++
++define_class!(
++    #[unsafe(super(NSButton, NSControl, NSView, NSResponder, NSObject))]
++    #[thread_kind = MainThreadOnly]
++    #[name = "TishHoverButton"]
++    #[ivars = HoverButtonIvars]
++    pub struct HoverButton;
++
++    unsafe impl NSObjectProtocol for HoverButton {}
++
++    impl HoverButton {
++        #[unsafe(method(updateTrackingAreas))]
++        fn update_tracking_areas(&self) {
++            for area in self.trackingAreas().iter() {
++                self.removeTrackingArea(&area);
++            }
++            // ActiveAlways: the launcher panel takes keys without its app being active.
++            let options = NSTrackingAreaOptions::MouseEnteredAndExited
++                | NSTrackingAreaOptions::ActiveAlways
++                | NSTrackingAreaOptions::InVisibleRect;
++            let owner: &AnyObject = self.as_ref();
++            let area = unsafe {
++                NSTrackingArea::initWithRect_options_owner_userInfo(
++                    NSTrackingArea::alloc(),
++                    NSRect::ZERO,
++                    options,
++                    Some(owner),
++                    None,
++                )
++            };
++            self.addTrackingArea(&area);
++            unsafe {
++                let _: () = msg_send![super(self), updateTrackingAreas];
++            }
++        }
++
++        #[unsafe(method(mouseEntered:))]
++        fn mouse_entered(&self, _event: &NSEvent) {
++            if self.ivars().hover.borrow().is_none() {
++                return;
++            }
++            let previous = CURRENT.with(|c| c.borrow_mut().replace(Weak::from(self)));
++            if let Some(p) = previous.and_then(|w| w.load()) {
++                if !std::ptr::eq(&*p, self) {
++                    p.set_inside(false);
++                }
++            }
++            self.set_inside(true);
++        }
++
++        #[unsafe(method(mouseExited:))]
++        fn mouse_exited(&self, _event: &NSEvent) {
++            self.set_inside(false);
++        }
++
++        /// `[TishHoverButton clearHover]`: un-hover whatever row is hovered (e.g. when the window
++        /// hides, which sends no mouseExited).
++        #[unsafe(method(clearHover))]
++        fn clear_hover() {
++            clear_hover();
++        }
++    }
++);
++
++impl HoverButton {
++    pub fn new(mtm: MainThreadMarker) -> Retained<Self> {
++        let this = Self::alloc(mtm).set_ivars(HoverButtonIvars {
++            hover: RefCell::new(None),
++            base: RefCell::new(None),
++            inside: Cell::new(false),
++        });
++        unsafe { msg_send![super(this), init] }
++    }
++
++    /// The row's colours after a build or patch: `base` is what its `backgroundColor` painted.
++    pub fn set_colors(&self, hover: Option<Retained<NSColor>>, base: Option<Retained<NSColor>>) {
++        let had = self.ivars().hover.borrow().is_some();
++        *self.ivars().hover.borrow_mut() = hover;
++        *self.ivars().base.borrow_mut() = base;
++        if had || self.ivars().hover.borrow().is_some() {
++            self.paint();
++        }
++    }
++
++    fn set_inside(&self, inside: bool) {
++        if self.ivars().inside.replace(inside) != inside {
++            self.paint();
++        }
++    }
++
++    fn paint(&self) {
++        let Some(row) = (unsafe { self.superview() }) else { return };
++        let inside = self.ivars().inside.get();
++        let hover = self.ivars().hover.borrow().clone();
++        let color = match (inside, hover) {
++            (true, Some(h)) => Some(h),
++            _ => self.ivars().base.borrow().clone(),
++        };
++        row.setWantsLayer(true);
++        if let Some(layer) = row.layer() {
++            let clear = NSColor::clearColor();
++            let c = color.unwrap_or(clear);
++            layer.setBackgroundColor(Some(&*c.CGColor()));
++        }
++    }
++}
++
++fn prop_color(props: &PropMap, keys: &[&str]) -> Option<Retained<NSColor>> {
++    let s = props_string(props, keys)?;
++    let t = s.trim().to_ascii_lowercase();
++    if t == "transparent" || t == "none" || t == "clear" {
++        return None;
++    }
++    resolve_ns_color(&s)
++}
++
++/// After a row's click overlay is built or patched: hand it the row's `hoverBackgroundColor` and
++/// `backgroundColor`.
++pub(super) fn sync_hover(btn: &NSButton, props: &PropMap) {
++    if !btn.isKindOfClass(HoverButton::class()) {
++        return;
++    }
++    let hb: &HoverButton = unsafe { &*(std::ptr::from_ref(btn).cast::<HoverButton>()) };
++    hb.set_colors(
++        prop_color(props, &["hoverBackgroundColor"]),
++        prop_color(props, &["backgroundColor", "background"]),
++    );
++}
++
++pub fn clear_hover() {
++    if let Some(p) = CURRENT.with(|c| c.borrow_mut().take()).and_then(|w| w.load()) {
++        p.set_inside(false);
++    }
++}
+diff -ruN a/crates/tish-macos/src/appkit/mod.rs b/crates/tish-macos/src/appkit/mod.rs
+--- a/crates/tish-macos/src/appkit/mod.rs	2026-10-04 16:25:46
++++ b/crates/tish-macos/src/appkit/mod.rs	2026-10-04 11:33:17
+@@ -11,6 +11,7 @@
+ mod style;
+ mod flipped;
+ mod handlers;
++mod hover;
+ mod window_delegate;
+ mod patch;
+ mod router;
+diff -ruN a/crates/tish-macos/src/appkit/patch.rs b/crates/tish-macos/src/appkit/patch.rs
+--- a/crates/tish-macos/src/appkit/patch.rs	2026-10-04 16:25:46
++++ b/crates/tish-macos/src/appkit/patch.rs	2026-10-04 11:33:19
+@@ -32,8 +32,8 @@
+ use super::flipped::{snap_flipped_split_panes_full_height, FlippedVisualEffectView};
+ use super::style::{
+     apply_layer_style_to_view, apply_nstext_view_document_background_from_props,
+-    apply_static_label_text_field, has_container_layer_style, resolve_ns_color,
+-    single_line_label_height_after_style,
++    apply_static_label_text_field, apply_text_input_chrome, has_container_layer_style, resolve_ns_color,
++    single_line_label_height_after_style, text_input_height,
+ };
+ use super::markdown_view::{apply_markdown_text_view_chrome, set_text_view_markdown};
+ use super::canonical_host_tag;
+@@ -435,23 +435,28 @@
+                             max_h = max_h.max(h);
+                             x_off += cw;
+                         }
+-                        let expected = children.len() + if click_overlay { 1 } else { 0 };
+-                        if inner != children.len()
+-                            || shell.subviews().count() as usize != expected
+-                        {
++                        // A container child (`div`) lays its children straight into the shell,
++                        // so `inner` (views used) can exceed the child count; the click overlay
++                        // is added after all of them.
++                        let expected = inner + if click_overlay { 1 } else { 0 };
++                        if shell.subviews().count() as usize != expected {
+                             return Err(());
+                         }
++                        let content_h = max_h.max(1.0);
++                        let row_h = row_shell_outer_height(pt, pb, content_h, &props);
+                         if click_overlay {
+-                            let ov = shell.subviews().objectAtIndex(children.len());
++                            let ov = shell.subviews().objectAtIndex(inner);
+                             if !ov.isKindOfClass(NSButton::class()) {
+                                 return Err(());
+                             }
+                             let btn: &NSButton =
+                                 unsafe { &*(std::ptr::from_ref(&*ov).cast::<NSButton>()) };
+                             wire_on_click_patch(&props, btn, ctx, btn.tag());
++                            // The row may have grown or shrunk since it was built; the overlay
++                            // must cover it all or clicks miss.
++                            place(btn, 0.0, 0.0, avail_w, row_h);
++                            super::hover::sync_hover(btn, &props);
+                         }
+-                        let content_h = max_h.max(1.0);
+-                        let row_h = row_shell_outer_height(pt, pb, content_h, &props);
+                         let inner_h = (row_h - pt - pb).max(0.0);
+                         row_shell_reposition_children(
+                             &*shell,
+@@ -654,7 +659,8 @@
+                             )));
+                         }
+                     }
+-                    let h = 24.0;
++                    apply_text_input_chrome(tf, &props, ctx.mtm);
++                    let h = text_input_height(tf, &props);
+                     place(tf, ix, iy, iw, h);
+                     freeze_autoresizing_for_manual_frames(tf);
+                     *slot += 1;
+diff -ruN a/crates/tish-macos/src/appkit/prop_warn.rs b/crates/tish-macos/src/appkit/prop_warn.rs
+--- a/crates/tish-macos/src/appkit/prop_warn.rs	2026-10-04 16:25:46
++++ b/crates/tish-macos/src/appkit/prop_warn.rs	2026-10-04 11:33:27
+@@ -74,6 +74,7 @@
+     "width",
+     "w",
+     "backgroundColor",
++    "hoverBackgroundColor",
+     "background",
+     "borderRadius",
+     "opacity",
+diff -ruN a/crates/tish-macos/src/appkit/style.rs b/crates/tish-macos/src/appkit/style.rs
+--- a/crates/tish-macos/src/appkit/style.rs	2026-10-04 16:25:46
++++ b/crates/tish-macos/src/appkit/style.rs	2026-10-03 18:38:10
+@@ -2,7 +2,8 @@
+ 
+ use objc2::rc::Retained;
+ use objc2::MainThreadMarker;
+-use objc2_app_kit::{NSColor, NSFont, NSTextAlignment, NSTextField, NSTextView, NSView};
++use objc2_app_kit::{NSColor, NSFocusRingType, NSFont, NSTextAlignment, NSTextField, NSTextView, NSView};
++use objc2_foundation::NSString;
+ use objc2_core_foundation::CGFloat;
+ use tishlang_apple_common::style::{props_bool, props_f64, props_string};
+ pub(super) use tishlang_apple_common::style::parse_hex_color;
+@@ -178,6 +179,39 @@
+         tf.setAlignment(al);
+     }
+     let _ = mtm;
++}
++
++/// Editable `<textinput>` chrome: `bezeled={false}` gives a plain field (no border, background or
++/// focus ring), plus `fontSize` / `fontWeight` / `color` / `textAlign` and `placeholder`.
++pub(super) fn apply_text_input_chrome(tf: &NSTextField, props: &PropMap, mtm: MainThreadMarker) {
++    let bezeled = super::build::props_opt_bool(props, &["bezeled", "bordered"]).unwrap_or(true);
++    if tf.isBezeled() != bezeled {
++        tf.setBezeled(bezeled);
++        tf.setBordered(bezeled);
++        tf.setDrawsBackground(bezeled);
++        tf.setFocusRingType(if bezeled { NSFocusRingType::Default } else { NSFocusRingType::None });
++    }
++    apply_text_style(tf, props, mtm);
++    let want = props_string(props, &["placeholder"]).unwrap_or_default();
++    let cur = tf.placeholderString().map(|s| s.to_string()).unwrap_or_default();
++    if cur != want {
++        let s = NSString::from_str(&want);
++        tf.setPlaceholderString(if want.is_empty() { None } else { Some(&s) });
++    }
++}
++
++/// Frame height for a `<textinput>`: `height` when given, else one line of its font plus the
++/// bezel (24 for the default font).
++pub(super) fn text_input_height(tf: &NSTextField, props: &PropMap) -> f64 {
++    if let Some(h) = explicit_label_height_from_props(props) {
++        return h;
++    }
++    let line = tf.font().map(|f| ns_font_line_height(&f)).unwrap_or(16.0);
++    if tf.isBezeled() {
++        (line + 8.0).max(24.0)
++    } else {
++        line + 2.0
++    }
+ }
+ 
+ /// Typographic line height (ascender − descender + leading). Matches a single text line’s bounds.
