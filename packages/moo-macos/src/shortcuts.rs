@@ -9,6 +9,9 @@
 //!     { "keyword": "dl", "name": "Downloads", "kind": "open", "target": "~/Downloads", "hotkey": "ctrl+alt+d" }
 //!   ],
 //!   "hotkeys": [{ "keys": "cmd+shift+v", "run": "moo:clipboard" }],
+//!   "aliases": { "moo:clipboard": "cb" },
+//!   "disabled": ["moo:system:empty-trash"],
+//!   "keys": { "actions": "cmd+j" },
 //!   "search": "https://duckduckgo.com/?q={query}",
 //!   "ai": { "model": "hypery:gpt-5-mini", "providers": { "work": { "url": "https://llm.example/v1", "keyEnv": "WORK_KEY" } } }
 //! }
@@ -21,6 +24,10 @@
 //! with `"expand": true`, replaces the keyword wherever it is typed), `ai` sends the expanded
 //! prompt to `model` (or the default model). Templates also take `{clipboard}`, `{selection}` (the
 //! text selected in the frontmost app), `{date}` (2026-10-03) and `{time}` (17:20).
+//!
+//! `aliases` and `disabled` name commands and apps by what they run (as `hotkeys` do): typing an
+//! alias brings its command first, and disabled ones are left out of search. `keys` holds Moo's
+//! own panel keys that differ from the defaults, by action (`none` for no key).
 
 use std::path::{Path, PathBuf};
 
@@ -89,6 +96,12 @@ pub struct Config {
     pub launcher: String,
     pub shortcuts: Vec<Shortcut>,
     pub hotkeys: Vec<HotkeyBinding>,
+    /// `(run, alias)`, sorted by `run`.
+    pub aliases: Vec<(String, String)>,
+    /// What not to show in search, by `run`, sorted.
+    pub disabled: Vec<String>,
+    /// `(action, keys)` of panel keys that differ from Moo's defaults, sorted by action.
+    pub keys: Vec<(String, String)>,
     /// Web search URL with `{query}`; empty means Google.
     pub search: String,
     pub ai: AiConfig,
@@ -213,6 +226,41 @@ pub fn parse(json: &str) -> Result<(Config, Vec<String>), String> {
         }
         cfg.hotkeys.push(b);
     }
+    if let Some(Value::Object(o)) = field(&root, "aliases") {
+        let mut pairs: Vec<(String, String)> = o
+            .borrow()
+            .strings
+            .iter()
+            .map(|(run, v)| (run.trim().to_string(), if let Value::String(s) = v { s.trim().to_string() } else { String::new() }))
+            .collect();
+        pairs.sort();
+        for (run, alias) in pairs {
+            match check_alias(&cfg, &alias, &run) {
+                Ok(()) => cfg.aliases.push((run, alias)),
+                Err(e) => warnings.push(format!("alias of {run}: {e}")),
+            }
+        }
+    }
+    for v in items(&root, "disabled") {
+        if let Value::String(run) = v {
+            set_disabled(&mut cfg, &run, true);
+        }
+    }
+    if let Some(Value::Object(o)) = field(&root, "keys") {
+        for (action, v) in o.borrow().strings.iter() {
+            let keys = match v {
+                Value::String(s) => s.trim().to_string(),
+                _ => String::new(),
+            };
+            if keys != "none" {
+                if let Err(e) = crate::keys::parse(&keys) {
+                    warnings.push(format!("key for {action}: {e}"));
+                    continue;
+                }
+            }
+            set_panel_key(&mut cfg, action, &keys);
+        }
+    }
     Ok((cfg, warnings))
 }
 
@@ -257,7 +305,67 @@ pub fn check_keyword(cfg: &Config, keyword: &str, replacing: Option<&str>) -> Re
     if let Some(existing) = cfg.shortcuts.iter().find(|s| same(&s.keyword) && !replacing.is_some_and(same)) {
         return Err(format!("keyword `{k}` is already used by \"{}\"", existing.name));
     }
+    if let Some((run, _)) = cfg.aliases.iter().find(|(_, a)| same(a)) {
+        return Err(format!("`{k}` is already the alias of {run}"));
+    }
     Ok(())
+}
+
+/// Whether `alias` can name `run`: one word, not a shortcut keyword or another alias.
+pub fn check_alias(cfg: &Config, alias: &str, run: &str) -> Result<(), String> {
+    let a = alias.trim();
+    if run.trim().is_empty() {
+        return Err("needs something to run".into());
+    }
+    if a.is_empty() {
+        return Err("needs an alias".into());
+    }
+    if a.chars().any(char::is_whitespace) {
+        return Err(format!("alias `{a}` cannot contain spaces"));
+    }
+    if a.chars().count() > MAX_KEYWORD {
+        return Err(format!("alias `{a}` is longer than {MAX_KEYWORD} characters"));
+    }
+    if let Some(s) = cfg.shortcuts.iter().find(|s| s.keyword.eq_ignore_ascii_case(a)) {
+        return Err(format!("`{a}` is the keyword of \"{}\"", s.name));
+    }
+    if let Some((other, _)) = cfg.aliases.iter().find(|(r, x)| x.eq_ignore_ascii_case(a) && r != run.trim()) {
+        return Err(format!("`{a}` is already the alias of {other}"));
+    }
+    Ok(())
+}
+
+/// Give `run` the alias `alias`, or none when `alias` is empty.
+pub fn set_alias(cfg: &mut Config, run: &str, alias: &str) -> Result<(), String> {
+    let run = run.trim();
+    if !alias.trim().is_empty() {
+        check_alias(cfg, alias, run)?;
+    }
+    cfg.aliases.retain(|(r, _)| r != run);
+    if !alias.trim().is_empty() {
+        cfg.aliases.push((run.to_string(), alias.trim().to_string()));
+        cfg.aliases.sort();
+    }
+    Ok(())
+}
+
+pub fn set_disabled(cfg: &mut Config, run: &str, disabled: bool) {
+    let run = run.trim();
+    cfg.disabled.retain(|r| r != run);
+    if disabled && !run.is_empty() {
+        cfg.disabled.push(run.to_string());
+        cfg.disabled.sort();
+    }
+}
+
+/// Set panel key `action` to `keys` (`none` for no key), or back to the default when empty.
+pub fn set_panel_key(cfg: &mut Config, action: &str, keys: &str) {
+    let action = action.trim();
+    cfg.keys.retain(|(a, _)| a != action);
+    if !keys.trim().is_empty() && !action.is_empty() {
+        cfg.keys.push((action.to_string(), keys.trim().to_string()));
+        cfg.keys.sort();
+    }
 }
 
 /// Add `s`, or replace the shortcut keyed `replacing`.
@@ -357,6 +465,31 @@ pub fn to_json(cfg: &Config) -> String {
         out.push_str(" }");
     }
     out.push_str(if cfg.hotkeys.is_empty() { "]" } else { "\n  ]" });
+    let pairs = |out: &mut String, key: &str, list: &[(String, String)]| {
+        if list.is_empty() {
+            return;
+        }
+        out.push_str(",\n  ");
+        json_str(out, key);
+        out.push_str(": {");
+        for (i, (k, v)) in list.iter().enumerate() {
+            out.push_str(if i == 0 { "\n    " } else { ",\n    " });
+            json_str(out, k);
+            out.push_str(": ");
+            json_str(out, v);
+        }
+        out.push_str("\n  }");
+    };
+    pairs(&mut out, "aliases", &cfg.aliases);
+    if !cfg.disabled.is_empty() {
+        out.push_str(",\n  \"disabled\": [");
+        for (i, r) in cfg.disabled.iter().enumerate() {
+            out.push_str(if i == 0 { "\n    " } else { ",\n    " });
+            json_str(&mut out, r);
+        }
+        out.push_str("\n  ]");
+    }
+    pairs(&mut out, "keys", &cfg.keys);
     if !cfg.search.is_empty() {
         out.push_str(",\n  \"search\": ");
         json_str(&mut out, &cfg.search);
@@ -649,6 +782,50 @@ mod tests {
         assert!(cfg.shortcuts[0].hotkey.is_empty());
         assert!(unbind(&mut cfg, "cmd+shift+v"));
         assert!(!unbind(&mut cfg, "cmd+shift+v"));
+    }
+
+    #[test]
+    fn aliases_disabled_and_panel_keys_round_trip() {
+        let json = r#"{
+          "shortcuts": [{ "keyword": "g", "kind": "url", "target": "https://g/{query}" }],
+          "hotkeys": [],
+          "aliases": { "moo:clipboard": "cb", "moo:files": "g", "plugin:slack/send": "CB", "/Applications/Safari.app": "web" },
+          "disabled": ["moo:system:empty-trash", "moo:system:empty-trash", 3],
+          "keys": { "actions": "cmd+j", "settings": "none", "category1": "j" }
+        }"#;
+        let (cfg, w) = parse(json).unwrap();
+        assert_eq!(cfg.aliases, vec![("/Applications/Safari.app".into(), "web".into()), ("moo:clipboard".into(), "cb".into())]);
+        assert_eq!(w.len(), 3, "{w:?}");
+        assert!(w.iter().any(|x| x.contains("keyword of")), "{w:?}");
+        assert!(w.iter().any(|x| x.contains("already the alias of moo:clipboard")), "{w:?}");
+        assert!(w.iter().any(|x| x.starts_with("key for category1")), "{w:?}");
+        assert_eq!(cfg.disabled, vec!["moo:system:empty-trash".to_string()]);
+        assert_eq!(cfg.keys, vec![("actions".into(), "cmd+j".into()), ("settings".into(), "none".into())]);
+        let written = to_json(&cfg);
+        assert_eq!(parse(&written).unwrap().0, cfg, "{written}");
+    }
+
+    #[test]
+    fn alias_edits() {
+        let mut cfg = Config::default();
+        upsert(&mut cfg, sc("g", Kind::Url, "https://g/{query}"), None).unwrap();
+        set_alias(&mut cfg, "moo:clipboard", "cb").unwrap();
+        set_alias(&mut cfg, "moo:clipboard", "clip").unwrap();
+        assert_eq!(cfg.aliases, vec![("moo:clipboard".into(), "clip".into())]);
+        assert!(set_alias(&mut cfg, "moo:files", "CLIP").unwrap_err().contains("already the alias"));
+        assert!(set_alias(&mut cfg, "moo:files", "g").unwrap_err().contains("keyword of"));
+        assert!(set_alias(&mut cfg, "moo:files", "a b").unwrap_err().contains("spaces"));
+        assert!(upsert(&mut cfg, sc("clip", Kind::Url, "x"), None).unwrap_err().contains("alias of moo:clipboard"));
+        set_alias(&mut cfg, "moo:clipboard", "").unwrap();
+        assert!(cfg.aliases.is_empty());
+        set_disabled(&mut cfg, "moo:files", true);
+        set_disabled(&mut cfg, "moo:files", true);
+        assert_eq!(cfg.disabled.len(), 1);
+        set_disabled(&mut cfg, "moo:files", false);
+        assert!(cfg.disabled.is_empty());
+        set_panel_key(&mut cfg, "actions", "cmd+j");
+        set_panel_key(&mut cfg, "actions", "");
+        assert!(cfg.keys.is_empty());
     }
 
     #[test]

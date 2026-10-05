@@ -158,6 +158,16 @@ fn native_bundle_resources(_args: &[Value]) -> Value {
     }
 }
 
+/// `exeDir()` -> the folder holding the running binary, so paths don't depend on the working
+/// directory (the CLI starts the app from that folder).
+fn native_exe_dir(_args: &[Value]) -> Value {
+    let exe = std::env::current_exe().ok().and_then(|p| p.canonicalize().ok());
+    match exe.as_deref().and_then(|p| p.parent()) {
+        Some(d) => Value::String(d.to_string_lossy().as_ref().into()),
+        None => Value::String(".".into()),
+    }
+}
+
 /// `recordUse(key)`: count one open of an app path or command key toward its frecency.
 fn native_record_use(args: &[Value]) -> Value {
     frecency::record(&str_arg(args, 0));
@@ -395,11 +405,15 @@ mod natives {
             ("aiModel", s(&cfg.ai.model)),
             ("shortcuts", arr(list)),
             ("hotkeys", arr(hotkeys)),
+            ("aliases", arr(cfg.aliases.iter().map(|(r, a)| obj(vec![("run", s(r)), ("alias", s(a))])).collect())),
+            ("disabled", arr(cfg.disabled.iter().map(|r| s(r)).collect())),
+            ("keys", arr(cfg.keys.iter().map(|(a, k)| obj(vec![("action", s(a)), ("keys", s(k))])).collect())),
             ("warnings", arr(warnings.iter().map(|w| s(w)).collect())),
         ])
     }
 
-    /// `loadShortcuts()` -> `{ ok, error, path, launcher, aiModel, shortcuts, hotkeys, warnings }`.
+    /// `loadShortcuts()` -> `{ ok, error, path, launcher, aiModel, shortcuts, hotkeys, aliases:
+    /// [{ run, alias }], disabled: [run], keys: [{ action, keys }], warnings }`.
     pub fn load_shortcuts(_a: &[Value]) -> Value {
         let Some(path) = shortcuts::config_path() else { return config_value(&Default::default(), &[], "HOME is not set") };
         match shortcuts::load(&path) {
@@ -516,6 +530,57 @@ mod natives {
             cfg.launcher = keys_spec;
             Ok(())
         })
+    }
+
+    /// `setAlias(run, alias)`: save `alias` for what `run` names ("" removes it) -> `{ ok, error }`.
+    pub fn set_alias(args: &[Value]) -> Value {
+        let (run, alias) = (str_arg(args, 0), str_arg(args, 1));
+        edit_config(|cfg| shortcuts::set_alias(cfg, &run, &alias))
+    }
+
+    /// `checkAlias(alias, run)` -> `{ ok, error }`.
+    pub fn check_alias(args: &[Value]) -> Value {
+        let cfg = shortcuts::config_path().and_then(|p| shortcuts::load(&p).ok()).map(|(c, _)| c).unwrap_or_default();
+        match shortcuts::check_alias(&cfg, &str_arg(args, 0), &str_arg(args, 1)) {
+            Ok(()) => obj(vec![("ok", Value::Bool(true))]),
+            Err(e) => obj(vec![("ok", Value::Bool(false)), ("error", s(&e))]),
+        }
+    }
+
+    /// `setDisabled(run, disabled)`: leave what `run` names out of search, or bring it back.
+    pub fn set_disabled(args: &[Value]) -> Value {
+        let run = str_arg(args, 0);
+        let off = matches!(args.get(1), Some(Value::Bool(true)));
+        edit_config(|cfg| {
+            shortcuts::set_disabled(cfg, &run, off);
+            Ok(())
+        })
+    }
+
+    /// `setPanelKey(action, keys)`: save a panel key ("none" for no key, "" for the default).
+    pub fn set_panel_key(args: &[Value]) -> Value {
+        let (action, keys_spec) = (str_arg(args, 0), str_arg(args, 1));
+        if !keys_spec.is_empty() && keys_spec != "none" {
+            if let Err(e) = keys::parse(&keys_spec) {
+                return obj(vec![("ok", Value::Bool(false)), ("error", s(&e))]);
+            }
+        }
+        edit_config(|cfg| {
+            shortcuts::set_panel_key(cfg, &action, &keys_spec);
+            Ok(())
+        })
+    }
+
+    /// `setPanelKeys([spec])`: while the panel has focus these keys arrive as
+    /// `onKey("panel:<spec>")` instead of reaching the search field.
+    pub fn set_panel_keys(args: &[Value]) -> Value {
+        let specs: Vec<String> = match args.first() {
+            Some(Value::Array(a)) => a.borrow().iter().filter_map(|v| if let Value::String(x) = v { Some(x.to_string()) } else { None }).collect(),
+            _ => Vec::new(),
+        };
+        let parsed = specs.iter().filter_map(|x| keys::parse(x).ok()).map(|p| (p.mods, p.code)).collect();
+        mac::set_panel_keys(parsed);
+        Value::Null
     }
 
     /// `expandTemplate(template, query, kind)`: fill `{query}` (encoded for the kind),
@@ -1445,6 +1510,11 @@ mod natives {
     pub use unsupported as bind_hotkey;
     pub use unsupported as unbind_hotkey;
     pub use unsupported as set_launcher_hotkey;
+    pub use unsupported as set_alias;
+    pub use unsupported as check_alias;
+    pub use unsupported as set_disabled;
+    pub use unsupported as set_panel_key;
+    pub fn set_panel_keys(_a: &[Value]) -> Value { Value::Null }
     pub use unsupported as cli_serve;
     pub fn hotkey_display(a: &[Value]) -> Value { Value::String(str_arg(a, 0).as_str().into()) }
     pub fn ensure_shortcuts_file(_a: &[Value]) -> Value { Value::String("".into()) }
@@ -1560,6 +1630,11 @@ pub fn moo_object() -> Value {
     m.insert(Arc::from("bindHotkey"), Value::native(natives::bind_hotkey));
     m.insert(Arc::from("unbindHotkey"), Value::native(natives::unbind_hotkey));
     m.insert(Arc::from("setLauncherHotkey"), Value::native(natives::set_launcher_hotkey));
+    m.insert(Arc::from("setAlias"), Value::native(natives::set_alias));
+    m.insert(Arc::from("checkAlias"), Value::native(natives::check_alias));
+    m.insert(Arc::from("setDisabled"), Value::native(natives::set_disabled));
+    m.insert(Arc::from("setPanelKey"), Value::native(natives::set_panel_key));
+    m.insert(Arc::from("setPanelKeys"), Value::native(natives::set_panel_keys));
     m.insert(Arc::from("expandTemplate"), Value::native(natives::expand_template));
     m.insert(Arc::from("watchShortcuts"), Value::native(natives::watch_shortcuts));
     m.insert(Arc::from("runShell"), Value::native(natives::run_shell));
@@ -1611,6 +1686,7 @@ pub fn moo_object() -> Value {
     m.insert(Arc::from("fileIndexStatus"), Value::native(natives::file_index_status));
     m.insert(Arc::from("watchApps"), Value::native(natives::watch_apps));
     m.insert(Arc::from("bundleResources"), Value::native(native_bundle_resources));
+    m.insert(Arc::from("exeDir"), Value::native(native_exe_dir));
     m.insert(Arc::from("recordUse"), Value::native(native_record_use));
     m.insert(Arc::from("frecency"), Value::native(native_frecency));
     m.insert(Arc::from("statusItem"), Value::native(natives::status_item));

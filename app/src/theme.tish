@@ -94,6 +94,11 @@ export const THEME = {
     gridCell: 14,
     keycap: 5,
   },
+  // Column widths of the Hotkeys and Aliases table, after the name.
+  hotkeys: {
+    alias: 120,
+    keys: 150,
+  },
   // Menu bar icon: an image among Moo's resources (packaging/ in the repo), drawn as a template.
   // `statusSymbol` (an SF Symbol) stands in when that file is missing.
   statusIcon: "MenuBarIcon.tiff",

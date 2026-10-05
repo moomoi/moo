@@ -1024,7 +1024,7 @@ mod tests {
         assert_eq!((h.url.as_str(), h.local, h.client_id.as_str()), ("http://127.0.0.1:9/v1", true, "cid"));
         let ep = endpoints(h).unwrap();
         assert_eq!(ep.token, "http://127.0.0.1:9/api/oauth/token");
-        assert_eq!(ep.scope, "ai:chat ai:models", "Hypery's authorize requires a scope");
+        assert_eq!(ep.scope, "ai:chat ai:models billing:read", "Hypery's authorize requires a scope");
         let w = ps.iter().find(|p| p.id == "work").unwrap();
         assert_eq!((w.title.as_str(), w.key_env.as_str(), w.local), ("work", "WORK_KEY", false));
     }

@@ -1038,6 +1038,13 @@ fn edit_shortcut(e: &NSEvent) -> bool {
 
 thread_local! {
     static ARROWS: Cell<bool> = const { Cell::new(false) };
+    static PANEL_KEYS: RefCell<Vec<(u32, u32)>> = const { RefCell::new(Vec::new()) };
+}
+
+/// The `(carbon modifiers, key code)` pairs that are launcher keys while the panel has focus
+/// (⌘K, ⌘1, ...); they arrive as `onKey("panel:<spec>")`.
+pub fn set_panel_keys(list: Vec<(u32, u32)>) {
+    PANEL_KEYS.with(|k| *k.borrow_mut() = list);
 }
 
 /// While on, plain ← and → are launcher keys rather than cursor movement in the search field.
@@ -1064,23 +1071,10 @@ fn install_key_monitor() {
         let ctrl = flags.contains(NSEventModifierFlags::Control);
         let cmd = flags.contains(NSEventModifierFlags::Command);
         let alt = flags.contains(NSEventModifierFlags::Option);
-        if cmd && !ctrl && !alt {
-            let chars = e.charactersIgnoringModifiers().map(|c| c.to_string().to_lowercase()).unwrap_or_default();
-            let named = match chars.as_str() {
-                "1" => Some("cmd+1"),
-                "2" => Some("cmd+2"),
-                "3" => Some("cmd+3"),
-                "4" => Some("cmd+4"),
-                "r" => Some("cmd+r"),
-                "l" => Some("cmd+l"),
-                "h" => Some("cmd+h"),
-                "k" => Some("cmd+k"),
-                "o" => Some("cmd+o"),
-                "y" => Some("cmd+y"),
-                _ => None,
-            };
-            if let Some(n) = named {
-                defer_callback("key", n);
+        let (mods, code) = (carbon_mods(flags), e.keyCode() as u32);
+        if PANEL_KEYS.with(|k| k.borrow().contains(&(mods, code))) {
+            if let Some(spec) = keys::from_event(code, mods) {
+                defer_callback("key", format!("panel:{spec}"));
                 return std::ptr::null_mut();
             }
         }

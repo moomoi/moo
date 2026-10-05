@@ -8,7 +8,7 @@
 
 import { loadModule } from "tish:ffi"
 import { macos, useState } from "tish:macos"
-import { reindex, search, launch, setup, setPanelShape, setArrowKeys, setTheme, typeText, getPref, setPref, searchHistory, addSearchHistory, clearSearchHistory, registerHotkey, quit, hide, appCount, searchFiles, watchApps, fuzzy, pluginPaths, copyText, loadBytecodePlugin, bundleResources, recordUse, frecency, statusItem, watchClipboard, clipboardHistory, clearClipboardHistory, aiAvailability, aiSession, aiEndSession, aiPrewarm, aiAsk, aiCancel, aiProviders, aiModels, aiChat, aiChatCancel, aiSetKey, aiLogin, aiCancelLogin, aiLogout, aiAccount, aiSetModel, aiSetClientId, aiSetOrganization, imageIcon, imageFile, onPluginRefresh, siteIcon, symbolIcon, fileIndexStart, findFiles, recentFiles, queryFiles, runningApps, systemInfo, calculate, define, dictionaryWarm, webSuggest, contactsAccess, contactsRequest, searchContacts, systemCommand, appAction, arrangeWindow, selectedText, watchSnippets, replaceTyped, trashFile, appsFor, openWith, quickLook, quickLookVisible, searchContents, accessibilityTrusted, fileIcon, revealFile, fileIndexStatus, show, toggle, unregisterHotkey, checkHotkey, hotkeyDisplay, recordHotkey, loadShortcuts, saveShortcut, checkKeyword, ensureShortcutsFile, removeShortcut, bindHotkey, unbindHotkey, setLauncherHotkey, expandTemplate, watchShortcuts, runShell, cliMain, cliServe, cliWrite, cliEnd, cliUsage } from "tish:moo"
+import { reindex, search, launch, setup, setPanelShape, setArrowKeys, setTheme, typeText, getPref, setPref, searchHistory, addSearchHistory, clearSearchHistory, registerHotkey, quit, hide, appCount, searchFiles, watchApps, fuzzy, pluginPaths, copyText, loadBytecodePlugin, bundleResources, exeDir, recordUse, frecency, statusItem, watchClipboard, clipboardHistory, clearClipboardHistory, aiAvailability, aiSession, aiEndSession, aiPrewarm, aiAsk, aiCancel, aiProviders, aiModels, aiChat, aiChatCancel, aiSetKey, aiLogin, aiCancelLogin, aiLogout, aiAccount, aiSetModel, aiSetClientId, aiSetOrganization, imageIcon, imageFile, setAlias, checkAlias, setDisabled, setPanelKey, setPanelKeys, onPluginRefresh, siteIcon, symbolIcon, fileIndexStart, findFiles, recentFiles, queryFiles, runningApps, systemInfo, calculate, define, dictionaryWarm, webSuggest, contactsAccess, contactsRequest, searchContacts, systemCommand, appAction, arrangeWindow, selectedText, watchSnippets, replaceTyped, trashFile, appsFor, openWith, quickLook, quickLookVisible, searchContents, accessibilityTrusted, fileIcon, revealFile, fileIndexStatus, show, toggle, unregisterHotkey, checkHotkey, hotkeyDisplay, recordHotkey, loadShortcuts, saveShortcut, checkKeyword, ensureShortcutsFile, removeShortcut, bindHotkey, unbindHotkey, setLauncherHotkey, expandTemplate, watchShortcuts, runShell, cliMain, cliServe, cliWrite, cliEnd, cliUsage } from "tish:moo"
 import { env } from "tish:process"
 import { THEME } from "./theme.tish"
 
@@ -103,8 +103,10 @@ if (env.MOO_HOTKEY) {
   HOTKEYS = [env.MOO_HOTKEY].concat(HOTKEYS)
 }
 let resources = bundleResources()
-let PLUGIN_DIR = env.MOO_PLUGINS ? env.MOO_PLUGINS : (resources ? resources + "/plugins" : "../plugins/dist")
-let ASSET_DIR = resources ? resources : "../packaging"
+// A dev build runs from app/dist, so the repo root is two folders up.
+let REPO_DIR = exeDir() + "/../.."
+let PLUGIN_DIR = env.MOO_PLUGINS ? env.MOO_PLUGINS : (resources ? resources + "/plugins" : REPO_DIR + "/plugins/dist")
+let ASSET_DIR = resources ? resources : REPO_DIR + "/packaging"
 let appIcon = imageFile(ASSET_DIR + "/" + THEME.appIcon)
 let statusIcon = imageFile(ASSET_DIR + "/" + THEME.statusIcon, true)
 if (statusIcon === "") {
@@ -170,6 +172,103 @@ let CATEGORIES = [
   { title: "Actions", command: ACTIONS, symbol: "square.2.layers.3d", key: "3" },
   { title: "Clipboard", command: CLIPBOARD, symbol: "doc.on.clipboard", key: "4" }
 ]
+// Moo's own keys in the open panel. `key` is the default and the name onKey handles it by;
+// shortcuts.json "keys" moves an action to other keys, or to none.
+let PANEL_ACTIONS = [
+  { action: "actions", name: "Action Panel", key: "cmd+k", symbol: "command" },
+  { action: "settings", name: "Open Settings", key: "cmd+,", symbol: "gearshape" },
+  { action: "category1", name: "Open Applications", key: "cmd+1", symbol: "square.grid.2x2" },
+  { action: "category2", name: "Open Files", key: "cmd+2", symbol: "folder" },
+  { action: "category3", name: "Open Actions", key: "cmd+3", symbol: "square.2.layers.3d" },
+  { action: "category4", name: "Open Clipboard", key: "cmd+4", symbol: "doc.on.clipboard" },
+  { action: "appsview", name: "Grid or List View", key: "cmd+l", symbol: "square.grid.3x2" },
+  { action: "quicklook", name: "Quick Look", key: "cmd+y", symbol: "eye" },
+  { action: "reveal", name: "Show in Finder", key: "cmd+r", symbol: "folder.badge.gearshape" },
+  { action: "openwith", name: "Open With", key: "cmd+o", symbol: "square.on.square" },
+  { action: "hideapp", name: "Hide App (Running Apps)", key: "cmd+h", symbol: "eye.slash" }
+]
+let PANEL_DEFAULTS = PANEL_ACTIONS.map((p) => hotkeyDisplay(p.key))
+
+// A default panel key as printed in a hint ("⌘K") becomes the keys its action has now ("" for none).
+fn currentKey(label) {
+  let i = PANEL_DEFAULTS.indexOf(label)
+  return i >= 0 ? panelLabel(PANEL_ACTIONS[i].action) : label
+}
+
+// Keys the search field and the list keep for themselves.
+let FIELD_KEYS = ["⌘C", "⌘V", "⌘X", "⌘Z", "⇧⌘Z", "⌘A", "⌘↩", "⌥↩", "⌘⌫", "⌃N", "⌃P"]
+
+// The keys of panel action `p` now ("" for none).
+fn panelKeys(p) {
+  for (let i = 0; i < config.keys.length; i = i + 1) {
+    if (config.keys[i].action === p.action) {
+      return config.keys[i].keys === "none" ? "" : config.keys[i].keys
+    }
+  }
+  return p.key
+}
+
+fn panelAction(action) {
+  for (let i = 0; i < PANEL_ACTIONS.length; i = i + 1) {
+    if (PANEL_ACTIONS[i].action === action) {
+      return PANEL_ACTIONS[i]
+    }
+  }
+  return null
+}
+
+// How a panel action's keys are printed in hints ("" for none).
+fn panelLabel(action) {
+  let k = panelKeys(panelAction(action))
+  return k !== "" ? hotkeyDisplay(k) : ""
+}
+
+// The name onKey knows the pressed panel key `spec` by, "" when no action has it.
+fn panelKeyName(spec) {
+  let d = hotkeyDisplay(spec)
+  for (let i = 0; i < PANEL_ACTIONS.length; i = i + 1) {
+    let k = panelKeys(PANEL_ACTIONS[i])
+    if (k !== "" && hotkeyDisplay(k) === d) {
+      return PANEL_ACTIONS[i].key
+    }
+  }
+  return ""
+}
+
+fn syncPanelKeys() {
+  setPanelKeys(PANEL_ACTIONS.map((p) => panelKeys(p)).filter((k) => k !== ""))
+}
+
+// Why `spec` cannot be panel action `p`'s keys, or "".
+fn panelKeyConflict(spec, p) {
+  let d = hotkeyDisplay(spec)
+  if (FIELD_KEYS.indexOf(d) >= 0) {
+    return d + " belongs to the search field"
+  }
+  for (let i = 0; i < PANEL_ACTIONS.length; i = i + 1) {
+    let q = PANEL_ACTIONS[i]
+    if (q.action !== p.action && panelKeys(q) !== "" && hotkeyDisplay(panelKeys(q)) === d) {
+      return d + " is already “" + q.name + "”"
+    }
+  }
+  return hotkeyConflict(spec, "")
+}
+
+// Aliases and disabled entries name a row by its path: a command id, "shortcut:<keyword>" or an
+// app's path.
+fn aliasOf(path) {
+  for (let i = 0; i < config.aliases.length; i = i + 1) {
+    if (config.aliases[i].run === path) {
+      return config.aliases[i].alias
+    }
+  }
+  return ""
+}
+
+fn isDisabled(path) {
+  return config.disabled.indexOf(path) >= 0
+}
+
 let commands = [
   { name: "Ask AI", path: "moo:ai", icon: aiIcon, kind: AI_TITLE, mode: "ai", pluginTitle: AI_TITLE, question: "" },
   APPS,
@@ -185,6 +284,7 @@ let commands = [
   { name: "Clear Clipboard History", path: "moo:clipboard-clear", icon: "NSTrashEmpty", kind: "Command", mode: "builtin" },
   { name: "Create Shortcut", path: "moo:create-shortcut", icon: symbolIcon("plus.square"), kind: "Command", mode: "create", pluginTitle: "Moo" },
   { name: "Shortcuts", path: "moo:shortcuts", icon: symbolIcon("command.square"), kind: "Command", mode: "shortcuts", pluginTitle: "Moo" },
+  { name: "Hotkeys and Aliases", path: "moo:hotkeys", icon: symbolIcon("keyboard"), kind: "Command", mode: "hotkeys", pluginTitle: "Moo" },
   { name: "Edit shortcuts.json", path: "moo:edit-shortcuts", icon: "NSActionTemplate", kind: "Command", mode: "builtin" },
   { name: "Quit Moo", path: "moo:quit", icon: quitIcon, kind: "Command", mode: "builtin" }
 ]
@@ -530,13 +630,15 @@ fn bindHotkeys() {
   let wanted = []
   for (let i = 0; i < config.shortcuts.length; i = i + 1) {
     let s = config.shortcuts[i]
-    if (s.hotkey !== "") {
+    if (s.hotkey !== "" && !isDisabled("shortcut:" + s.keyword)) {
       wanted.push({ keys: s.hotkey, run: s.keyword, query: "", shortcut: true })
     }
   }
   for (let i = 0; i < config.hotkeys.length; i = i + 1) {
     let h = config.hotkeys[i]
-    wanted.push({ keys: h.keys, run: h.run, query: h.query, shortcut: false })
+    if (!isDisabled(h.run)) {
+      wanted.push({ keys: h.keys, run: h.run, query: h.query, shortcut: false })
+    }
   }
   hotkeyStatus = []
   for (let i = 0; i < wanted.length; i = i + 1) {
@@ -559,6 +661,7 @@ fn reloadShortcuts() {
   }
   syncShortcutCommands()
   bindHotkeys()
+  syncPanelKeys()
   syncSnippets()
   refreshProviders()
 }
@@ -626,6 +729,39 @@ fn shortcutMatch(text) {
     return null
   }
   return { shortcut: s, query: space > 0 ? t.slice(space + 1).trim() : "" }
+}
+
+// Text starting with an alias: "cb" puts Clipboard History first, "cb report" opens it searching
+// "report". Apps take no text, so "safari x" is searched as usual.
+fn aliasMatch(text) {
+  let t = text.trim()
+  if (t === "" || config.aliases.length === 0) {
+    return null
+  }
+  let space = t.indexOf(" ")
+  let word = (space > 0 ? t.slice(0, space) : t).toLowerCase()
+  let query = space > 0 ? t.slice(space + 1).trim() : ""
+  for (let i = 0; i < config.aliases.length; i = i + 1) {
+    let a = config.aliases[i]
+    if (a.alias.toLowerCase() === word && !isDisabled(a.run)) {
+      let row = a.run.indexOf("/") === 0 ? appRow(a.run) : findCommand(a.run)
+      if (row === null || (query !== "" && row.kind === "Application")) {
+        return null
+      }
+      if (query === "") {
+        return { row: row }
+      }
+      return { row: { name: row.name + ": " + query, path: row.path, icon: row.icon, kind: "Alias · " + a.alias, mode: "alias", target: row, query: query, pluginTitle: row.pluginTitle } }
+    }
+  }
+  return null
+}
+
+// A result row for the app at `path`, as search returns them.
+fn appRow(path) {
+  let file = path.split("/").pop()
+  let name = file.length > 4 && file.slice(file.length - 4) === ".app" ? file.slice(0, file.length - 4) : file
+  return { name: name, path: path, icon: fileIcon(path), kind: "Application" }
 }
 
 fn shortcutRow(s, query) {
@@ -1096,6 +1232,7 @@ fn settingsResults(text) {
   let t = text.trim().toLowerCase()
   let rows = [
     { name: "Launcher Hotkey", kind: hotkeyLabel !== "" ? hotkeyLabel : "None", icon: symbolIcon("keyboard"), act: "launcher", group: "General" },
+    { name: "Hotkeys and Aliases", kind: "Every command", icon: symbolIcon("command"), act: "hotkeys", group: "General" },
     { name: "Shortcuts", kind: config.shortcuts.length + (config.shortcuts.length === 1 ? " shortcut" : " shortcuts"), icon: symbolIcon("command.square"), act: "shortcuts", group: "General" },
     { name: "Edit shortcuts.json", kind: "", icon: "NSActionTemplate", act: "edit", group: "General" },
     { name: "Search Engine", kind: webEngine().name, icon: webIcon, act: "engine", group: "Search" },
@@ -1112,6 +1249,8 @@ fn openSetting(r) {
   if (r.act === "launcher") {
     enterSub({ name: "Launcher Hotkey", mode: "assign-hotkey", pluginTitle: "Moo", icon: symbolIcon("keyboard"), row: null, launcher: true, keys: "", check: null, current: hotkey })
     recordHotkey(true)
+  } else if (r.act === "hotkeys") {
+    openCommand(commandAt("moo:hotkeys"), "")
   } else if (r.act === "shortcuts") {
     openCommand(commandAt("moo:shortcuts"), "")
   } else if (r.act === "edit") {
@@ -1283,14 +1422,14 @@ fn commandHits(text) {
   if (text.trim() === "") {
     for (let i = 0; i < commands.length; i = i + 1) {
       let b = frecency(commands[i].path)
-      if (b > 0 && pluginVisible(commands[i])) {
+      if (b > 0 && pluginVisible(commands[i]) && !isDisabled(commands[i].path)) {
         hits.push({ index: i, score: b })
       }
     }
   } else {
     let raw = fuzzy(text, commandTitles, commands.length)
     for (let i = 0; i < raw.length; i = i + 1) {
-      if (pluginVisible(commands[raw[i].index])) {
+      if (pluginVisible(commands[raw[i].index]) && !isDisabled(commands[raw[i].index].path)) {
         hits.push({ index: raw[i].index, score: raw[i].score + frecency(commands[raw[i].index].path) })
       }
     }
@@ -1308,7 +1447,7 @@ fn rootResults(text) {
   if (text.indexOf("/") === 0) {
     return filterResults(text.slice(1))
   }
-  let apps = search(text, ROWS)
+  let apps = search(text, ROWS).filter((a) => !isDisabled(a.path))
   let hits = commandHits(text)
   let out = []
   // An inline answer comes first, as in Spotlight: "2^10", "5 km in mi", "time in tokyo".
@@ -1328,6 +1467,15 @@ fn rootResults(text) {
     if (sc.query !== "") {
       return out
     }
+  } else {
+    let al = aliasMatch(text)
+    if (al !== null) {
+      out.push(al.row)
+      skip = al.row.path
+      if (al.row.mode === "alias") {
+        return out
+      }
+    }
   }
   let i = 0
   let j = 0
@@ -1338,7 +1486,9 @@ fn rootResults(text) {
       }
       i = i + 1
     } else {
-      out.push(apps[j])
+      if (apps[j].path !== skip) {
+        out.push(apps[j])
+      }
       j = j + 1
     }
   }
@@ -1369,7 +1519,7 @@ fn filterResults(text) {
   for (let i = 0; i < CATEGORIES.length; i = i + 1) {
     let c = CATEGORIES[i]
     if (word === "" || c.title.toLowerCase().indexOf(word) === 0) {
-      out.push({ name: rest !== "" ? c.title + ": " + rest : c.title, path: c.command.path, icon: c.command.icon, kind: "⌘" + c.key, mode: "filter", category: c, query: rest })
+      out.push({ name: rest !== "" ? c.title + ": " + rest : c.title, path: c.command.path, icon: c.command.icon, kind: panelLabel("category" + c.key), mode: "filter", category: c, query: rest })
     }
   }
   return out
@@ -1403,9 +1553,9 @@ fn openCategory(c, query) {
 // Every app A–Z, as Spotlight's Applications view; typing ranks matches.
 fn appResults(text) {
   if (text.trim() !== "") {
-    return search(text, FILE_LIST_MAX)
+    return search(text, FILE_LIST_MAX).filter((a) => !isDisabled(a.path))
   }
-  let all = search("", appCount())
+  let all = search("", appCount()).filter((a) => !isDisabled(a.path))
   all.sort((a, b) => a.name.toLowerCase() < b.name.toLowerCase() ? -1 : (a.name.toLowerCase() > b.name.toLowerCase() ? 1 : 0))
   return all
 }
@@ -1415,7 +1565,9 @@ fn actionResults(text) {
   let hits = []
   if (text.trim() === "") {
     for (let i = 0; i < commands.length; i = i + 1) {
-      hits.push({ index: i, score: frecency(commands[i].path) })
+      if (!isDisabled(commands[i].path)) {
+        hits.push({ index: i, score: frecency(commands[i].path) })
+      }
     }
     hits.sort((a, b) => b.score - a.score)
   } else {
@@ -1955,6 +2107,142 @@ fn openShortcutsRow(row, key) {
   }
 }
 
+// ── Hotkeys and Aliases: every command and app with its alias and hotkey, as in Raycast's
+// Extensions settings. Return records a hotkey; ⌘K sets an alias, disables, resets ──
+
+// The hotkey shortcuts.json gives `item` (a command, shortcut or app row), registered or not.
+fn configHotkey(item) {
+  if (item.mode === "shortcut") {
+    return item.shortcut.hotkey
+  }
+  let target = hotkeyTarget(item).toLowerCase()
+  if (target === "") {
+    return ""
+  }
+  for (let i = 0; i < config.hotkeys.length; i = i + 1) {
+    if (config.hotkeys[i].run.toLowerCase() === target) {
+      return config.hotkeys[i].keys
+    }
+  }
+  return ""
+}
+
+fn hkItem(item, group) {
+  let off = isDisabled(item.path)
+  let keys = configHotkey(item)
+  let label = keys !== "" ? hotkeyDisplay(keys) : ""
+  let alias = item.mode === "shortcut" ? item.shortcut.keyword : aliasOf(item.path)
+  return { name: item.name, alias: alias, kind: off ? (label !== "" ? label + " · Off" : "Off") : label, icon: item.icon, mode: "hk-row", hk: "item", item: item, dim: off, group: group }
+}
+
+fn hotkeysResults(text) {
+  let t = text.trim().toLowerCase()
+  let rows = [{ name: "Open Moo", alias: "", kind: hotkeyLabel, icon: settingsIcon, mode: "hk-row", hk: "launcher", group: "Moo" }]
+  for (let i = 0; i < PANEL_ACTIONS.length; i = i + 1) {
+    let p = PANEL_ACTIONS[i]
+    let k = panelKeys(p)
+    rows.push({ name: p.name, alias: "", kind: k !== "" ? hotkeyDisplay(k) : "", icon: symbolIcon(p.symbol), mode: "hk-row", hk: "panel", panel: p, group: "Panel Keys" })
+  }
+  for (let i = 0; i < commands.length; i = i + 1) {
+    let c = commands[i]
+    rows.push(hkItem(c, c.mode === "shortcut" ? "Shortcuts" : (c.pluginTitle ? c.pluginTitle : "Moo")))
+  }
+  let apps = search("", appCount())
+  apps.sort((a, b) => a.name.toLowerCase() < b.name.toLowerCase() ? -1 : (a.name.toLowerCase() > b.name.toLowerCase() ? 1 : 0))
+  for (let i = 0; i < apps.length; i = i + 1) {
+    rows.push(hkItem(apps[i], "Applications"))
+  }
+  let shown = rows.filter((r) => t === "" || r.name.toLowerCase().indexOf(t) >= 0 || r.alias.toLowerCase().indexOf(t) >= 0 || r.group.toLowerCase().indexOf(t) >= 0)
+  return groupInOrder(shown, (r) => r.group, 0, ["Moo", "Panel Keys"])
+}
+
+// Record a hotkey for a row of the hotkeys list.
+fn recordFor(r) {
+  if (r.hk === "launcher") {
+    enterSub({ name: "Launcher Hotkey", mode: "assign-hotkey", pluginTitle: "Moo", icon: symbolIcon("keyboard"), row: null, launcher: true, keys: "", check: null, current: hotkey })
+  } else if (r.hk === "panel") {
+    enterSub({ name: "Panel Key", mode: "assign-hotkey", pluginTitle: r.panel.name, icon: r.icon, row: null, panel: r.panel, keys: "", check: null, current: panelKeys(r.panel) })
+  } else {
+    enterSub({ name: "Assign Hotkey", mode: "assign-hotkey", pluginTitle: r.name, icon: r.icon, row: r.item, keys: "", check: null, current: configHotkey(r.item) })
+  }
+  recordHotkey(true)
+}
+
+fn hkActions(r) {
+  let list = [act("hk-record", r.kind === "" || r.kind === "Off" ? "Record Hotkey…" : "Change Hotkey…", "↵", "keyboard")]
+  if (r.hk === "panel") {
+    if (panelKeys(r.panel) !== "") {
+      list.push(act("hk-unbind", "Remove Key", "", "keyboard.badge.ellipsis"))
+    }
+    if (panelKeys(r.panel) !== r.panel.key) {
+      list.push(act("hk-reset", "Reset to " + hotkeyDisplay(r.panel.key), "", "arrow.uturn.backward"))
+    }
+    return list
+  }
+  if (r.hk !== "item") {
+    return list
+  }
+  if (configHotkey(r.item) !== "") {
+    list.push(act("hk-unbind", "Remove Hotkey", "", "keyboard.badge.ellipsis"))
+  }
+  list.push(act("hk-alias", r.alias === "" ? "Set Alias…" : "Change Alias (" + r.alias + ")…", "", "character.cursor.ibeam"))
+  if (r.alias !== "" && r.item.mode !== "shortcut") {
+    list.push(act("hk-unalias", "Remove Alias", "", "xmark.circle"))
+  }
+  list.push(isDisabled(r.item.path) ? act("hk-enable", "Enable", "", "checkmark.circle") : act("hk-disable", "Disable", "", "nosign"))
+  return list
+}
+
+fn hkAction(id, r) {
+  if (id === "hk-record") {
+    recordFor(r)
+  } else if (id === "hk-unbind") {
+    let err = r.hk === "panel" ? savePanelKey(r.panel, "none") : saveRowHotkey(r.item, "", configHotkey(r.item))
+    finishSub(err !== "" ? err : "Removed the hotkey of “" + r.name + "”")
+  } else if (id === "hk-reset") {
+    let err = savePanelKey(r.panel, "")
+    finishSub(err !== "" ? err : "“" + r.name + "” is " + hotkeyDisplay(r.panel.key) + " again")
+  } else if (id === "hk-alias") {
+    enterSub({ name: "Set Alias", mode: "set-alias", pluginTitle: r.name, icon: r.icon, item: r.item })
+    setQuery(r.alias)
+  } else if (id === "hk-unalias") {
+    let res = setAlias(r.item.path, "")
+    reloadShortcuts()
+    finishSub(res.ok ? "Removed the alias of “" + r.name + "”" : res.error)
+  } else if (id === "hk-disable" || id === "hk-enable") {
+    let res = setDisabled(r.item.path, id === "hk-disable")
+    reloadShortcuts()
+    finishSub(!res.ok ? res.error : "“" + r.name + "” is " + (id === "hk-disable" ? "hidden from search" : "back in search"))
+  }
+}
+
+// Set Alias: the field holds the alias; a shortcut's alias is its keyword.
+fn aliasResults(text) {
+  let item = shell.mode.item
+  let a = text.trim()
+  if (a === "") {
+    return [{ name: "Type an alias for “" + item.name + "”", kind: "then Return", icon: symbolIcon("character.cursor.ibeam"), mode: "alias-prompt" }]
+  }
+  let check = item.mode === "shortcut" ? checkKeyword(a, item.shortcut.keyword) : checkAlias(a, item.path)
+  return [{ name: "“" + a + "” opens “" + item.name + "”", kind: check.ok ? "Return saves" : check.error, icon: symbolIcon(check.ok ? "character.cursor.ibeam" : "exclamationmark.triangle"), mode: "alias-save", alias: a, ok: check.ok }]
+}
+
+fn saveAlias(row) {
+  if (!row.ok) {
+    return
+  }
+  let item = shell.mode.item
+  let res = null
+  if (item.mode === "shortcut") {
+    let s = item.shortcut
+    res = saveShortcut({ keyword: row.alias, name: s.name, kind: s.kind, target: s.target, input: s.input, output: s.output, hotkey: s.hotkey, expand: s.expand }, s.keyword)
+  } else {
+    res = setAlias(item.path, row.alias)
+  }
+  reloadShortcuts()
+  finishSub(res.ok ? "Type “" + row.alias + "” to open “" + item.name + "”" : res.error)
+}
+
 fn listResults(text) {
   let m = shell.mode
   if (m.mode === "apps") {
@@ -2010,6 +2298,12 @@ fn listResults(text) {
   }
   if (m.mode === "shortcuts") {
     return shortcutsResults(text)
+  }
+  if (m.mode === "hotkeys") {
+    return hotkeysResults(text)
+  }
+  if (m.mode === "set-alias") {
+    return aliasResults(text)
   }
   if (m.mode === "output") {
     return outputResults(text)
@@ -2103,7 +2397,7 @@ fn fileActionResults(text) {
   for (let i = 0; i < FILE_ACTIONS.length; i = i + 1) {
     let a = FILE_ACTIONS[i]
     if (t === "" || a.name.toLowerCase().indexOf(t) >= 0) {
-      rows.push({ name: a.name, kind: a.key, icon: symbolIcon(a.symbol), act: a.act, mode: "fileaction" })
+      rows.push({ name: a.name, kind: currentKey(a.key), icon: symbolIcon(a.symbol), act: a.act, mode: "fileaction" })
     }
   }
   return rows
@@ -2334,6 +2628,9 @@ fn act(id, name, key, symbol) {
 }
 
 fn rowActions(r) {
+  if (r.mode === "hk-row") {
+    return hkActions(r)
+  }
   let list = [act("open", primaryAction(r), "↵", "arrow.up.forward.app")]
   if (r.mode === "running-app") {
     list = [act("switch", "Switch To", "↵", "arrow.up.forward.app"), act(r.hidden ? "unhide" : "hide", r.hidden ? "Show" : "Hide", "⌘H", "eye.slash"), act("quit", "Quit", "⌘⌫", "xmark.app"), act("force-quit", "Force Quit", "⌥↵", "exclamationmark.octagon")]
@@ -2384,7 +2681,7 @@ fn rowActions(r) {
 
 fn rowActionResults(text) {
   let t = text.trim().toLowerCase()
-  return shell.mode.actions.filter((a) => t === "" || a.name.toLowerCase().indexOf(t) >= 0).map((a) => ({ name: a.name, kind: a.key, icon: symbolIcon(a.symbol), act: a.act, mode: "rowaction" }))
+  return shell.mode.actions.filter((a) => t === "" || a.name.toLowerCase().indexOf(t) >= 0).map((a) => ({ name: a.name, kind: currentKey(a.key), icon: symbolIcon(a.symbol), act: a.act, mode: "rowaction" }))
 }
 
 fn openRowActions(row) {
@@ -2406,6 +2703,10 @@ fn copied(text) {
 fn rowAction(id) {
   let m = shell.mode
   let r = m.row
+  if (id.indexOf("hk-") === 0) {
+    hkAction(id, r)
+    return
+  }
   if (id === "open") {
     leaveSub()
     open(shell.selected)
@@ -2480,15 +2781,38 @@ fn saveRowHotkey(r, keys, current) {
   return res !== null && !res.ok ? res.error : ""
 }
 
+fn assignLabel(m) {
+  if (m.launcher) {
+    return "the Moo launcher"
+  }
+  if (m.panel) {
+    return "“" + m.panel.name + "”"
+  }
+  return targetLabel(hotkeyTarget(m.row))
+}
+
+// A system shortcut (Spotlight's ⌘Space, say) owns the keys: only System Settings can free them.
+fn systemConflict(m) {
+  return m.check !== null && !m.check.ok && m.check.error.indexOf("is macOS") >= 0
+}
+
 fn assignHotkeyResults(text) {
   let m = shell.mode
-  let label = m.launcher ? "the Moo launcher" : targetLabel(hotkeyTarget(m.row))
+  let label = assignLabel(m)
   if (m.keys === "") {
     let now = m.current === "" ? "" : "now " + hotkeyDisplay(m.current) + (m.launcher ? "" : " · ⌫ removes it")
     return [{ name: "Press the keys for " + label, kind: now, icon: symbolIcon("keyboard"), mode: "hotkey-prompt" }]
   }
   let ok = m.check === null || m.check.ok
-  return [{ name: hotkeyDisplay(m.keys) + "  →  " + label, kind: ok ? "free · Return saves" : m.check.error, icon: symbolIcon(ok ? "keyboard" : "exclamationmark.triangle"), mode: "hotkey-prompt" }]
+  let rows = [{ name: hotkeyDisplay(m.keys) + "  →  " + label, kind: ok ? "free · Return saves" : m.check.error, icon: symbolIcon(ok ? "keyboard" : "exclamationmark.triangle"), mode: "hotkey-prompt" }]
+  if (systemConflict(m)) {
+    rows.push({ name: "Turn it off in System Settings › Keyboard › Keyboard Shortcuts, then press the keys again", kind: "Return opens it", icon: symbolIcon("gear"), mode: "hk-open-keyboard" })
+  }
+  return rows
+}
+
+fn openKeyboardSettings() {
+  launch("x-apple.systempreferences:com.apple.Keyboard-Settings.extension")
 }
 
 // Switch the launcher to `keys` now and save it as "launcher" in shortcuts.json. The old hotkey
@@ -2521,42 +2845,69 @@ fn assignRecord(spec) {
   if (spec === "delete") {
     if (m.keys === "" && m.current !== "" && !m.launcher) {
       recordHotkey(false)
-      let err = saveRowHotkey(m.row, "", m.current)
-      leaveSub()
-      actionDone(err !== "" ? err : "Removed the hotkey of “" + m.row.name + "”")
+      let err = m.panel ? savePanelKey(m.panel, "none") : saveRowHotkey(m.row, "", m.current)
+      finishSub(err !== "" ? err : "Removed the " + (m.panel ? "key of “" + m.panel.name : "hotkey of “" + m.row.name) + "”")
       return
     }
     m.keys = ""
     m.check = null
   } else if (spec === "return") {
+    if (systemConflict(m)) {
+      openKeyboardSettings()
+      return
+    }
     if (m.keys === "" || (m.check !== null && !m.check.ok)) {
       return
     }
     recordHotkey(false)
     if (m.launcher) {
       let failed = changeLauncherHotkey(m.keys)
-      leaveSub()
-      shell.apps = settingsResults(shell.query)
-      compose()
-      shell.hud = failed !== "" ? failed : hotkeyLabel + " now opens Moo"
-      refresh()
+      finishSub(failed !== "" ? failed : hotkeyLabel + " now opens Moo")
+      return
+    }
+    if (m.panel) {
+      let failedKey = savePanelKey(m.panel, m.keys)
+      finishSub(failedKey !== "" ? failedKey : hotkeyDisplay(m.keys) + " is now “" + m.panel.name + "”")
       return
     }
     let err = saveRowHotkey(m.row, m.keys, m.current)
-    let msg = err !== "" ? err : hotkeyDisplay(m.keys) + " now opens " + targetLabel(hotkeyTarget(m.row))
-    leaveSub()
-    actionDone(msg)
+    finishSub(err !== "" ? err : hotkeyDisplay(m.keys) + " now opens " + targetLabel(hotkeyTarget(m.row)))
     return
   } else {
     m.keys = spec
     if (m.current !== "" && hotkeyDisplay(spec) === hotkeyDisplay(m.current)) {
       m.check = null
+    } else if (m.panel) {
+      let taken = panelKeyConflict(spec, m.panel)
+      m.check = taken !== "" ? { ok: false, error: taken } : null
     } else {
       let conflict = hotkeyConflict(spec, m.current)
       m.check = conflict !== "" ? { ok: false, error: conflict } : checkHotkey(spec)
     }
   }
   setQuery("")
+}
+
+// Save panel action `p`'s keys ("none" for none, "" for the default). Returns an error, or "".
+fn savePanelKey(p, keys) {
+  let r = setPanelKey(p.action, keys === p.key ? "" : keys)
+  reloadShortcuts()
+  return r.ok ? "" : r.error
+}
+
+// Back from a step opened over the hotkeys list or Settings (through Actions, maybe), with that
+// list read again so it shows the change.
+fn finishSub(msg) {
+  leaveSub()
+  if (modeIs("rowactions")) {
+    leaveSub()
+  }
+  if (modeIs("hotkeys") || modeIs("settings")) {
+    shell.apps = listResults(shell.query)
+    compose()
+  }
+  shell.hud = msg
+  refresh()
 }
 
 // The text of each asynchronous search still out (files, contents, web), "" when none.
@@ -4924,6 +5275,27 @@ fn open(i) {
     openSetting(target)
     return
   }
+  if (target.mode === "alias") {
+    addSearchHistory(shell.query)
+    recordUse(target.target.path)
+    openCommand(target.target, target.query)
+    return
+  }
+  if (target.mode === "hk-row") {
+    recordFor(target)
+    return
+  }
+  if (target.mode === "alias-save") {
+    saveAlias(target)
+    return
+  }
+  if (target.mode === "alias-prompt") {
+    return
+  }
+  if (target.mode === "hk-open-keyboard") {
+    openKeyboardSettings()
+    return
+  }
   if (target.mode === "ai-model") {
     chooseModel(target.model)
     return
@@ -5019,7 +5391,7 @@ fn open(i) {
     enterAi(target, target.question)
   } else if (target.mode === "create") {
     startWizard(null)
-  } else if (target.mode === "list" || target.mode === "clipboard" || target.mode === "files" || target.mode === "shortcuts" || target.mode === "running" || target.mode === "dictionary" || target.mode === "web" || target.mode === "contacts" || target.mode === "settings" || target.mode === "ai-models" || target.mode === "hypery") {
+  } else if (target.mode === "list" || target.mode === "clipboard" || target.mode === "files" || target.mode === "shortcuts" || target.mode === "hotkeys" || target.mode === "running" || target.mode === "dictionary" || target.mode === "web" || target.mode === "contacts" || target.mode === "settings" || target.mode === "ai-models" || target.mode === "hypery") {
     enterList(target)
   } else if (target.mode === "view") {
     enterView(target)
@@ -5099,7 +5471,19 @@ fn modeIs(m) {
   return shell.mode !== null && shell.mode.mode === m
 }
 
-fn onKey(name) {
+// Panel keys arrive as "panel:<spec>" and are handled by the name of the action that has them.
+fn onKey(raw) {
+  if (raw.indexOf("panel:") === 0) {
+    let name = panelKeyName(raw.slice(6))
+    if (name !== "") {
+      handleKey(name)
+    }
+    return
+  }
+  handleKey(raw)
+}
+
+fn handleKey(name) {
   // Not a key: app icons finished loading, so redraw any still showing a placeholder.
   if (name === "icons") {
     refresh()
@@ -5107,6 +5491,12 @@ fn onKey(name) {
   }
   if (name.indexOf("scroll:") === 0) {
     scrollBy(Number(name.slice(7)))
+    return
+  }
+  if (name === "cmd+,") {
+    if (!modeIs("settings")) {
+      openCommand(SETTINGS, "")
+    }
     return
   }
   if (name.indexOf("record:") === 0) {
@@ -5186,7 +5576,7 @@ fn onKey(name) {
   if (name === "cmd+k") {
     if (modeIs("rowactions")) {
       leaveSub()
-    } else if (row !== null && !modeIs("create") && !modeIs("view") && !modeIs("assign-hotkey") && !modeIs("args") && row.mode !== "contacts-allow" && row.mode !== "setting" && row.mode !== "hotkey-prompt" && row.mode !== "ai-model" && row.mode !== "ai-info" && row.mode !== "hypery-act" && row.mode !== "hypery-org" && row.mode !== "ai-key-save") {
+    } else if (row !== null && !modeIs("create") && !modeIs("view") && !modeIs("assign-hotkey") && !modeIs("args") && row.mode !== "contacts-allow" && row.mode !== "setting" && row.mode !== "hotkey-prompt" && row.mode !== "hk-open-keyboard" && !modeIs("set-alias") && row.mode !== "ai-model" && row.mode !== "ai-info" && row.mode !== "hypery-act" && row.mode !== "hypery-org" && row.mode !== "ai-key-save") {
       openRowActions(row)
     }
     return
@@ -5329,20 +5719,28 @@ fn SlotRow(props) {
   let icons = row && !props.wide
   let textH = row || header ? 0 : 1
   let bg = props.selected ? SELECTED : CLEAR
+  // The hotkeys list is a table: name, alias, hotkey; each heading names the columns.
+  let table = modeIs("hotkeys") && (row || header)
+  let widths = icons ? [38, "flex", 1, 240] : [1, "flex", 1, 1]
+  if (table) {
+    widths = icons ? [38, "flex", THEME.hotkeys.alias, THEME.hotkeys.keys] : [1, "flex", THEME.hotkeys.alias, THEME.hotkeys.keys]
+  }
+  let alias = table ? (header ? "Alias" : (r !== null ? r.alias : "")) : ""
+  let detail = table && header ? "Hotkey" : kindLabel(r)
   return (
     <row
       onClick={() => open(slot.index)}
       borderRadius={THEME.radius.row}
       backgroundColor={bg}
       hoverBackgroundColor={props.selected ? SELECTED : (row && r !== null && r.line !== true ? C.hover : bg)}
-      columnWidths={icons ? [38, "flex", 240] : [1, "flex", 1]}
+      columnWidths={widths}
       alignItems="center"
       height={slot.height}
       paddingLeft={icons ? 10 : 12}
       paddingRight={12}
     ><image src={r !== null ? r.icon : ""} height={row ? THEME.icon.row : 1} /><text
       fontSize={header ? T.section : T.row} fontWeight={header ? THEME.weight.section : THEME.weight.row} color={header || (r !== null && r.dim) ? C.secondaryText : C.text} paddingLeft={icons ? 4 : 0} height={textH} textAlign={props.center ? "center" : "left"}
-    >{header ? slot.title : (r !== null ? r.name : "")}</text><text fontSize={T.detail} color={C.secondaryText} textAlign="right" height={textH}>{kindLabel(r)}</text></row>
+    >{header ? slot.title : (r !== null ? r.name : "")}</text><text fontSize={header ? T.section : T.detail} fontWeight={header ? THEME.weight.section : THEME.weight.row} color={C.secondaryText} textAlign="left" height={table ? textH : 1}>{alias}</text><text fontSize={table && header ? T.section : T.detail} fontWeight={table && header ? THEME.weight.section : THEME.weight.row} color={C.secondaryText} textAlign="right" height={textH}>{detail}</text></row>
   )
 }
 
@@ -5416,9 +5814,13 @@ fn HintLabel(props) {
 let KEYCAP_KEYS = { "↵": "enter", "⌘↵": "cmd+enter", "⌥↵": "alt+enter", "esc": "escape", "⌘R": "cmd+r", "⌘L": "cmd+l", "⇥": "tab", "⌘⌫": "cmd+delete", "⌘Y": "cmd+y", "⌘K": "cmd+k", "⌘O": "cmd+o" }
 
 fn clickHint(h) {
-  let key = h !== null ? KEYCAP_KEYS[h[1]] : null
+  if (h === null) {
+    return
+  }
+  let panel = panelKeyName(h[1])
+  let key = panel !== "" ? panel : KEYCAP_KEYS[h[1]]
   if (key !== null) {
-    onKey(key)
+    handleKey(key)
   }
 }
 
@@ -5464,8 +5866,12 @@ fn primaryAction(r) {
   return "Open"
 }
 
-// [[action, key], ...] for the footer, most important first.
+// [[action, key], ...] for the footer, most important first, with panel keys as they are now.
 fn footerHints() {
+  return defaultHints().map((h) => [h[0], currentKey(h[1])]).filter((h) => h[1] !== "")
+}
+
+fn defaultHints() {
   let r = shell.selected < shell.results.length ? shell.results[shell.selected] : null
   if (modeIs("output")) {
     return [["Copy Line", "↵"], ["Copy All", "⌘↵"], ["Back", "esc"]]
@@ -5475,6 +5881,12 @@ fn footerHints() {
   }
   if (modeIs("shortcuts")) {
     return [["Run", "↵"], ["Edit", "⌘↵"], ["Delete", "⌘⌫"]]
+  }
+  if (modeIs("hotkeys")) {
+    return [[r !== null && r.kind !== "" && r.kind !== "Off" ? "Change Hotkey" : "Record Hotkey", "↵"], ["Alias, Disable…", "⌘K"], ["Back", "esc"]]
+  }
+  if (modeIs("set-alias")) {
+    return [["Save", "↵"], ["Back", "esc"]]
   }
   if (inAi()) {
     if (ai.request !== 0) {
@@ -5519,6 +5931,9 @@ fn footerHints() {
   }
   if (modeIs("fileactions") || modeIs("rowactions")) {
     return [["Run", "↵"], ["Back", "esc"]]
+  }
+  if (modeIs("assign-hotkey") && systemConflict(shell.mode)) {
+    return [["Open Keyboard Settings", "↵"], ["Clear", "⌫"], ["Back", "esc"]]
   }
   if (modeIs("assign-hotkey")) {
     return [["Save", "↵"], [shell.mode.current !== "" && shell.mode.keys === "" && !shell.mode.launcher ? "Remove" : "Clear", "⌫"], ["Back", "esc"]]
@@ -5596,6 +6011,12 @@ fn sectionTitle() {
 fn placeholder() {
   if (inAi()) {
     return ai.answer !== "" ? "Ask a follow-up…" : "Ask anything…"
+  }
+  if (modeIs("hotkeys")) {
+    return "Search commands, apps and aliases…"
+  }
+  if (modeIs("set-alias")) {
+    return "Alias, like cb"
   }
   if (modeIs("args")) {
     let a = argAt(shell.mode.index)
@@ -6623,6 +7044,7 @@ fn onShortcutsChanged() {
 
 syncShortcutCommands()
 bindHotkeys()
+syncPanelKeys()
 for (let i = 0; i < config.warnings.length; i = i + 1) {
   console.log("moo: shortcuts: " + config.warnings[i])
 }

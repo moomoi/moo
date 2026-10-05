@@ -245,7 +245,10 @@ override it). The file is meant to be edited by hand and shared:
   "hotkeys": [
     { "keys": "cmd+shift+v", "run": "moo:clipboard" },
     { "keys": "f5", "run": "g", "query": "weather" }
-  ]
+  ],
+  "aliases": { "moo:clipboard": "cb", "/Applications/Safari.app": "sf" },
+  "disabled": ["moo:dictionary", "/System/Applications/Chess.app"],
+  "keys": { "settings": "cmd+;", "hideapp": "none" }
 }
 ```
 
@@ -287,6 +290,26 @@ The command line refuses a conflicting hotkey before saving. A hand-edited confl
 "not active" with its reason in `moo list hotkeys`, `moo status` and the Shortcuts list.
 The recorder in Create Shortcut turns on `set_recording`, so the panel's key monitor sends the
 next combination to Tish as `record:<spec>` instead of typing it.
+
+**Hotkeys and Aliases.** Settings › Hotkeys and Aliases (also the `moo:hotkeys` command) is one
+table of everything that can have a key: the launcher hotkey, the panel keys, every command
+grouped by plugin, the shortcuts and every app, with Alias and Hotkey columns. ↵ records a hotkey;
+⌘K sets or removes the alias, removes the hotkey, and disables or enables the row. The other
+entries in `shortcuts.json` hold these choices:
+
+- `aliases` maps a command id (`moo list commands`) or an app path to one word. Typing the word
+  shows that command as the top hit; text after it becomes the command's search text. An alias
+  can't be a shortcut keyword or another command's alias. A shortcut's alias is its keyword.
+- `disabled` lists command ids, app paths and `shortcut:<keyword>`. Disabled rows are hidden from
+  search, and their hotkeys are not registered. They stay in the table, marked "Off".
+- `keys` overrides the keys that work while the panel is open. The actions are `actions` (⌘K),
+  `settings` (⌘,), `category1`–`category4` (⌘1–⌘4), `appsview` (⌘L), `quicklook` (⌘Y),
+  `reveal` (⌘R), `openwith` (⌘O) and `hideapp` (⌘H). `none` turns one off. Tish passes the
+  resulting list to `setPanelKeys`; the key monitor only intercepts those combinations and sends
+  them as `panel:<spec>`. The labels in footers and action lists follow the overrides.
+
+macOS reserves ⌘Space for Spotlight. When a recorded hotkey is an enabled system shortcut, the
+recorder names it and ↵ opens System Settings › Keyboard so it can be turned off there first.
 
 **Command line.** The `moo` binary is also its own client. With arguments, or when another
 instance is already running, `cliMain()` (first line of `main.tish`) connects to
