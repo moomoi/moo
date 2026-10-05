@@ -7,6 +7,10 @@ script.
 | Path | Response |
 | --- | --- |
 | `/` | Landing page |
+| `/get` | Download page (the button goes to `/download`) |
+| `/download` | `302` to the latest DMG on GitHub |
+| `/marketplace` | Plugin marketplace (static list in `main.tish`) |
+| `/legal`, `/legal/terms`, `/legal/privacy` | Legal pages |
 | `/callback` | Sign-in relay (below) |
 | `/health` | `200 ok`, for load balancers |
 | anything else | 404 page; methods other than GET and HEAD get 405 |
