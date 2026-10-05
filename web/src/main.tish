@@ -6,6 +6,7 @@
 // PKCE verifier, which never leaves the Mac, so nothing passing through here can be redeemed alone.
 
 import { ICON_PNG, FAVICON_PNG } from "./icon.tish"
+import { DOCS } from "./docs.tish"
 
 // Promoted releases are mirrored to this public repo under a fixed asset name (docs/release.md).
 let DOWNLOAD_URL = "https://github.com/moomoi/moo/releases/latest/download/Moo-macos-universal.dmg"
@@ -29,6 +30,13 @@ let STYLE = `
 @media (prefers-color-scheme: light) { :root { --bg: #fbfbfd; --fg: #0b0b10; --dim: #5d5d68; --faint: #b8b8c2; --glass: #ffffffb3; --glass2: #ffffff; --line: #0000001a; } }
 * { box-sizing: border-box; }
 html { scroll-behavior: smooth; }
+* { scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--fg) 18%, transparent) transparent; }
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: color-mix(in srgb, var(--fg) 16%, transparent); border-radius: 99px; border: 2px solid transparent; background-clip: padding-box; }
+::-webkit-scrollbar-thumb:hover { background-color: color-mix(in srgb, var(--fg) 32%, transparent); }
+::-webkit-scrollbar-corner { background: transparent; }
+.side { scrollbar-width: none; } .side::-webkit-scrollbar { display: none; }
 body { margin: 0; min-height: 100vh; background: var(--bg); color: var(--fg); font: 16px/1.55 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", "Helvetica Neue", sans-serif; -webkit-font-smoothing: antialiased; overflow-x: hidden; }
 a { color: inherit; }
 ::selection { background: var(--g1); color: #fff; }
@@ -54,7 +62,7 @@ nav .links a.pill { color: #fff; background: var(--fg); color: var(--bg); paddin
 @media (max-width: 560px) { nav .links a.hide { display: none; } nav .links { gap: 14px; } }
 
 .wrap { width: min(1120px, 100% - 32px); margin: 0 auto; }
-.grad { background: var(--grad); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.grad { padding-right: .12em; margin-right: -.12em; background: var(--grad); -webkit-background-clip: text; background-clip: text; color: transparent; }
 .eyebrow { display: inline-flex; align-items: center; gap: 8px; font: 12px var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--dim); padding: 6px 12px; border: 1px solid var(--line); border-radius: 99px; background: var(--glass); }
 .eyebrow b { width: 6px; height: 6px; border-radius: 50%; background: var(--g1); box-shadow: 0 0 12px var(--g1); animation: pulse 2s infinite; }
 @keyframes pulse { 50% { opacity: .3; } }
@@ -111,7 +119,7 @@ section { padding: 120px 0 0; }
 .bento { display: grid; grid-template-columns: repeat(6, 1fr); gap: 14px; }
 .card { position: relative; grid-column: span 2; padding: 28px; border-radius: 22px; background: var(--glass); border: 1px solid var(--line); overflow: hidden; transition: transform .35s cubic-bezier(.2,.8,.2,1), border-color .35s; }
 .card.w { grid-column: span 3; } .card.x { grid-column: span 4; }
-.card::after { content: ""; position: absolute; inset: -1px; border-radius: inherit; padding: 1px; background: var(--grad); -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude; opacity: 0; transition: opacity .35s; }
+.card::after { content: ""; position: absolute; inset: -1px; border-radius: inherit; padding: 1px; background: var(--grad); -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude; opacity: 0; transition: opacity .35s; pointer-events: none; }
 .card:hover { transform: translateY(-4px); }
 .card:hover::after { opacity: 1; }
 .card h3 { font-size: 22px; letter-spacing: -.02em; margin: 18px 0 6px; }
@@ -176,6 +184,103 @@ footer .mega { font-size: clamp(120px, 34vw, 420px); font-weight: 900; letter-sp
 .solo li::before { content: counter(s); flex: none; width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; font: 12px var(--mono); background: var(--glass2); border: 1px solid var(--line); }
 .four { font-size: clamp(120px, 30vw, 200px); font-weight: 900; letter-spacing: -.08em; line-height: .9; margin: 0; }
 
+/* docs */
+.docs { display: grid; grid-template-columns: 220px minmax(0, 1fr) 200px; gap: 56px; padding-top: 56px; }
+.side { position: sticky; top: 84px; align-self: start; max-height: calc(100vh - 100px); overflow-y: auto; font-size: 14px; padding-bottom: 24px; }
+.side summary { display: none; }
+.side h4 { font: 11px var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--faint); margin: 22px 0 6px 12px; }
+.side h4:first-of-type { margin-top: 0; }
+.side a { display: block; text-decoration: none; color: var(--dim); padding: 6px 12px; border-radius: 8px; transition: color .15s, background .15s; }
+.side a:hover { color: var(--fg); background: var(--glass); }
+.side a.on { color: var(--fg); background: var(--glass2); box-shadow: inset 2px 0 0 var(--g1); }
+.toc { position: sticky; top: 84px; align-self: start; font-size: 13px; }
+.toc b { display: block; font: 11px var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--faint); margin-bottom: 10px; }
+.toc a { display: block; text-decoration: none; color: var(--dim); padding: 4px 0 4px 12px; border-left: 1px solid var(--line); }
+.toc a.l3 { padding-left: 24px; }
+.toc a:hover { color: var(--fg); border-color: var(--g1); }
+.article { min-width: 0; max-width: 72ch; }
+.article .eyebrow { margin-bottom: 18px; }
+.article > h1 { font-size: clamp(40px, 6vw, 60px); letter-spacing: -.045em; line-height: 1.02; margin: 0 0 12px; }
+.article .sum { font-size: 19px; color: var(--dim); margin: 0 0 36px; padding-bottom: 32px; border-bottom: 1px solid var(--line); }
+.md { color: var(--dim); font-size: 16px; line-height: 1.7; }
+.md h2, .md h3 { position: relative; color: var(--fg); letter-spacing: -.02em; scroll-margin-top: 84px; }
+.md h2 { font-size: 26px; margin: 48px 0 12px; } .md h3 { font-size: 19px; margin: 32px 0 8px; }
+.md .anchor { position: absolute; left: -1em; color: var(--g1); text-decoration: none; opacity: 0; transition: opacity .15s; }
+.md h2:hover .anchor, .md h3:hover .anchor { opacity: 1; }
+.md p { margin: 0 0 16px; } .md strong { color: var(--fg); }
+.md a { color: var(--fg); text-decoration: underline; text-decoration-color: color-mix(in srgb, var(--g1) 60%, transparent); text-underline-offset: 3px; }
+.md a:hover { text-decoration-color: var(--g1); }
+.md ul, .md ol { padding-left: 22px; margin: 0 0 18px; } .md li { margin: 6px 0; } .md li::marker { color: var(--g1); }
+.md code { font: .86em var(--mono); color: var(--fg); background: var(--glass2); border: 1px solid var(--line); padding: 2px 6px; border-radius: 6px; }
+.md hr { border: 0; border-top: 1px solid var(--line); margin: 40px 0; }
+.code { position: relative; margin: 0 0 20px; border-radius: 14px; border: 1px solid var(--line); background: color-mix(in srgb, var(--bg) 70%, #000); overflow: hidden; }
+.code .lang { position: absolute; top: 8px; right: 12px; font: 11px var(--mono); color: var(--faint); text-transform: uppercase; letter-spacing: .08em; }
+.code pre { margin: 0; padding: 18px 20px; overflow-x: auto; }
+.code code { all: unset; font: 13.5px/1.65 var(--mono); color: #d8d8e2; white-space: pre; }
+.code .c { color: #6c6c7c; font-style: italic; } .code .s { color: #ff8fb1; } .code .n { color: #ffc27a; } .code .k { color: #9da8ff; } .code .f { color: #7ee0c3; }
+@media (prefers-color-scheme: light) { .code { background: #16161d; } }
+.table { overflow-x: auto; margin: 0 0 22px; border: 1px solid var(--line); border-radius: 14px; background: var(--glass); }
+.md table { width: 100%; border-collapse: collapse; font-size: 14.5px; }
+.md th { text-align: left; color: var(--fg); font-weight: 600; background: var(--glass2); }
+.md th, .md td { padding: 10px 14px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.md tr:last-child td { border-bottom: 0; }
+.md kbd { color: var(--fg); margin-right: 3px; }
+.callout { position: relative; margin: 0 0 20px; padding: 16px 18px 2px 18px; border-radius: 14px; border: 1px solid var(--line); background: var(--glass); overflow: hidden; }
+.callout::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--g2); }
+.callout.tip::before { background: var(--grad); } .callout.warning::before { background: #ffb020; }
+.callout > b { display: block; font: 11px var(--mono); text-transform: uppercase; letter-spacing: .1em; color: var(--g2); margin-bottom: 4px; }
+.callout.tip > b { color: var(--g1); } .callout.warning > b { color: #ffb020; }
+.md blockquote { margin: 0 0 20px; padding-left: 16px; border-left: 2px solid var(--line); }
+.pn { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 64px; }
+.pn a { text-decoration: none; padding: 18px 20px; border-radius: 16px; border: 1px solid var(--line); background: var(--glass); transition: border-color .2s, transform .2s; }
+.pn a:hover { border-color: var(--g1); transform: translateY(-2px); }
+.pn a span { display: block; font: 11px var(--mono); text-transform: uppercase; letter-spacing: .1em; color: var(--faint); }
+.pn a b { font-size: 17px; } .pn .next { text-align: right; grid-column: 2; }
+.dhome { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; }
+.dhome .card { grid-column: auto; }
+.dhome .card h3 { margin-top: 0; } .dhome ul { list-style: none; padding: 0; margin: 14px 0 0; }
+.dhome li a { display: block; text-decoration: none; color: var(--dim); padding: 4px 0; font-size: 15px; }
+.dhome li a:hover { color: var(--fg); } .dhome li a::before { content: "→ "; color: var(--g1); }
+@media (max-width: 1100px) { .docs { grid-template-columns: 200px minmax(0, 1fr); } .toc { display: none; } }
+@media (max-width: 760px) {
+  .docs { grid-template-columns: minmax(0, 1fr); gap: 20px; padding-top: 24px; }
+  .side { order: 2; position: static; max-height: none; border: 1px solid var(--line); border-radius: 14px; background: var(--glass); padding: 0; }
+  .side summary { display: block; cursor: pointer; padding: 12px 16px; font-weight: 600; list-style: none; }
+  .side summary::after { content: " ▾"; color: var(--g1); }
+  .side nav, .side > div { padding: 0 8px 12px; }
+  .pn { grid-template-columns: 1fr; } .pn .next { grid-column: auto; }
+}
+
+/* plugin page */
+a.card.plug { text-decoration: none; color: inherit; }
+.pdp { padding-top: 40px; }
+.pdp .back { display: inline-block; font-size: 14px; color: var(--dim); text-decoration: none; margin-bottom: 32px; }
+.pdp .back:hover { color: var(--fg); }
+.pdp header { display: grid; grid-template-columns: auto 1fr auto; gap: 28px; align-items: center; padding-bottom: 40px; border-bottom: 1px solid var(--line); }
+.glyph.big { width: 104px; height: 104px; border-radius: 28px; font-size: 48px; box-shadow: 0 20px 60px -12px #fe588acc; }
+.pdp h1 { font-size: clamp(36px, 6vw, 60px); letter-spacing: -.045em; line-height: 1; margin: 0 0 8px; }
+.pdp .who p { color: var(--dim); font-size: 18px; margin: 0 0 14px; max-width: 52ch; }
+.pdp .meta { display: flex; gap: 12px; align-items: center; } .pdp .by { font: 12px var(--mono); color: var(--dim); }
+.pdp .get { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+.pdp .get .btn { padding: 16px 34px; font-size: 17px; }
+.pdp .get .fine { margin: 0; } .pdp .get .fine a { color: var(--dim); }
+.btn.ghost { color: var(--fg); border: 1px solid var(--line); background: var(--glass); margin-top: 28px; }
+.btn.ghost:hover { border-color: var(--g1); transform: translateY(-2px); }
+.pdp .cols { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 56px; padding-top: 16px; }
+.pdp h2 { font-size: 22px; letter-spacing: -.02em; margin: 32px 0 12px; }
+.pdp .about { color: var(--dim); font-size: 17px; line-height: 1.7; max-width: 64ch; margin: 0; }
+.pdp code { font: .88em var(--mono); color: var(--fg); background: var(--glass2); border: 1px solid var(--line); padding: 1px 6px; border-radius: 6px; }
+.cmds { list-style: none; padding: 6px; margin: 0; border: 1px solid var(--line); border-radius: 18px; background: var(--glass); }
+.cmds li { display: flex; gap: 14px; align-items: center; padding: 10px 12px; border-radius: 12px; }
+.cmds li:hover { background: var(--glass2); }
+.cmds .ic { width: 32px; height: 32px; flex: none; border-radius: 9px; display: grid; place-items: center; background: var(--glass2); border: 1px solid var(--line); }
+.cmds b { display: block; font-weight: 600; font-size: 15px; } .cmds small { color: var(--dim); font-size: 13px; }
+.facts { align-self: start; margin-top: 32px; border: 1px solid var(--line); border-radius: 18px; background: var(--glass); }
+.facts div { padding: 16px 20px; border-bottom: 1px solid var(--line); } .facts div:last-child { border-bottom: 0; }
+.facts span { display: block; font: 11px var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--faint); margin-bottom: 4px; }
+.facts b { font-weight: 500; font-size: 15px; }
+@media (max-width: 820px) { .pdp header { grid-template-columns: auto 1fr; } .pdp .get { grid-column: 1 / -1; align-items: stretch; } .pdp .cols { grid-template-columns: 1fr; gap: 0; } .glyph.big { width: 72px; height: 72px; font-size: 32px; border-radius: 20px; } }
+
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } .deck > .q:first-child { opacity: 1; } .deck > .q:first-child .type { width: auto; } }
 `
 
@@ -189,10 +294,10 @@ let ICON_PUZZLE = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" st
 
 fn nav(active) {
     let on = (name) => active === name ? ` class="on"` : ""
-    return `<nav><div class="in"><a class="brand" href="/"><img src="${ICON_PNG}" alt="">moo</a><div class="links"><a href="/marketplace"${on("market")}>Marketplace</a><a class="hide" href="/legal"${on("legal")}>Legal</a><a class="hide" href="${REPO_URL}">GitHub</a><a class="pill" href="/get">Download</a></div></div></nav>`
+    return `<nav><div class="in"><a class="brand" href="/"><img src="${ICON_PNG}" alt="">moo</a><div class="links"><a href="/docs"${on("docs")}>Docs</a><a href="/marketplace"${on("market")}>Marketplace</a><a class="hide" href="${REPO_URL}">GitHub</a><a class="pill" href="/get">Download</a></div></div></nav>`
 }
 
-let FOOTER = `<footer><div class="wrap in"><span>© Moo · Made for the Mac, by keyboard.</span><span><a href="/get">Download</a><a href="/marketplace">Marketplace</a><a href="/legal/terms">Terms</a><a href="/legal/privacy">Privacy</a></span></div><div class="mega">moo</div></footer>`
+let FOOTER = `<footer><div class="wrap in"><span>© Moo · Made for the Mac, by keyboard.</span><span><a href="/get">Download</a><a href="/docs">Docs</a><a href="/marketplace">Marketplace</a><a href="/legal/terms">Terms</a><a href="/legal/privacy">Privacy</a></span></div><div class="mega">moo</div></footer>`
 
 fn shell(title, body) {
     return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="theme-color" content="#07070a"><title>${title}</title><link rel="icon" type="image/png" href="${FAVICON_PNG}"><link rel="apple-touch-icon" href="${ICON_PNG}"><style>${STYLE}</style></head><body><div class="sky"><i></i><i></i><i></i></div>${body}</body></html>`
@@ -267,19 +372,38 @@ let GET = page("Download · Moo", "get", `
 </div>
 `)
 
-// The plugins that ship in this repo (plugins/), plus what's next.
+// The plugins that ship in this repo (plugins/). `commands` are [title, what it does]; `network`
+// is the manifest's permissions.network. Install opens moo://plugins/<id> (app/src/main.tish onUrl).
 let PLUGINS = [
-    { glyph: "⇄", name: "Unit Converter", by: "moo", tag: "core", text: "Length, mass, volume, data and more. Type “5 mi in km” and copy the answer." },
-    { glyph: "#", name: "Slack", by: "moo", tag: "core", text: "Send messages, search conversations and jump to any channel without opening Slack." },
-    { glyph: "⚙", name: "Moo Utils", by: "moo", tag: "core", text: "Generate UUIDs, find and copy emoji, and jump to developer docs from one place." },
-    { glyph: "≡", name: "Hello List", by: "moo", tag: "example", text: "The smallest list plugin there is. Read it, fork it, ship your own in an afternoon." }
+    { id: "convert", glyph: "⇄", name: "Unit Converter", by: "moo", tag: "core", tier: "A", network: [],
+      text: "Length, mass, volume, data and more. Type “5 mi in km” and copy the answer.",
+      about: "Every conversion for what you typed, as a list you can scroll and copy from. It covers length, mass, volume, data sizes and temperature. It runs entirely in its sandbox, with no network and no files.",
+      commands: [["Convert Units", "10 km, 72 f, 3 lb, 512 mib"], ["Generate Password", "Copy a random 20-character password"], ["Converter Stats", "Calls served by this plugin"]] },
+    { id: "slack", glyph: "#", name: "Slack", by: "moo", tag: "core", tier: "A", network: ["slack.com"],
+      text: "Send messages, search conversations and jump to any channel without opening Slack.",
+      about: "Type <code>slack</code> and a space, pick who it's to, type the message and press Return. Search your messages as you type, or jump straight into any channel or DM. Sign-in uses OAuth with PKCE, so no secret ships with moo, and your token stays in the Keychain.",
+      docs: "/docs/slack",
+      commands: [["Send Slack Message", "slack, then To and Message"], ["Search Slack Messages", "Results as you type"], ["Open Slack Channel", "Channels and DMs"], ["Refresh Slack Channels", "Reload channels and people"], ["Sign In to Slack", "Browser sign-in"], ["Sign Out of Slack", ""], ["Set Slack Client ID", "One-time setup"]] },
+    { id: "utils", glyph: "⚙", name: "Moo Utils", by: "moo", tag: "core", tier: "B", network: [],
+      text: "Generate UUIDs, find and copy emoji, and jump to developer docs from one place.",
+      about: "Small tools you reach for every day, a keystroke away. This is a first-party native plugin compiled into moo.",
+      commands: [["Generate UUID", "Copy a random v4 UUID"], ["Search Emoji", "Find and copy an emoji"], ["Developer Links", "Open docs in the browser"], ["Plugin Stats", "How often this plugin ran"]] },
+    { id: "hello-list", glyph: "≡", name: "Hello List", by: "moo", tag: "example", tier: "A", network: [],
+      text: "The smallest list plugin there is. Read it, fork it, ship your own in an afternoon.",
+      about: "An example of list views. Star greetings in a dozen languages, or turn any text into camelCase, snake_case and friends. Start here if you're writing your first plugin.",
+      docs: "/docs/first-plugin",
+      commands: [["Hello List", "Star a greeting"], ["Change Case", "UPPER, lower, Title, camel, snake, kebab…"]] }
 ]
+
+fn tagLabel(p) {
+    return p.tag === "core" ? "Built in" : p.tag
+}
 
 fn plugCards() {
     let out = ""
     for (let i = 0; i < PLUGINS.length; i = i + 1) {
         let p = PLUGINS[i]
-        out = out + `<div class="card plug"><div class="top"><div class="glyph">${p.glyph}</div><div><h3>${p.name}</h3><span class="by">by ${p.by}</span></div></div><p>${p.text}</p><span class="tag${p.tag === "core" ? " core" : ""}">${p.tag === "core" ? "Built in" : p.tag}</span></div>`
+        out = out + `<a class="card plug" href="/marketplace/${p.id}"><div class="top"><div class="glyph">${p.glyph}</div><div><h3>${p.name}</h3><span class="by">by ${p.by}</span></div></div><p>${p.text}</p><span class="tag${p.tag === "core" ? " core" : ""}">${tagLabel(p)}</span></a>`
     }
     return out
 }
@@ -292,9 +416,49 @@ let MARKETPLACE = page("Marketplace · Moo", "market", `
 </div>
 <div class="wrap market up d3">
 ${plugCards()}
-<a class="card plug ghost" href="${REPO_URL}" style="text-decoration:none"><div class="glyph">${ICON_PUZZLE}</div><h3 style="margin-top:16px">Build a plugin</h3><p style="flex:none;margin:6px 0 0">Write it in Tish. Publish it here.</p></a>
+<a class="card plug ghost" href="/docs/first-plugin"><div class="glyph">${ICON_PUZZLE}</div><h3 style="margin-top:16px">Build a plugin</h3><p style="flex:none;margin:6px 0 0">Write it in Tish. Publish it here.</p></a>
 </div>
 `)
+
+fn plugPage(p) {
+    let cmds = ""
+    for (let i = 0; i < p.commands.length; i = i + 1) {
+        let c = p.commands[i]
+        cmds = cmds + `<li><span class="ic">${p.glyph}</span><span><b>${c[0]}</b>${c[1] !== "" ? `<small>${c[1]}</small>` : ""}</span></li>`
+    }
+    let access = p.tier === "A"
+        ? (p.network.length > 0 ? `Network: <code>${p.network.join("</code>, <code>")}</code> only` : "None. No files, no network")
+        : "Full (first-party native plugin)"
+    let docs = p.docs ? `<a class="btn ghost" href="${p.docs}">Read the docs</a>` : ""
+    return page(`${p.name} · Moo Marketplace`, "market", `
+<div class="wrap pdp">
+<a class="back" href="/marketplace">← Marketplace</a>
+<header class="up">
+<div class="glyph big">${p.glyph}</div>
+<div class="who"><h1>${p.name}</h1><p>${p.text}</p><div class="meta"><span class="tag${p.tag === "core" ? " core" : ""}">${tagLabel(p)}</span><span class="by">by ${p.by}</span></div></div>
+<div class="get"><a class="btn go" href="moo://plugins/${p.id}">${ICON_DOWN}Install</a><span class="fine">Opens in moo. <a href="/get">Don't have it?</a></span></div>
+</header>
+<div class="cols up d2">
+<div>
+<h2>About</h2><p class="about">${p.about}</p>
+<h2>Commands</h2><ul class="cmds">${cmds}</ul>
+${docs}
+</div>
+<aside class="facts">
+<div><span>Sandbox</span><b>${p.tier === "A" ? "Tier A · own VM" : "Tier B · native"}</b></div>
+<div><span>Access</span><b>${access}</b></div>
+<div><span>Author</span><b>${p.by}</b></div>
+<div><span>Price</span><b>Free</b></div>
+</aside>
+</div>
+</div>
+`)
+}
+
+let PLUG_PAGES = {}
+for (let i = 0; i < PLUGINS.length; i = i + 1) {
+    PLUG_PAGES["/marketplace/" + PLUGINS[i].id] = plugPage(PLUGINS[i])
+}
 
 fn legal(title, active, content) {
     let on = (name) => active === name ? ` class="on"` : ""
@@ -343,6 +507,75 @@ let PRIVACY = legal("Privacy · Moo", "privacy", `
 <h2>Contact</h2>
 <p>Questions? Open an issue on <a href="${REPO_URL}">GitHub</a>.</p>
 `)
+
+// ── Docs: pages rendered at build time by gen-docs.tish (docs.tish) ──
+
+fn docsSidebar(current) {
+    let out = ""
+    let section = ""
+    for (let i = 0; i < DOCS.length; i = i + 1) {
+        let d = DOCS[i]
+        if (d.section !== section) {
+            section = d.section
+            out = out + `<h4>${section}</h4>`
+        }
+        out = out + `<a href="/docs/${d.slug}"${d.slug === current ? ` class="on"` : ""}>${d.title}</a>`
+    }
+    // <details> stays open on wide screens (the summary is hidden there) and folds into a menu on phones.
+    return `<details class="side" open><summary>Docs menu</summary><div>${out}</div></details>`
+}
+
+fn docsToc(toc) {
+    if (toc.length === 0) {
+        return "<div></div>"
+    }
+    let out = "<b>On this page</b>"
+    for (let i = 0; i < toc.length; i = i + 1) {
+        out = out + `<a class="l${toc[i].level}" href="#${toc[i].id}">${toc[i].text}</a>`
+    }
+    return `<aside class="toc">${out}</aside>`
+}
+
+fn docPage(i) {
+    let d = DOCS[i]
+    let prev = i > 0 ? `<a href="/docs/${DOCS[i - 1].slug}"><span>← Previous</span><b>${DOCS[i - 1].title}</b></a>` : ""
+    let next = i + 1 < DOCS.length ? `<a class="next" href="/docs/${DOCS[i + 1].slug}"><span>Next →</span><b>${DOCS[i + 1].title}</b></a>` : ""
+    return page(`${d.title} · Moo Docs`, "docs", `<div class="wrap docs">${docsSidebar(d.slug)}<article class="article up"><span class="eyebrow">${d.section}</span><h1>${d.title}</h1><p class="sum">${d.summary}</p><div class="md">${d.html}</div><div class="pn">${prev}${next}</div></article>${docsToc(d.toc)}</div>`)
+}
+
+fn docsHome() {
+    let cards = ""
+    let section = ""
+    let links = ""
+    for (let i = 0; i <= DOCS.length; i = i + 1) {
+        if (i === DOCS.length || DOCS[i].section !== section) {
+            if (section !== "") {
+                cards = cards + `<div class="card"><h3>${section}</h3><ul>${links}</ul></div>`
+            }
+            if (i === DOCS.length) {
+                break
+            }
+            section = DOCS[i].section
+            links = ""
+        }
+        links = links + `<li><a href="/docs/${DOCS[i].slug}">${DOCS[i].title}</a></li>`
+    }
+    return page("Docs · Moo", "docs", `
+<div class="wrap hero" style="padding-bottom:56px">
+<span class="eyebrow up"><b></b>Documentation</span>
+<h2 class="t up d1" style="font-size:clamp(48px,9vw,104px)">Learn <span class="grad">moo</span>.</h2>
+<p class="lede up d2">From your first hotkey to writing plugins. Everything moo does, on a few short pages.</p>
+<div class="ctas up d3"><a class="btn go" href="/docs/${DOCS[0].slug}">Get started →</a><a class="chip" style="text-decoration:none" href="/docs/plugin-api">Plugin API</a></div>
+</div>
+<div class="wrap dhome up d4">${cards}</div>
+`)
+}
+
+// Every docs page, rendered once at startup.
+let DOC_PAGES = { "/docs": docsHome(), "/docs/": docsHome() }
+for (let i = 0; i < DOCS.length; i = i + 1) {
+    DOC_PAGES["/docs/" + DOCS[i].slug] = docPage(i)
+}
 
 let SIGN_IN_FAILED = bare("Sign-in link not recognised · Moo", `
 <img class="mark" src="${ICON_PNG}" alt="Moo">
@@ -436,6 +669,12 @@ fn handle(req) {
     let pages = { "/": HOME, "/index.html": HOME, "/get": GET, "/marketplace": MARKETPLACE, "/legal": LEGAL, "/legal/terms": TERMS, "/legal/privacy": PRIVACY }
     if (req.path in pages) {
         return { status: 200, headers: PAGE_HEADERS, body: pages[req.path] }
+    }
+    if (req.path in PLUG_PAGES) {
+        return { status: 200, headers: PAGE_HEADERS, body: PLUG_PAGES[req.path] }
+    }
+    if (req.path in DOC_PAGES) {
+        return { status: 200, headers: PAGE_HEADERS, body: DOC_PAGES[req.path] }
     }
     return { status: 404, headers: PAGE_HEADERS, body: NOT_FOUND }
 }

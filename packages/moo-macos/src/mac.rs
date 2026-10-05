@@ -1766,3 +1766,60 @@ pub fn watch_apps() -> bool {
         debug_log(&format!("apps reindexed: {n} in {ms:.1} ms"));
     })
 }
+
+// ── moo:// URLs ─────────────────────────────────────────────────────────────
+//
+// Info.plist claims the `moo` scheme (scripts/bundle-macos.sh); macOS delivers each opened URL as
+// a GetURL Apple Event, and a cold launch queues it until this handler is installed.
+
+/// 'GURL', the event class and id of a GetURL Apple Event.
+const K_AE_GET_URL: u32 = u32::from_be_bytes(*b"GURL");
+/// '----', the direct-object keyword holding the URL.
+const KEY_DIRECT_OBJECT: u32 = u32::from_be_bytes(*b"----");
+
+thread_local! {
+    static OPEN_URL: RefCell<Option<Box<dyn Fn(&str)>>> = const { RefCell::new(None) };
+    static URL_TARGET: RefCell<Option<Retained<UrlTarget>>> = const { RefCell::new(None) };
+}
+
+define_class!(
+    #[unsafe(super(NSObject))]
+    #[thread_kind = MainThreadOnly]
+    #[name = "MooUrlTarget"]
+    struct UrlTarget;
+
+    impl UrlTarget {
+        #[unsafe(method(handleGetURL:withReplyEvent:))]
+        fn handle_get_url(&self, event: &AnyObject, _reply: &AnyObject) {
+            let url: Option<String> = unsafe {
+                let desc: *mut AnyObject = msg_send![event, paramDescriptorForKeyword: KEY_DIRECT_OBJECT];
+                desc.as_ref().and_then(|d| {
+                    let s: *mut NSString = msg_send![d, stringValue];
+                    s.as_ref().map(|s| s.to_string())
+                })
+            };
+            if let Some(url) = url {
+                OPEN_URL.with(|h| {
+                    if let Some(h) = h.borrow().as_ref() {
+                        h(&url);
+                    }
+                });
+            }
+        }
+    }
+);
+
+/// Calls `on_url(url)` for every `moo://` URL macOS opens with Moo. Call before the run loop
+/// starts so a URL that launched Moo is not missed.
+pub fn on_open_url(on_url: Box<dyn Fn(&str)>) -> bool {
+    let Some(mtm) = MainThreadMarker::new() else { return false };
+    let Some(cls) = AnyClass::get(c"NSAppleEventManager") else { return false };
+    OPEN_URL.with(|h| *h.borrow_mut() = Some(on_url));
+    let target: Retained<UrlTarget> = unsafe { msg_send![UrlTarget::alloc(mtm), init] };
+    unsafe {
+        let manager: *mut AnyObject = msg_send![cls, sharedAppleEventManager];
+        let _: () = msg_send![manager, setEventHandler: &*target, andSelector: sel!(handleGetURL:withReplyEvent:), forEventClass: K_AE_GET_URL, andEventID: K_AE_GET_URL];
+    }
+    URL_TARGET.with(|t| *t.borrow_mut() = Some(target));
+    true
+}

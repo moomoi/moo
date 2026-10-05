@@ -8,7 +8,7 @@
 
 import { loadModule } from "tish:ffi"
 import { macos, useState } from "tish:macos"
-import { reindex, search, launch, setup, setPanelShape, setArrowKeys, setTheme, typeText, getPref, setPref, searchHistory, addSearchHistory, clearSearchHistory, registerHotkey, quit, hide, appCount, searchFiles, watchApps, fuzzy, pluginPaths, copyText, loadBytecodePlugin, bundleResources, exeDir, recordUse, frecency, statusItem, watchClipboard, clipboardHistory, clearClipboardHistory, aiAvailability, aiSession, aiEndSession, aiPrewarm, aiAsk, aiCancel, aiProviders, aiModels, aiChat, aiChatCancel, aiSetKey, aiLogin, aiCancelLogin, aiLogout, aiAccount, aiSetModel, aiSetClientId, aiSetOrganization, imageIcon, imageFile, setAlias, checkAlias, setDisabled, setPanelKey, setPanelKeys, onPluginRefresh, siteIcon, symbolIcon, fileIndexStart, findFiles, recentFiles, queryFiles, runningApps, systemInfo, calculate, define, dictionaryWarm, webSuggest, contactsAccess, contactsRequest, searchContacts, systemCommand, appAction, arrangeWindow, selectedText, watchSnippets, replaceTyped, trashFile, appsFor, openWith, quickLook, quickLookVisible, searchContents, accessibilityTrusted, fileIcon, revealFile, fileIndexStatus, show, toggle, unregisterHotkey, checkHotkey, hotkeyDisplay, recordHotkey, loadShortcuts, saveShortcut, checkKeyword, ensureShortcutsFile, removeShortcut, bindHotkey, unbindHotkey, setLauncherHotkey, expandTemplate, watchShortcuts, runShell, cliMain, cliServe, cliWrite, cliEnd, cliUsage } from "tish:moo"
+import { reindex, search, launch, setup, setPanelShape, setArrowKeys, setTheme, typeText, getPref, setPref, searchHistory, addSearchHistory, clearSearchHistory, registerHotkey, quit, hide, appCount, searchFiles, watchApps, fuzzy, pluginPaths, copyText, loadBytecodePlugin, bundleResources, exeDir, recordUse, frecency, statusItem, watchClipboard, onOpenUrl, clipboardHistory, clearClipboardHistory, aiAvailability, aiSession, aiEndSession, aiPrewarm, aiAsk, aiCancel, aiProviders, aiModels, aiChat, aiChatCancel, aiSetKey, aiLogin, aiCancelLogin, aiLogout, aiAccount, aiSetModel, aiSetClientId, aiSetOrganization, imageIcon, imageFile, setAlias, checkAlias, setDisabled, setPanelKey, setPanelKeys, onPluginRefresh, siteIcon, symbolIcon, fileIndexStart, findFiles, recentFiles, queryFiles, runningApps, systemInfo, calculate, define, dictionaryWarm, webSuggest, contactsAccess, contactsRequest, searchContacts, systemCommand, appAction, arrangeWindow, selectedText, watchSnippets, replaceTyped, trashFile, appsFor, openWith, quickLook, quickLookVisible, searchContents, accessibilityTrusted, fileIcon, revealFile, fileIndexStatus, show, toggle, unregisterHotkey, checkHotkey, hotkeyDisplay, recordHotkey, loadShortcuts, saveShortcut, checkKeyword, ensureShortcutsFile, removeShortcut, bindHotkey, unbindHotkey, setLauncherHotkey, expandTemplate, watchShortcuts, runShell, cliMain, cliServe, cliWrite, cliEnd, cliUsage } from "tish:moo"
 import { env } from "tish:process"
 import { THEME } from "./theme.tish"
 
@@ -7049,6 +7049,29 @@ for (let i = 0; i < config.warnings.length; i = i + 1) {
   console.log("moo: shortcuts: " + config.warnings[i])
 }
 watchShortcuts(onShortcutsChanged)
+// moo:// URLs, from the marketplace on moo.moi. moo://plugins/<id> shows the launcher with that
+// plugin's commands; plugins can't be installed from the web yet, so an unknown id says so.
+fn onUrl(url) {
+  let rest = url.indexOf("://") >= 0 ? url.slice(url.indexOf("://") + 3) : url
+  let parts = rest.split("?")[0].split("/").filter((p) => p !== "")
+  leaveToRoot()
+  show()
+  if (parts.length >= 2 && (parts[0] === "plugins" || parts[0] === "plugin")) {
+    let id = parts[1]
+    let found = commands.filter((c) => c.plugin && c.path.indexOf("plugin:" + id + "/") === 0)
+    if (found.length > 0) {
+      setQuery(found[0].pluginTitle)
+      return
+    }
+    setQuery("")
+    shell.hud = "The “" + id + "” plugin isn't installed"
+    refresh()
+    return
+  }
+  setQuery("")
+}
+onOpenUrl(onUrl)
+
 let served = cliServe(onCli)
 console.log("moo: " + config.shortcuts.length + " shortcuts, " + hotkeyStatus.length + " hotkeys; cli " + (served.ok ? served.path : served.error))
 

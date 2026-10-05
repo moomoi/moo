@@ -45,6 +45,11 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>CFBundleVersion</key><string>$BUILD</string>
   <key>LSMinimumSystemVersion</key><string>14.0</string>
   <key>LSUIElement</key><true/>
+  <key>CFBundleURLTypes</key>
+  <array><dict>
+    <key>CFBundleURLName</key><string>$BUNDLE_ID</string>
+    <key>CFBundleURLSchemes</key><array><string>moo</string></array>
+  </dict></array>
   <key>NSHighResolutionCapable</key><true/>
   <key>NSContactsUsageDescription</key><string>Moo searches your contacts when you type a name.</string>
 </dict>

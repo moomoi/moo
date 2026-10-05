@@ -1,0 +1,396 @@
+// Renders web/docs/**/*.md into web/src/docs.tish, which the moo.moi server imports. The server is
+// a native binary with no filesystem access and its pages carry no script, so the docs are turned
+// into HTML here, at build time, the way scripts/make-icons.sh turns the icon into data URIs.
+//
+// Run from web/: tish run --feature fs gen-docs.tish   (build.sh does this before building)
+//
+// Layout: docs/<NN-section>/<NN-slug>.md. The number prefixes set the order and are dropped from
+// URLs. Each page starts with frontmatter:
+//
+//   ---
+//   title: Install
+//   summary: One line under the title and on the docs home.
+//   ---
+//
+// The markdown is a small, strict subset: # / ## / ### headings, paragraphs, - and 1. lists,
+// | tables |, ``` fenced code (with a language), --- rules, and > blockquotes, which become
+// callouts when they open with **Note**, **Tip** or **Warning**. Inline: `code`, **bold**,
+// *italic*, [links](url) and [[⌘ Space]] for keycaps (each space-separated key gets a <kbd>).
+
+import { readFile, writeFile, readDir } from "fs"
+
+let DIGITS = "0123456789"
+
+fn esc(s) {
+    return s.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;")
+}
+
+// "02-first-launch" -> "first-launch"
+fn stripOrder(name) {
+    let i = 0
+    while (i < name.length && DIGITS.indexOf(name[i]) >= 0) {
+        i = i + 1
+    }
+    return i > 0 && name[i] === "-" ? name.slice(i + 1) : name
+}
+
+// Heading text -> an id: lower case, letters and digits, dashes between words.
+fn slugify(text) {
+    let out = ""
+    let dash = false
+    let lower = text.toLowerCase()
+    for (let i = 0; i < lower.length; i = i + 1) {
+        let c = lower[i]
+        if ((c >= "a" && c <= "z") || (c >= "0" && c <= "9")) {
+            if (dash && out.length > 0) {
+                out = out + "-"
+            }
+            out = out + c
+            dash = false
+        } else {
+            dash = true
+        }
+    }
+    return out
+}
+
+fn keycaps(text) {
+    let keys = text.trim().split(" ")
+    let out = ""
+    for (let i = 0; i < keys.length; i = i + 1) {
+        if (keys[i] !== "") {
+            out = out + "<kbd>" + esc(keys[i]) + "</kbd>"
+        }
+    }
+    return out
+}
+
+// Inline markdown -> HTML. Everything that isn't markup is escaped.
+fn inline(s) {
+    let out = ""
+    let i = 0
+    while (i < s.length) {
+        let c = s[i]
+        if (c === "`") {
+            let end = s.indexOf("`", i + 1)
+            if (end > i) {
+                out = out + "<code>" + esc(s.slice(i + 1, end)) + "</code>"
+                i = end + 1
+                continue
+            }
+        }
+        if (c === "[" && s[i + 1] === "[") {
+            let end = s.indexOf("]]", i + 2)
+            if (end > i) {
+                out = out + keycaps(s.slice(i + 2, end))
+                i = end + 2
+                continue
+            }
+        }
+        if (c === "[") {
+            let mid = s.indexOf("](", i + 1)
+            let end = mid > i ? s.indexOf(")", mid + 2) : -1
+            if (mid > i && end > mid) {
+                let href = s.slice(mid + 2, end)
+                let ext = href.startsWith("http") ? ` rel="noopener"` : ""
+                out = out + `<a href="${esc(href)}"${ext}>` + inline(s.slice(i + 1, mid)) + "</a>"
+                i = end + 1
+                continue
+            }
+        }
+        if (c === "*" && s[i + 1] === "*") {
+            let end = s.indexOf("**", i + 2)
+            if (end > i) {
+                out = out + "<strong>" + inline(s.slice(i + 2, end)) + "</strong>"
+                i = end + 2
+                continue
+            }
+        }
+        if (c === "*" && s[i + 1] !== " ") {
+            let end = s.indexOf("*", i + 1)
+            if (end > i + 1) {
+                out = out + "<em>" + inline(s.slice(i + 1, end)) + "</em>"
+                i = end + 1
+                continue
+            }
+        }
+        out = out + esc(c)
+        i = i + 1
+    }
+    return out
+}
+
+// ── Code highlighting: a small tokenizer, enough to colour comments, strings, numbers and keywords ──
+
+let KEYWORDS = {
+    tish: ["let", "const", "fn", "return", "if", "else", "for", "while", "import", "from", "export", "true", "false", "null", "continue", "break", "new"],
+    json: ["true", "false", "null"],
+    sh: ["export", "cd", "bash", "brew", "moo", "tish", "git", "ln", "open", "curl", "echo", "if", "then", "fi"]
+}
+
+fn isWordChar(c) {
+    return (c >= "a" && c <= "z") || (c >= "A" && c <= "Z") || (c >= "0" && c <= "9") || c === "_" || c === "$"
+}
+
+fn span(cls, text) {
+    return `<span class="${cls}">` + esc(text) + "</span>"
+}
+
+fn highlight(code, lang) {
+    let words = lang in KEYWORDS ? KEYWORDS[lang] : null
+    if (words === null) {
+        return esc(code)
+    }
+    let hash = lang === "sh"
+    let out = ""
+    let i = 0
+    while (i < code.length) {
+        let c = code[i]
+        if ((c === "/" && code[i + 1] === "/" && !hash) || (c === "#" && hash && (i === 0 || code[i - 1] === " " || code[i - 1] === "\n"))) {
+            let end = code.indexOf("\n", i)
+            end = end < 0 ? code.length : end
+            out = out + span("c", code.slice(i, end))
+            i = end
+            continue
+        }
+        if (c === '"' || c === "'" || c === "`") {
+            let j = i + 1
+            while (j < code.length && code[j] !== c && code[j] !== "\n") {
+                j = j + (code[j] === "\\" ? 2 : 1)
+            }
+            let end = j < code.length && code[j] === c ? j + 1 : j
+            let cls = lang === "json" && code.slice(end).trimStart().startsWith(":") ? "k" : "s"
+            out = out + span(cls, code.slice(i, end))
+            i = end
+            continue
+        }
+        if (isWordChar(c)) {
+            let j = i
+            while (j < code.length && (isWordChar(code[j]) || (code[j] === "." && DIGITS.indexOf(code[i]) >= 0))) {
+                j = j + 1
+            }
+            let w = code.slice(i, j)
+            let before = i === 0 ? "" : code[i - 1]
+            if (DIGITS.indexOf(w[0]) >= 0) {
+                out = out + span("n", w)
+            } else if (words.indexOf(w) >= 0 && before !== "." && before !== "-") {
+                out = out + span("k", w)
+            } else if (code[j] === "(" && lang === "tish") {
+                out = out + span("f", w)
+            } else {
+                out = out + esc(w)
+            }
+            i = j
+            continue
+        }
+        out = out + esc(c)
+        i = i + 1
+    }
+    return out
+}
+
+// ── Blocks ──
+
+fn isTableRow(line) {
+    return line.trim().startsWith("|")
+}
+
+fn cells(line) {
+    let t = line.trim()
+    t = t.slice(1, t.endsWith("|") ? t.length - 1 : t.length)
+    let parts = t.split("|")
+    let out = []
+    for (let i = 0; i < parts.length; i = i + 1) {
+        out.push(parts[i].trim())
+    }
+    return out
+}
+
+fn isOrdered(line) {
+    let dot = line.indexOf(". ")
+    if (dot < 1 || dot > 3) {
+        return false
+    }
+    for (let i = 0; i < dot; i = i + 1) {
+        if (DIGITS.indexOf(line[i]) < 0) {
+            return false
+        }
+    }
+    return true
+}
+
+fn isBullet(line) {
+    return line.startsWith("- ")
+}
+
+fn startsBlock(line) {
+    return line.startsWith("#") || line.startsWith("```") || line.startsWith("> ") || line === ">" || isBullet(line) || isOrdered(line) || isTableRow(line) || line.trim() === "---"
+}
+
+// Markdown body -> { html, toc }. `toc` lists the ## and ### headings as { level, id, text }.
+fn render(body) {
+    let lines = body.split("\n")
+    let html = ""
+    let toc = []
+    let i = 0
+    while (i < lines.length) {
+        let line = lines[i]
+        if (line.trim() === "") {
+            i = i + 1
+            continue
+        }
+        if (line.startsWith("```")) {
+            let lang = line.slice(3).trim()
+            let code = []
+            i = i + 1
+            while (i < lines.length && !lines[i].startsWith("```")) {
+                code.push(lines[i])
+                i = i + 1
+            }
+            i = i + 1
+            let label = lang !== "" ? `<span class="lang">${esc(lang)}</span>` : ""
+            html = html + `<div class="code">${label}<pre><code>${highlight(code.join("\n"), lang)}</code></pre></div>`
+            continue
+        }
+        if (line.startsWith("#")) {
+            let level = 0
+            while (line[level] === "#") {
+                level = level + 1
+            }
+            let text = line.slice(level).trim()
+            if (level === 1) {
+                html = html + `<h2>${inline(text)}</h2>`
+            } else {
+                let id = slugify(text.replaceAll("`", ""))
+                toc.push({ level: level, id: id, text: inline(text) })
+                html = html + `<h${level} id="${id}"><a class="anchor" href="#${id}">#</a>${inline(text)}</h${level}>`
+            }
+            i = i + 1
+            continue
+        }
+        if (line.trim() === "---") {
+            html = html + "<hr>"
+            i = i + 1
+            continue
+        }
+        if (line.startsWith(">")) {
+            let quoted = []
+            while (i < lines.length && lines[i].startsWith(">")) {
+                quoted.push(lines[i].slice(1).trim())
+                i = i + 1
+            }
+            let text = quoted.join("\n")
+            let kind = ""
+            let kinds = ["Note", "Tip", "Warning"]
+            for (let k = 0; k < kinds.length; k = k + 1) {
+                if (text.startsWith("**" + kinds[k] + "**")) {
+                    kind = kinds[k]
+                    text = text.slice(kinds[k].length + 4).trim()
+                }
+            }
+            let inner = render(text).html
+            html = html + (kind !== ""
+                ? `<aside class="callout ${kind.toLowerCase()}"><b>${kind}</b>${inner}</aside>`
+                : `<blockquote>${inner}</blockquote>`)
+            continue
+        }
+        if (isBullet(line) || isOrdered(line)) {
+            let ordered = isOrdered(line)
+            let items = []
+            while (i < lines.length && (ordered ? isOrdered(lines[i]) : isBullet(lines[i]))) {
+                let item = lines[i].slice(lines[i].indexOf(" ") + 1)
+                i = i + 1
+                // Indented lines continue the item.
+                while (i < lines.length && lines[i].startsWith("  ") && lines[i].trim() !== "") {
+                    item = item + " " + lines[i].trim()
+                    i = i + 1
+                }
+                items.push("<li>" + inline(item) + "</li>")
+            }
+            let tag = ordered ? "ol" : "ul"
+            html = html + `<${tag}>${items.join("")}</${tag}>`
+            continue
+        }
+        if (isTableRow(line)) {
+            let head = cells(line)
+            i = i + 2 // the header row and the |---| row
+            let rows = ""
+            while (i < lines.length && isTableRow(lines[i])) {
+                let r = cells(lines[i])
+                let tds = ""
+                for (let c = 0; c < r.length; c = c + 1) {
+                    tds = tds + "<td>" + inline(r[c]) + "</td>"
+                }
+                rows = rows + "<tr>" + tds + "</tr>"
+                i = i + 1
+            }
+            let ths = ""
+            for (let c = 0; c < head.length; c = c + 1) {
+                ths = ths + "<th>" + inline(head[c]) + "</th>"
+            }
+            html = html + `<div class="table"><table><thead><tr>${ths}</tr></thead><tbody>${rows}</tbody></table></div>`
+            continue
+        }
+        let para = [line.trim()]
+        i = i + 1
+        while (i < lines.length && lines[i].trim() !== "" && !startsBlock(lines[i])) {
+            para.push(lines[i].trim())
+            i = i + 1
+        }
+        html = html + "<p>" + inline(para.join(" ")) + "</p>"
+    }
+    return { html: html, toc: toc }
+}
+
+fn frontmatter(raw) {
+    let meta = { title: "", summary: "", body: raw }
+    if (!raw.startsWith("---\n")) {
+        return meta
+    }
+    let end = raw.indexOf("\n---\n", 4)
+    if (end < 0) {
+        return meta
+    }
+    let lines = raw.slice(4, end).split("\n")
+    for (let i = 0; i < lines.length; i = i + 1) {
+        let colon = lines[i].indexOf(":")
+        if (colon > 0) {
+            meta[lines[i].slice(0, colon).trim()] = lines[i].slice(colon + 1).trim()
+        }
+    }
+    meta.body = raw.slice(end + 5)
+    return meta
+}
+
+fn sorted(list) {
+    let out = list.slice(0)
+    out.sort()
+    return out
+}
+
+// Section folders carry their display name in _section.txt; pages are every other .md file.
+let docs = []
+let sections = sorted(readDir("docs"))
+for (let s = 0; s < sections.length; s = s + 1) {
+    let dir = "docs/" + sections[s]
+    let names = sorted(readDir(dir))
+    let sectionTitle = readFile(dir + "/_section.txt").trim()
+    for (let p = 0; p < names.length; p = p + 1) {
+        if (!names[p].endsWith(".md")) {
+            continue
+        }
+        let meta = frontmatter(readFile(dir + "/" + names[p]))
+        let out = render(meta.body)
+        docs.push({
+            slug: stripOrder(names[p].slice(0, names[p].length - 3)),
+            section: sectionTitle,
+            title: meta.title,
+            summary: meta.summary,
+            html: out.html,
+            toc: out.toc
+        })
+    }
+}
+
+writeFile("src/docs.tish", "// Generated by web/gen-docs.tish from web/docs/. Do not edit.\nexport let DOCS = " + JSON.stringify(docs) + "\n")
+console.log("docs: " + docs.length + " pages -> src/docs.tish")

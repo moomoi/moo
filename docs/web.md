@@ -9,7 +9,9 @@ script.
 | `/` | Landing page |
 | `/get` | Download page (the button goes to `/download`) |
 | `/download` | `302` to the latest DMG on GitHub |
-| `/marketplace` | Plugin marketplace (static list in `main.tish`) |
+| `/docs`, `/docs/<page>` | User documentation (below) |
+| `/marketplace` | Plugin marketplace (the `PLUGINS` list in `main.tish`) |
+| `/marketplace/<id>` | A plugin's page; Install opens `moo://plugins/<id>` |
 | `/legal`, `/legal/terms`, `/legal/privacy` | Legal pages |
 | `/callback` | Sign-in relay (below) |
 | `/health` | `200 ok`, for load balancers |
@@ -36,6 +38,19 @@ redeemed without the verifier, which never leaves the Mac.
 Moo picks the redirect from the provider's `redirectUri` in `shortcuts.json`, then
 `MOO_HYPERY_REDIRECT`, then the built-in `https://moo.moi/callback`. The client id comes from
 `MOO_HYPERY_CLIENT_ID` or the built-in one.
+
+## Docs
+
+The user docs at `/docs` are written as markdown in `web/docs/<NN-section>/<NN-page>.md`. Each
+section folder has a `_section.txt` holding its name, and each page starts with `title` and
+`summary` frontmatter. Number prefixes set the order and are dropped from URLs, so
+`web/docs/02-using/03-clipboard.md` is `/docs/clipboard`.
+
+The server has no filesystem access and its pages carry no script, so `web/gen-docs.tish` renders
+the markdown at build time into `web/src/docs.tish` (generated; don't edit). `build.sh` runs it
+first, or run it alone with `tish run --feature fs gen-docs.tish` from `web/`. The header of
+`gen-docs.tish` lists the markdown it understands, including `> **Tip**` callouts and `[[⌘ K]]`
+keycaps. Code blocks are highlighted for `tish`, `json` and `sh`.
 
 ## Build and run
 

@@ -1280,6 +1280,25 @@ mod natives {
         Value::Bool(mac::status_item(&str_arg(args, 0), &str_arg(args, 1), handler))
     }
 
+    /// `onOpenUrl(cb)`: `cb(url)` for each `moo://` URL opened with Moo (a marketplace Install
+    /// button, say). Call it before the run loop starts.
+    pub fn on_open_url(args: &[Value]) -> Value {
+        thread_local! {
+            static ON_URL: std::cell::RefCell<Option<Value>> = const { std::cell::RefCell::new(None) };
+        }
+        ON_URL.with(|c| *c.borrow_mut() = args.first().cloned());
+        let handler = Box::new(|url: &str| {
+            let url = url.to_string();
+            dispatch2::DispatchQueue::main().exec_async(move || {
+                let Some(Value::Function(f)) = ON_URL.with(|c| c.borrow().clone()) else { return };
+                mac::with_ui(|| {
+                    let _ = f.call(&[s(&url)]);
+                });
+            });
+        });
+        Value::Bool(mac::on_open_url(handler))
+    }
+
     /// `watchClipboard()`: start recording text clipboard history (in memory only).
     pub fn watch_clipboard(_a: &[Value]) -> Value {
         Value::Bool(clip::watch())
@@ -1573,6 +1592,7 @@ mod natives {
     pub fn watch_apps(_a: &[Value]) -> Value { Value::Bool(false) }
     pub fn status_item(_a: &[Value]) -> Value { Value::Bool(false) }
     pub fn watch_clipboard(_a: &[Value]) -> Value { Value::Bool(false) }
+    pub fn on_open_url(_a: &[Value]) -> Value { Value::Bool(false) }
     pub fn clipboard_history(_a: &[Value]) -> Value { Value::Array(VmRef::new(Vec::new())) }
     pub fn clear_clipboard_history(_a: &[Value]) -> Value { Value::Null }
     pub fn ai_availability(_a: &[Value]) -> Value { Value::String("macOS only".into()) }
@@ -1691,6 +1711,7 @@ pub fn moo_object() -> Value {
     m.insert(Arc::from("frecency"), Value::native(native_frecency));
     m.insert(Arc::from("statusItem"), Value::native(natives::status_item));
     m.insert(Arc::from("watchClipboard"), Value::native(natives::watch_clipboard));
+    m.insert(Arc::from("onOpenUrl"), Value::native(natives::on_open_url));
     m.insert(Arc::from("clipboardHistory"), Value::native(natives::clipboard_history));
     m.insert(Arc::from("clearClipboardHistory"), Value::native(natives::clear_clipboard_history));
     m.insert(Arc::from("aiAvailability"), Value::native(natives::ai_availability));
