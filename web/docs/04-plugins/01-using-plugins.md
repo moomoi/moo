@@ -8,11 +8,15 @@ A plugin's commands show up in root search next to everything else. Some take ar
 
 | Plugin | Adds |
 | --- | --- |
+| Dev Toolbox | Base64, URLs, JWTs, JSON, hashes, colors, timestamps, lorem ipsum (`dev`) |
+| GitHub | Your pull requests, reviews, issues, notifications; repository search (`gh`) |
+| Package Search | npm, crates.io, Homebrew and PyPI (`npm`, `crate`, `brew`, `pip`) |
+| Weather | Now and the next 7 days (`weather paris`) |
+| Slack | Send messages, search, open channels (`slack`) |
 | Unit Converter | A list of every conversion for what you typed |
-| Slack | Send messages, search, open channels |
 | Moo Utils | Generate UUID, Search Emoji, Developer Links |
 
-Browse them all in the [marketplace](/marketplace). **Install** on a plugin's page opens moo at that plugin's commands, through moo's `moo://` link (`moo://plugins/<id>`).
+Browse them all in the [marketplace](/marketplace). Their source is public at [moomoi/plugins](https://github.com/moomoi/plugins). **Install** on a plugin's page opens moo at that plugin's commands, through moo's `moo://` link (`moo://plugins/<id>`).
 
 ## Installing more
 

@@ -27,6 +27,8 @@ jobs:
       MOO_SIGN_IDENTITY: "-"
     steps:
       - uses: actions/checkout@v7
+        with:
+          submodules: true
 
       - uses: ./.github/actions/toolchain
 

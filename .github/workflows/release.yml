@@ -81,6 +81,8 @@ jobs:
       HAS_APPLE_CERT: ${{ secrets.APPLE_CERTIFICATE != '' }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          submodules: true
 
       # A prerelease is a download; one Gatekeeper refuses to open is worse than none.
       - name: Refuse to release unsigned

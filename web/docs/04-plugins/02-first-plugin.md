@@ -2,7 +2,7 @@
 title: Your first plugin
 summary: A working list plugin in about twenty lines of Tish.
 ---
-Plugins are written in [Tish](https://tishlang.com), a small JavaScript-like language that compiles to bytecode or native code.
+Plugins are written in [Tish](https://github.com/tishlang/tish), a small JavaScript-like language that compiles to bytecode or native code. The quickest start is to clone [moomoi/plugins](https://github.com/moomoi/plugins), which has every official plugin to learn from and a `build.sh` that builds them all.
 
 ## Layout
 

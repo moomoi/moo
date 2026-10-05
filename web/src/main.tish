@@ -294,7 +294,7 @@ let ICON_PUZZLE = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" st
 
 fn nav(active) {
     let on = (name) => active === name ? ` class="on"` : ""
-    return `<nav><div class="in"><a class="brand" href="/"><img src="${ICON_PNG}" alt="">moo</a><div class="links"><a href="/docs"${on("docs")}>Docs</a><a href="/marketplace"${on("market")}>Marketplace</a><a class="hide" href="${REPO_URL}">GitHub</a><a class="pill" href="/get">Download</a></div></div></nav>`
+    return `<nav><div class="in"><a class="brand" href="/"><img src="${ICON_PNG}" alt="">moo</a><div class="links"><a href="/docs"${on("docs")}>Docs</a><a href="/marketplace"${on("market")}>Marketplace</a><a class="hide" href="https://github.com/moomoi/plugins">GitHub</a><a class="pill" href="/get">Download</a></div></div></nav>`
 }
 
 let FOOTER = `<footer><div class="wrap in"><span>© Moo · Made for the Mac, by keyboard.</span><span><a href="/get">Download</a><a href="/docs">Docs</a><a href="/marketplace">Marketplace</a><a href="/legal/terms">Terms</a><a href="/legal/privacy">Privacy</a></span></div><div class="mega">moo</div></footer>`
@@ -375,6 +375,22 @@ let GET = page("Download · Moo", "get", `
 // The plugins that ship in this repo (plugins/). `commands` are [title, what it does]; `network`
 // is the manifest's permissions.network. Install opens moo://plugins/<id> (app/src/main.tish onUrl).
 let PLUGINS = [
+    { id: "devtools", glyph: "⌘", name: "Dev Toolbox", by: "moo", tag: "core", tier: "A", network: [],
+      text: "Base64, URLs, JWTs, JSON, hashes, colors and timestamps. Paste anything, copy the answer.",
+      about: "Type <code>dev</code> and paste. Dev Toolbox works out what you gave it and offers every transform that fits: decode a JWT and see when it expires, pretty-print or minify JSON, Base64 and URL encode or decode, SHA-1 and SHA-256, convert colors between hex, RGB and HSL, turn Unix timestamps into dates and back, or generate lorem ipsum. Everything runs offline in the sandbox.",
+      commands: [["Dev Toolbox", "dev, then paste anything"], ["Convert Timestamp", "ts 1767225600 · ts now"], ["Generate Lorem Ipsum", "lorem 3"]] },
+    { id: "github", glyph: "⑂", name: "GitHub", by: "moo", tag: "core", tier: "A", network: ["api.github.com"],
+      text: "Your pull requests, review requests, issues and notifications, and repository search.",
+      about: "Everything waiting on you, one keystroke away: your open pull requests, the reviews you've been asked for, issues assigned to you and your notifications. Type <code>gh</code> and a name to search repositories. Sign in with a personal access token; moo opens GitHub's token page with the right scopes and keeps the token in your Keychain.",
+      commands: [["Search GitHub Repositories", "gh moo"], ["My Pull Requests", "Open PRs you wrote"], ["Review Requests", "PRs waiting on your review"], ["My GitHub Issues", "Assigned to you"], ["GitHub Notifications", "Your inbox"], ["Add GitHub Token", "One-time setup"], ["Sign Out of GitHub", ""]] },
+    { id: "packages", glyph: "▣", name: "Package Search", by: "moo", tag: "core", tier: "A", network: ["registry.npmjs.org", "crates.io", "formulae.brew.sh", "pypi.org"],
+      text: "npm, crates.io, Homebrew and PyPI. Open the page or copy the install command.",
+      about: "Look up a package without opening a browser. Search npm and crates.io by keyword, or look up a Homebrew formula or cask and a PyPI project by name. Each result shows its latest version and description; Return opens its page, and the row under it copies <code>npm i</code>, <code>cargo add</code>, <code>brew install</code> or <code>pip install</code>.",
+      commands: [["Search npm", "npm react"], ["Search crates.io", "crate serde"], ["Search Homebrew", "brew ripgrep"], ["Search PyPI", "pip requests"]] },
+    { id: "weather", glyph: "☀", name: "Weather", by: "moo", tag: "core", tier: "A", network: ["api.open-meteo.com", "geocoding-api.open-meteo.com"],
+      text: "Now and the next 7 days for any city. No account, no API key.",
+      about: "Type <code>weather</code> and a city for the current conditions and a 7-day forecast, with the chance of rain. Add <code>f</code> or <code>c</code> to switch units. moo remembers your last city, so <code>weather</code> on its own is all you need. Forecasts come from Open-Meteo.",
+      commands: [["Weather", "weather paris · weather tokyo f"]] },
     { id: "convert", glyph: "⇄", name: "Unit Converter", by: "moo", tag: "core", tier: "A", network: [],
       text: "Length, mass, volume, data and more. Type “5 mi in km” and copy the answer.",
       about: "Every conversion for what you typed, as a list you can scroll and copy from. It covers length, mass, volume, data sizes and temperature. It runs entirely in its sandbox, with no network and no files.",
@@ -416,7 +432,7 @@ let MARKETPLACE = page("Marketplace · Moo", "market", `
 </div>
 <div class="wrap market up d3">
 ${plugCards()}
-<a class="card plug ghost" href="/docs/first-plugin"><div class="glyph">${ICON_PUZZLE}</div><h3 style="margin-top:16px">Build a plugin</h3><p style="flex:none;margin:6px 0 0">Write it in Tish. Publish it here.</p></a>
+<a class="card plug ghost" href="/docs/first-plugin"><div class="glyph">${ICON_PUZZLE}</div><h3 style="margin-top:16px">Build a plugin</h3><p style="flex:none;margin:6px 0 0">Write it in Tish. Open a PR on moomoi/plugins.</p></a>
 </div>
 `)
 
@@ -429,7 +445,7 @@ fn plugPage(p) {
     let access = p.tier === "A"
         ? (p.network.length > 0 ? `Network: <code>${p.network.join("</code>, <code>")}</code> only` : "None. No files, no network")
         : "Full (first-party native plugin)"
-    let docs = p.docs ? `<a class="btn ghost" href="${p.docs}">Read the docs</a>` : ""
+    let docs = (p.docs ? `<a class="btn ghost" href="${p.docs}">Read the docs</a> ` : "") + `<a class="btn ghost" href="https://github.com/moomoi/plugins/tree/main/${p.id}">View source</a>`
     return page(`${p.name} · Moo Marketplace`, "market", `
 <div class="wrap pdp">
 <a class="back" href="/marketplace">← Marketplace</a>
@@ -449,6 +465,7 @@ ${docs}
 <div><span>Access</span><b>${access}</b></div>
 <div><span>Author</span><b>${p.by}</b></div>
 <div><span>Price</span><b>Free</b></div>
+<div><span>Source</span><b><a href="https://github.com/moomoi/plugins/tree/main/${p.id}" style="color:inherit">moomoi/plugins</a></b></div>
 </aside>
 </div>
 </div>
