@@ -1403,6 +1403,14 @@ mod natives {
         Value::String(siteicon::image_icon(&str_arg(args, 0), cb).as_str().into())
     }
 
+    /// `imageFile(path, template)` -> an image name for `<image src>` (or `statusItem`) showing
+    /// the image file at `path`, or "" when there is no image there. A `template` image takes the
+    /// view's `tint`, like an SF Symbol.
+    pub fn image_file(args: &[Value]) -> Value {
+        let template = matches!(args.get(1), Some(Value::Bool(true)));
+        Value::String(siteicon::image_file(&str_arg(args, 0), template).as_str().into())
+    }
+
     /// `onPluginRefresh(cb)`: `cb()` whenever a plugin calls `moo.refresh()` (new data arrived).
     pub fn on_plugin_refresh(args: &[Value]) -> Value {
         pluginhost::on_refresh(callback(args, 0));
@@ -1518,6 +1526,7 @@ mod natives {
     pub fn symbol_icon(_a: &[Value]) -> Value { Value::String("".into()) }
     pub fn site_icon(_a: &[Value]) -> Value { Value::String("".into()) }
     pub use site_icon as image_icon;
+    pub use symbol_icon as image_file;
     pub fn on_plugin_refresh(_a: &[Value]) -> Value { Value::Null }
 }
 
@@ -1628,6 +1637,7 @@ pub fn moo_object() -> Value {
     m.insert(Arc::from("symbolIcon"), Value::native(natives::symbol_icon));
     m.insert(Arc::from("siteIcon"), Value::native(natives::site_icon));
     m.insert(Arc::from("imageIcon"), Value::native(natives::image_icon));
+    m.insert(Arc::from("imageFile"), Value::native(natives::image_file));
     m.insert(Arc::from("onPluginRefresh"), Value::native(natives::on_plugin_refresh));
     m.insert(Arc::from("aiSetOrganization"), Value::native(natives::ai_set_organization));
     Value::object(m)

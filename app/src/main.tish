@@ -8,7 +8,7 @@
 
 import { loadModule } from "tish:ffi"
 import { macos, useState } from "tish:macos"
-import { reindex, search, launch, setup, setPanelShape, setArrowKeys, setTheme, typeText, getPref, setPref, searchHistory, addSearchHistory, clearSearchHistory, registerHotkey, quit, hide, appCount, searchFiles, watchApps, fuzzy, pluginPaths, copyText, loadBytecodePlugin, bundleResources, recordUse, frecency, statusItem, watchClipboard, clipboardHistory, clearClipboardHistory, aiAvailability, aiSession, aiEndSession, aiPrewarm, aiAsk, aiCancel, aiProviders, aiModels, aiChat, aiChatCancel, aiSetKey, aiLogin, aiCancelLogin, aiLogout, aiAccount, aiSetModel, aiSetClientId, aiSetOrganization, imageIcon, onPluginRefresh, siteIcon, symbolIcon, fileIndexStart, findFiles, recentFiles, queryFiles, runningApps, systemInfo, calculate, define, dictionaryWarm, webSuggest, contactsAccess, contactsRequest, searchContacts, systemCommand, appAction, arrangeWindow, selectedText, watchSnippets, replaceTyped, trashFile, appsFor, openWith, quickLook, quickLookVisible, searchContents, accessibilityTrusted, fileIcon, revealFile, fileIndexStatus, show, toggle, unregisterHotkey, checkHotkey, hotkeyDisplay, recordHotkey, loadShortcuts, saveShortcut, checkKeyword, ensureShortcutsFile, removeShortcut, bindHotkey, unbindHotkey, setLauncherHotkey, expandTemplate, watchShortcuts, runShell, cliMain, cliServe, cliWrite, cliEnd, cliUsage } from "tish:moo"
+import { reindex, search, launch, setup, setPanelShape, setArrowKeys, setTheme, typeText, getPref, setPref, searchHistory, addSearchHistory, clearSearchHistory, registerHotkey, quit, hide, appCount, searchFiles, watchApps, fuzzy, pluginPaths, copyText, loadBytecodePlugin, bundleResources, recordUse, frecency, statusItem, watchClipboard, clipboardHistory, clearClipboardHistory, aiAvailability, aiSession, aiEndSession, aiPrewarm, aiAsk, aiCancel, aiProviders, aiModels, aiChat, aiChatCancel, aiSetKey, aiLogin, aiCancelLogin, aiLogout, aiAccount, aiSetModel, aiSetClientId, aiSetOrganization, imageIcon, imageFile, onPluginRefresh, siteIcon, symbolIcon, fileIndexStart, findFiles, recentFiles, queryFiles, runningApps, systemInfo, calculate, define, dictionaryWarm, webSuggest, contactsAccess, contactsRequest, searchContacts, systemCommand, appAction, arrangeWindow, selectedText, watchSnippets, replaceTyped, trashFile, appsFor, openWith, quickLook, quickLookVisible, searchContents, accessibilityTrusted, fileIcon, revealFile, fileIndexStatus, show, toggle, unregisterHotkey, checkHotkey, hotkeyDisplay, recordHotkey, loadShortcuts, saveShortcut, checkKeyword, ensureShortcutsFile, removeShortcut, bindHotkey, unbindHotkey, setLauncherHotkey, expandTemplate, watchShortcuts, runShell, cliMain, cliServe, cliWrite, cliEnd, cliUsage } from "tish:moo"
 import { env } from "tish:process"
 import { THEME } from "./theme.tish"
 
@@ -104,6 +104,24 @@ if (env.MOO_HOTKEY) {
 }
 let resources = bundleResources()
 let PLUGIN_DIR = env.MOO_PLUGINS ? env.MOO_PLUGINS : (resources ? resources + "/plugins" : "../plugins/dist")
+let ASSET_DIR = resources ? resources : "../packaging"
+let appIcon = imageFile(ASSET_DIR + "/" + THEME.appIcon)
+let statusIcon = imageFile(ASSET_DIR + "/" + THEME.statusIcon, true)
+if (statusIcon === "") {
+  statusIcon = THEME.statusSymbol
+}
+let fieldIcon = imageFile(ASSET_DIR + "/" + THEME.icon.searchImage, true)
+let fieldIconSymbol = false
+if (fieldIcon === "") {
+  fieldIcon = THEME.icon.search
+  fieldIconSymbol = true
+}
+let settingsIcon = symbolIcon(THEME.icon.settings)
+let quitIcon = "NSStopProgressTemplate"
+if (appIcon !== "") {
+  settingsIcon = appIcon
+  quitIcon = appIcon
+}
 
 let index = reindex()
 let watching = watchApps()
@@ -123,7 +141,7 @@ for (let i = 0; i < HOTKEYS.length && hotkey === ""; i = i + 1) {
     console.log("moo: hotkey " + r.error)
   }
 }
-statusItem(hotkeyLabel, THEME.statusIcon, (what) => onStatusMenu(what))
+statusItem(hotkeyLabel, statusIcon, (what) => onStatusMenu(what))
 watchClipboard()
 
 // ── Plugins: every module in PLUGIN_DIR contributes its manifest's commands to root search ──
@@ -142,7 +160,7 @@ let WEB = { name: "Search the Web", path: "moo:web", icon: webIcon, kind: "Comma
 let contactIcon = symbolIcon(THEME.icon.contact)
 // results: the last answer, for `searched` (the text it was for; null before the first).
 let CONTACTS = { name: "Search Contacts", path: "moo:contacts", icon: contactIcon, kind: "Command", mode: "contacts", pluginTitle: "Contacts", results: [], searched: null, error: "" }
-let SETTINGS = { name: "Settings", path: "moo:settings", icon: symbolIcon(THEME.icon.settings), kind: "Command", mode: "settings", pluginTitle: "Moo" }
+let SETTINGS = { name: "Settings", path: "moo:settings", icon: settingsIcon, kind: "Command", mode: "settings", pluginTitle: "Moo" }
 let AI_MODELS = { name: "AI Models", path: "moo:ai-models", icon: aiIcon, kind: "Command", mode: "ai-models", pluginTitle: "AI" }
 let HYPERY = { name: "Hypery Account", path: "moo:hypery", icon: symbolIcon(THEME.icon.account), kind: "Command", mode: "hypery", pluginTitle: "Hypery" }
 // Spotlight's four category buttons, in ⌘1–⌘4 order. `symbol` is the SF Symbol on the button.
@@ -168,7 +186,7 @@ let commands = [
   { name: "Create Shortcut", path: "moo:create-shortcut", icon: symbolIcon("plus.square"), kind: "Command", mode: "create", pluginTitle: "Moo" },
   { name: "Shortcuts", path: "moo:shortcuts", icon: symbolIcon("command.square"), kind: "Command", mode: "shortcuts", pluginTitle: "Moo" },
   { name: "Edit shortcuts.json", path: "moo:edit-shortcuts", icon: "NSActionTemplate", kind: "Command", mode: "builtin" },
-  { name: "Quit Moo", path: "moo:quit", icon: "NSStopProgressTemplate", kind: "Command", mode: "builtin" }
+  { name: "Quit Moo", path: "moo:quit", icon: quitIcon, kind: "Command", mode: "builtin" }
 ]
 // System commands. `system` and `arg` go to systemCommand; `hides` closes the panel first so it
 // does not cover the lock screen or screen saver; `confirm` asks for a second Return.
@@ -1085,7 +1103,7 @@ fn settingsResults(text) {
     { name: "AI Model", kind: modelName(currentModel()), icon: aiIcon, act: "ai-models", group: "AI" },
     { name: "Hypery Account", kind: hyperyLabel(), icon: HYPERY.icon, act: "hypery", group: "AI" },
     { name: "Contacts Access", kind: contactsAccessLabel(), icon: contactIcon, act: "contacts", group: "Privacy" },
-    { name: "Quit Moo", kind: "", icon: "NSStopProgressTemplate", act: "quit", group: "Moo" }
+    { name: "Quit Moo", kind: "", icon: quitIcon, act: "quit", group: "Moo" }
   ]
   return rows.filter((r) => t === "" || r.name.toLowerCase().indexOf(t) >= 0).map((r) => ({ name: r.name, kind: r.kind, icon: r.icon, act: r.act, group: r.group, mode: "setting" }))
 }
@@ -2486,7 +2504,7 @@ fn changeLauncherHotkey(keys) {
   hotkey = keys
   hotkeyId = r.id
   hotkeyLabel = r.display
-  statusItem(hotkeyLabel, THEME.statusIcon, (what) => onStatusMenu(what))
+  statusItem(hotkeyLabel, statusIcon, (what) => onStatusMenu(what))
   let saved = setLauncherHotkey(keys)
   reloadShortcuts()
   return saved.ok ? "" : hotkeyLabel + " works until Moo quits; saving it failed: " + saved.error
@@ -3128,8 +3146,13 @@ fn remoteErrorText(model, raw) {
     return who + " needs an API key"
   }
   if (raw.indexOf("HTTP 402") >= 0 || raw.indexOf("INSUFFICIENT") >= 0) {
-    aiFix("Add Credits", "Opens Hypery billing", hyperyIcon(THEME.icon.account), "hypery-credits")
-    return who + " is out of credit"
+    let org = p === "hypery" ? activeOrg() : null
+    if (org !== null && hyperyState.account.orgs.length > 1) {
+      aiFix("Switch Team", "Or add credits to " + orgTitle(org), orgIcon(org), "hypery-orgs")
+    } else {
+      aiFix("Add Credits", "Opens Hypery billing", hyperyIcon(THEME.icon.account), "hypery-credits")
+    }
+    return who + (org !== null ? " team " + orgTitle(org) : "") + " is out of credit"
   }
   if (raw.indexOf("HTTP 401") >= 0) {
     if (p === "hypery") {
@@ -3158,6 +3181,8 @@ fn runFix(fix) {
     signInHypery()
   } else if (fix === "hypery-credits") {
     hyperyAct("billing")
+  } else if (fix === "hypery-orgs") {
+    hyperyAct("orgs")
   } else if (fix === "models") {
     enterSub(modelPicker(inAi()))
   } else if (fix.indexOf("key:") === 0) {
@@ -3242,11 +3267,19 @@ fn onTurnEvent(t, e) {
 
 // ── Hypery Account: sign in (browser or API key), balance and this month's spending ──
 
+// GitHub sign-ins without a public email get a placeholder address; the name reads better.
+fn accountWho(a) {
+  if (a.email !== "" && a.email.indexOf("@oauth.local") < 0) {
+    return a.email
+  }
+  return a.name !== "" ? a.name : a.email
+}
+
 fn hyperyLabel() {
   let c = hyperyCredential()
   let a = hyperyState.account
   if (c === "signed in") {
-    return a !== null && a.email !== "" ? a.email : "Signed in"
+    return a !== null && accountWho(a) !== "" ? accountWho(a) : "Signed in"
   }
   if (c === "key") {
     return "API key"
@@ -3330,14 +3363,14 @@ fn orgResults(text) {
   let t = text.trim().toLowerCase()
   let a = hyperyState.account
   if (a === null || a.orgs.length === 0) {
-    return [infoRow(hyperyState.loading ? "Loading organizations…" : "No organizations", "Organizations")]
+    return [infoRow(hyperyState.loading ? "Loading teams…" : "No teams", "Teams")]
   }
   return a.orgs
     .filter((o) => t === "" || orgTitle(o).toLowerCase().indexOf(t) >= 0 || o.slug.toLowerCase().indexOf(t) >= 0)
     .map((o) => {
       let role = o.role === "" ? "" : o.role[0].toUpperCase() + o.role.slice(1)
       let bits = [o.id === a.organization ? "Current" : "", o.personal ? "Personal" : "", role]
-      return { name: orgTitle(o), kind: bits.filter((b) => b !== "").join(" · "), icon: orgIcon(o), mode: "hypery-org", org: o, group: "Organizations" }
+      return { name: orgTitle(o), kind: bits.filter((b) => b !== "").join(" · "), icon: orgIcon(o), mode: "hypery-org", org: o, group: "Teams" }
     })
 }
 
@@ -3345,7 +3378,7 @@ fn orgResults(text) {
 fn chooseOrg(o) {
   let r = aiSetOrganization("hypery", o.personal ? "" : o.id)
   if (!r.ok) {
-    shell.hud = "Could not switch organization: " + r.error
+    shell.hud = "Could not switch team: " + r.error
     refresh()
     return
   }
@@ -3384,10 +3417,19 @@ fn hyperyResults(text) {
     rows.push(hyperyRow("Use an API Key…", "hypery.ai › Settings › API Keys", I.apiKey, "key", "Account"))
     rows.push(hyperyLink("Create a Hypery Account", "hypery.ai", I.signUp, "signup", "Account"))
   } else {
-    rows.push(hyperyRow(hyperyLabel(), c === "signed in" ? "Signed in" : (c === "key" ? "Saved in the Keychain" : "From the environment"), I.signedIn, "none", "Account"))
+    let me = hyperyRow(hyperyLabel(), c === "signed in" ? "Signed in" : (c === "key" ? "Saved in the Keychain" : "From the environment"), I.signedIn, "none", "Account")
+    // The account's own picture is its personal team's image.
+    let personal = a !== null ? a.orgs.filter((o) => o.personal) : []
+    if (personal.length > 0 && personal[0].image !== "") {
+      me.icon = orgIcon(personal[0])
+    }
+    rows.push(me)
+    // Always say which team the balance, chats and spending belong to, even before it has loaded.
     let org = activeOrg()
     if (org !== null) {
-      rows.push({ name: orgTitle(org), kind: a.orgs.length > 1 ? "Organization · ↵ to switch" : "Organization", icon: orgIcon(org), mode: "hypery-act", act: "orgs", group: "Account" })
+      rows.push({ name: "Team: " + orgTitle(org), kind: a.orgs.length > 1 ? "↵ Switch Team (" + a.orgs.length + ")" : "Your only team", icon: orgIcon(org), mode: "hypery-act", act: "orgs", group: "Account" })
+    } else {
+      rows.push(hyperyRow("Team: " + (hyperyState.loading || a === null ? "loading…" : "unknown"), a !== null && a.error !== "" ? a.error : "", I.organization, "orgs", "Account"))
     }
     rows.push(hyperyLink("Manage Account", "hypery.ai", I.account, "manage", "Account"))
     rows.push(hyperyLink("Manage API Keys", "hypery.ai", I.apiKey, "keys", "Account"))
@@ -3452,7 +3494,7 @@ fn hyperyAct(act) {
     loadAccount()
   } else if (act === "orgs") {
     let org = activeOrg()
-    enterSub({ name: "Organizations", mode: "hypery-orgs", pluginTitle: "Hypery", icon: org !== null ? orgIcon(org) : symbolIcon(THEME.icon.organization) })
+    enterSub({ name: "Switch Team", mode: "hypery-orgs", pluginTitle: "Hypery", icon: org !== null ? orgIcon(org) : symbolIcon(THEME.icon.organization) })
   } else if (act === "models") {
     enterSub(modelPicker(false))
   }
@@ -5460,7 +5502,7 @@ fn footerHints() {
     return hyperyState.signingIn ? [["Cancel Sign-In", "esc"]] : [["Open", "↵"], ["Back", "esc"]]
   }
   if (modeIs("hypery-orgs")) {
-    return [["Use Organization", "↵"], ["Back", "esc"]]
+    return [["Use Team", "↵"], ["Back", "esc"]]
   }
   if (modeIs("ai-key")) {
     return [["Save", "↵"], ["Back", "esc"]]
@@ -5774,7 +5816,7 @@ fn App() {
   }
   let header = (
     <row columnWidths={headerWidths} alignItems="center" height={HEADER_H} backgroundColor={CLEAR}
-    ><image src={cat >= 0 ? CATEGORIES[cat].symbol : THEME.icon.search} symbol={true} symbolScale={THEME.icon.symbolScale} tint={cat >= 0 ? C.accent : C.secondaryText} height={spin ? 1 : THEME.icon.field} /><progress_bar indeterminate={true} /><text fontSize={T.row} fontWeight={THEME.weight.section} color={C.accent}>{chip}</text><textinput value={shell.query} onChange={onFieldChange} bezeled={false} fontSize={T.field} placeholder={placeholder()} />{buttons}</row>
+    ><image src={cat >= 0 ? CATEGORIES[cat].symbol : fieldIcon} symbol={cat >= 0 || fieldIconSymbol} symbolScale={THEME.icon.symbolScale} tint={cat >= 0 ? C.accent : C.secondaryText} height={spin ? 1 : THEME.icon.field} /><progress_bar indeterminate={true} /><text fontSize={T.row} fontWeight={THEME.weight.section} color={C.accent}>{chip}</text><textinput value={shell.query} onChange={onFieldChange} bezeled={false} fontSize={T.field} placeholder={placeholder()} />{buttons}</row>
   )
   let footer = (
     <row columnWidths={widths} alignItems="center" height={FOOTER_H} paddingLeft={18} paddingRight={12} backgroundColor={CLEAR}
@@ -6042,17 +6084,51 @@ fn cliAiModels(token, query, flags) {
 
 fn cliAiUsage(token, provider) {
   aiAccount(provider, (a) => {
+    let team = a.orgs.filter((o) => o.id === a.organization)
     if (a.error !== "") {
-      cliFail(token, providerTitle(provider) + ": " + a.error)
+      cliFail(token, providerTitle(provider) + (team.length > 0 ? " team " + orgTitle(team[0]) : "") + ": " + a.error)
       return
     }
-    let who = a.email !== "" ? "signed in as " + a.email : (a.credential === "key" ? "API key" : (a.credential === "environment" ? "API key from the environment" : a.credential))
-    let lines = [providerTitle(provider) + ": " + who, "balance\t" + money(a.balance)]
+    let who = accountWho(a) !== "" ? "signed in as " + accountWho(a) : (a.credential === "key" ? "API key" : (a.credential === "environment" ? "API key from the environment" : a.credential))
+    let lines = [providerTitle(provider) + ": " + who]
+    if (team.length > 0) {
+      lines.push("team\t" + orgTitle(team[0]) + (a.orgs.length > 1 ? "  (moo ai team to switch)" : ""))
+    }
+    lines.push("balance\t" + money(a.balance))
     if (a.monthSpent >= 0) {
       lines.push("this month\t" + money(a.monthSpent) + (a.monthLimit > 0 ? " of " + money(a.monthLimit) : ""))
     }
     lines.push("billing\t" + a.billing)
     cliOut(token, lines.join("\n") + "\n")
+    cliEnd(token, 0)
+  })
+}
+
+// `moo ai team`: Hypery's teams (* current); `moo ai team <name|slug>` switches to one.
+fn cliAiTeam(token, want) {
+  aiAccount("hypery", (a) => {
+    if (a.orgs.length === 0) {
+      cliFail(token, "Hypery: " + (a.error !== "" ? a.error : "no teams"))
+      return
+    }
+    if (want === "") {
+      cliOut(token, a.orgs.map((o) => (o.id === a.organization ? "* " : "  ") + orgTitle(o) + "\t" + o.slug + (o.personal ? "\tpersonal" : "")).join("\n") + "\n")
+      cliEnd(token, 0)
+      return
+    }
+    let w = want.toLowerCase()
+    let m = a.orgs.filter((o) => o.slug.toLowerCase() === w || orgTitle(o).toLowerCase() === w || o.id === want)
+    if (m.length === 0) {
+      cliFail(token, "no team called “" + want + "” (moo ai team)")
+      return
+    }
+    let r = aiSetOrganization("hypery", m[0].personal ? "" : m[0].id)
+    if (!r.ok) {
+      cliFail(token, "Could not switch team: " + r.error)
+      return
+    }
+    hyperyState.account = null
+    cliOut(token, "Hypery uses team " + orgTitle(m[0]) + "\n")
     cliEnd(token, 0)
   })
 }
@@ -6112,6 +6188,8 @@ fn cliAi(token, w, flags) {
     refreshProviders()
     cliOut(token, "Signed out of " + providerTitle(provider) + "\n")
     cliEnd(token, 0)
+  } else if (sub === "team" || sub === "teams") {
+    cliAiTeam(token, args.join(" ").trim())
   } else if (sub === "usage" || sub === "account") {
     cliAiUsage(token, args.length > 0 ? args[0] : "hypery")
   } else if (sub === "client-id") {
@@ -6127,7 +6205,7 @@ fn cliAi(token, w, flags) {
     refreshProviders()
     cliEnd(token, 0)
   } else {
-    cliFail(token, "usage: moo ai [status|models [text]|use <model>|key [provider] <key>|login|logout|usage|client-id <id>]")
+    cliFail(token, "usage: moo ai [status|models [text]|use <model>|key [provider] <key>|login|logout|usage|team [name]|client-id <id>]")
   }
 }
 

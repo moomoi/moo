@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Assemble dist/Moo.app: the native shell binary plus built plugins in Contents/Resources/plugins.
+# Assemble dist/Moo.app: the native shell binary plus built plugins in Contents/Resources/plugins,
+# and the icons from packaging/ (see scripts/make-icons.sh).
 # LSUIElement keeps it out of the Dock and app switcher. Signs ad hoc unless SIGN_IDENTITY is set.
 #   SKIP_BUILD=1   reuse what is already built
 #   MOO_BIN, MOO_PLUGIN_DIST   what to bundle (default app/dist/moo, plugins/dist; release builds
@@ -27,6 +28,7 @@ cp "$BIN" "$APP/Contents/MacOS/moo"
 for p in "$PLUGIN_DIST"/*.lib "$PLUGIN_DIST"/*.tishc; do
   [ -e "$p" ] && cp "$p" "$APP/Contents/Resources/plugins/"
 done
+cp "$ROOT/packaging/AppIcon.icns" "$ROOT/packaging/MenuBarIcon.tiff" "$ROOT/packaging/SearchIcon.png" "$APP/Contents/Resources/"
 
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -37,6 +39,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>CFBundleDisplayName</key><string>Moo</string>
   <key>CFBundleIdentifier</key><string>$BUNDLE_ID</string>
   <key>CFBundleExecutable</key><string>moo</string>
+  <key>CFBundleIconFile</key><string>AppIcon</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>$VERSION</string>
   <key>CFBundleVersion</key><string>$BUILD</string>

@@ -52,7 +52,9 @@ export const THEME = {
   },
   // Icon heights: result rows, the field's search / category symbol, category buttons, the grid.
   icon: {
-    // SF Symbol in the field outside a category.
+    // Image in the field outside a category, among Moo's resources (packaging/ in the repo), tinted
+    // like a symbol. `search` (an SF Symbol) stands in when that file is missing.
+    searchImage: "SearchIcon.png",
     search: "magnifyingglass",
     // SF Symbol beside calculator and time zone answers.
     calculator: "equal.circle.fill",
@@ -92,8 +94,12 @@ export const THEME = {
     gridCell: 14,
     keycap: 5,
   },
-  // Menu bar icon (SF Symbol).
-  statusIcon: "magnifyingglass",
+  // Menu bar icon: an image among Moo's resources (packaging/ in the repo), drawn as a template.
+  // `statusSymbol` (an SF Symbol) stands in when that file is missing.
+  statusIcon: "MenuBarIcon.tiff",
+  statusSymbol: "magnifyingglass",
+  // App icon, also on Moo's own rows (Settings, Quit Moo).
+  appIcon: "AppIcon.icns",
 
   // The panel behind the views (glass on macOS 26, vibrancy before).
   panel: {

@@ -44,6 +44,7 @@ usage: moo [command] [args]
   ai login | logout [provider] sign in to Hypery in the browser, or forget its key and sign-in
   ai key [provider] <key>      keep an API key in the Keychain (Hypery when no provider)
   ai usage [provider]          Hypery balance and this month's spending
+  ai team [name]               Hypery's teams (* current), or switch to one
   ai client-id <id> [provider] the OAuth app id browser sign-in uses
   calc <expression>            the plain answer: 2^10, 5 km in mi, 100 usd to eur, 255 in hex,
                                time in tokyo, 3pm pst to cet (--json adds display and detail)

@@ -157,7 +157,43 @@ fn parse_request_line(line: &str) -> (String, Vec<(String, String)>) {
     (path.to_string(), params)
 }
 
-const PAGE: &str = "<!doctype html><meta charset=utf-8><title>Moo</title><body style=\"font:16px -apple-system;margin:4em;text-align:center\"><h2>{title}</h2><p>{text}</p></body>";
+/// The loopback page the browser lands on: moo.moi's look, light or dark. `{ok}` is "ok" or "err";
+/// the title and text are HTML-escaped by `page`.
+const PAGE: &str = r#"<!doctype html><html lang=en><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1"><title>{title} · Moo</title>
+<style>
+:root{color-scheme:light dark;--fg:#1d1d1f;--dim:#6e6e73;--bg:#f5f5f7;--card:#ffffffcc;--line:#0000001a;--ok:#1f9d55;--err:#d93a3a}
+@media (prefers-color-scheme:dark){:root{--fg:#f5f5f7;--dim:#a1a1a6;--bg:#111113;--card:#1c1c1fcc;--line:#ffffff1f;--ok:#34c759;--err:#ff6961}}
+*{box-sizing:border-box}
+body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:16px;background:radial-gradient(1200px 600px at 50% -10%,#fe588a2e,transparent),var(--bg);color:var(--fg);font:16px/1.5 -apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",sans-serif}
+main{width:100%;max-width:420px;padding:40px 32px;border:1px solid var(--line);border-radius:20px;background:var(--card);backdrop-filter:blur(20px);text-align:center}
+.badge{width:56px;height:56px;margin:0 auto 20px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff}
+.ok .badge{background:var(--ok)}.err .badge{background:var(--err)}
+h1{margin:0 0 8px;font-size:22px;font-weight:600;letter-spacing:-.01em}
+p{margin:0;color:var(--dim);overflow-wrap:anywhere}
+.hint{margin-top:24px;font-size:14px}
+kbd{font:13px ui-monospace,Menlo,monospace;padding:2px 6px;border:1px solid var(--line);border-radius:6px}
+.err .hint{display:none}
+</style>
+<main class="{ok}">
+<div class=badge aria-hidden=true><svg width=28 height=28 viewBox="0 0 24 24" fill=none stroke=currentColor stroke-width=3 stroke-linecap=round stroke-linejoin=round>{mark}</svg></div>
+<h1>{title}</h1>
+<p>{text}</p>
+<p class=hint>You can close this tab and go back to Moo.</p>
+</main>
+<script>history.replaceState(null,"","/callback")</script>
+"#;
+
+fn escape_html(s: &str) -> String {
+    s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;")
+}
+
+fn page(ok: bool, title: &str, text: &str) -> String {
+    let mark = if ok { r#"<path d="M5 12.5l4.5 4.5L19 7.5"/>"# } else { r#"<path d="M7 7l10 10M17 7L7 17"/>"# };
+    PAGE.replace("{ok}", if ok { "ok" } else { "err" })
+        .replace("{mark}", mark)
+        .replace("{title}", &escape_html(title))
+        .replace("{text}", &escape_html(text))
+}
 
 /// Run the browser sign-in. `open(url)` shows the authorize page; waits up to 5 minutes for the
 /// redirect unless `cancel` is set. Blocks: run on a worker thread.
@@ -215,7 +251,7 @@ pub fn login(ep: &Endpoints, open: impl FnOnce(&str), cancel: &AtomicBool) -> Re
         let (path, params) = parse_request_line(&line);
         let get = |k: &str| params.iter().find(|(n, _)| n == k).map(|(_, v)| v.clone()).unwrap_or_default();
         let reply = |title: &str, text: &str| {
-            let body = PAGE.replace("{title}", title).replace("{text}", text);
+            let body = page(title != "Sign-in failed", title, text);
             let mut s = &stream;
             let _ = write!(s, "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len());
         };
@@ -240,7 +276,7 @@ pub fn login(ep: &Endpoints, open: impl FnOnce(&str), cancel: &AtomicBool) -> Re
             "",
         );
         match &result {
-            Ok(_) => reply("Signed in to Moo", "You can close this tab."),
+            Ok(_) => reply("You're signed in", "Moo is connected to your account."),
             Err(e) => reply("Sign-in failed", e),
         }
         return result;

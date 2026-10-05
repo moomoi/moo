@@ -59,7 +59,7 @@ fn with_org<'a>(req: http::Request<'a>, org: &str) -> http::Request<'a> {
     }
 }
 
-/// Moo's OAuth app on hypery.ai (public client: PKCE, scopes `ai:chat ai:models`). Its registered
+/// Moo's OAuth app on hypery.ai (public client: PKCE, scopes `ai:chat ai:models billing:read`). Its registered
 /// redirect is the moo.moi relay (web/ in this repo), which hands the code to the loopback
 /// listener. Config and `MOO_HYPERY_CLIENT_ID` / `MOO_HYPERY_REDIRECT` win.
 const HYPERY_CLIENT_ID: &str = "app_1791139621564_l2l6kzx0m";
@@ -83,7 +83,7 @@ fn builtins() -> Vec<Provider> {
     };
     let mut hypery = p("hypery", "Hypery", "https://hypery.ai/v1", "HYPERY_API_KEY", false);
     hypery.oauth = Some(("/api/oauth/authorize", "/api/oauth/token"));
-    hypery.scope = "ai:chat ai:models";
+    hypery.scope = "ai:chat ai:models billing:read";
     hypery.models_query = "?category=chat&limit=1000";
     hypery.public_models = true;
     hypery.account = true;
@@ -232,6 +232,11 @@ pub fn credential(p: &Provider) -> Result<Option<String>, String> {
                 return Ok(Some(fresh.access));
             }
         }
+    }
+    // The index lists it but the Keychain would not hand it over: another build of Moo (signed
+    // differently) saved it, or the prompt was refused. "Not signed in" would contradict the UI.
+    if keychain::has(&p.id) || keychain::has(&account) {
+        return Err(format!("{}: the Keychain would not give Moo the saved sign-in; sign in again", p.title));
     }
     if !p.key_env.is_empty() {
         if let Ok(k) = std::env::var(&p.key_env) {

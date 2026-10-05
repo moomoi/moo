@@ -14,7 +14,8 @@ use objc2_foundation::{NSData, NSString, NSURL};
 use crate::bridge;
 
 const MAX_AGE: Duration = Duration::from_secs(7 * 24 * 3600);
-const MAX_BYTES: usize = 512 * 1024;
+// Team images are uploaded photos, often over a megabyte; anything larger is not an icon.
+const MAX_BYTES: usize = 4 * 1024 * 1024;
 
 static FETCHING: Mutex<Option<HashSet<String>>> = Mutex::new(None);
 
@@ -90,6 +91,20 @@ pub fn image_icon(url: &str, cb: u64) -> String {
     let key = format!("{:016x}", fnv(url));
     let path = dir.join(format!("{key}.img"));
     cached(format!("moo-image-{key}"), dir, path, url.to_string(), cb)
+}
+
+/// Main thread. The image name for the image file at `path` on disk, or "" when it isn't one. A
+/// `template` image is drawn in its view's tint, like an SF Symbol.
+pub fn image_file(path: &str, template: bool) -> String {
+    let name = format!("moo-file-{:016x}{}", fnv(path), if template { "-t" } else { "" });
+    let ns_name = NSString::from_str(&name);
+    if NSImage::imageNamed(&ns_name).is_none() && !register(&name, Path::new(path)) {
+        return String::new();
+    }
+    if let Some(img) = NSImage::imageNamed(&ns_name) {
+        img.setTemplate(template);
+    }
+    name
 }
 
 fn cached(name: String, dir: PathBuf, path: PathBuf, source: String, cb: u64) -> String {

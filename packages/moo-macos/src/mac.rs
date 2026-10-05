@@ -1567,7 +1567,8 @@ pub struct StatusItem {
 
 /// Menu bar icon, installed once the run loop is live. A click shows the panel; a right click
 /// (or Control-click) opens Settings… / Quit Moo, and Settings calls `on_menu("settings")`.
-/// `hotkey` goes in the tooltip as a reminder.
+/// `hotkey` goes in the tooltip as a reminder. `symbol` is an image name (from `imageFile`, say)
+/// or an SF Symbol; either is drawn as a template, so it follows the menu bar's colour.
 pub fn status_item(hotkey: &str, symbol: &str, on_menu: Box<dyn Fn(&str)>) -> bool {
     if STATUS.with(|s| s.borrow().is_some()) {
         let Some(mtm) = MainThreadMarker::new() else { return false };
@@ -1593,7 +1594,9 @@ fn install_status_item(hotkey: &str, symbol: &str) {
     let item = NSStatusBar::systemStatusBar().statusItemWithLength(-1.0);
     if let Some(button) = item.button(mtm) {
         let desc = NSString::from_str("Moo");
-        match NSImage::imageWithSystemSymbolName_accessibilityDescription(&NSString::from_str(symbol), Some(&desc)) {
+        let ns_symbol = NSString::from_str(symbol);
+        let image = NSImage::imageNamed(&ns_symbol).or_else(|| NSImage::imageWithSystemSymbolName_accessibilityDescription(&ns_symbol, Some(&desc)));
+        match image {
             Some(img) => {
                 img.setTemplate(true);
                 button.setImage(Some(&img));

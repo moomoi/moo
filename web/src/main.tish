@@ -5,6 +5,8 @@
 // travels in `state` as `<port>.<nonce>`. Moo checks the whole state and redeems the code with its
 // PKCE verifier, which never leaves the Mac, so nothing passing through here can be redeemed alone.
 
+import { ICON_PNG, FAVICON_PNG } from "./icon.tish"
+
 // Promoted releases are mirrored to this public repo under a fixed asset name (docs/release.md).
 let DOWNLOAD_URL = "https://github.com/moomoi/moo/releases/latest/download/Moo-macos-universal.dmg"
 
@@ -21,12 +23,12 @@ let PAGE_HEADERS = {
 }
 
 let STYLE = `
-:root { color-scheme: light dark; --fg: #1d1d1f; --dim: #6e6e73; --bg: #f5f5f7; --card: #ffffffcc; --line: #0000001a; --accent: #7b5cff; }
-@media (prefers-color-scheme: dark) { :root { --fg: #f5f5f7; --dim: #a1a1a6; --bg: #111113; --card: #1c1c1fcc; --line: #ffffff1f; } }
+:root { color-scheme: light dark; --fg: #1d1d1f; --dim: #6e6e73; --bg: #f5f5f7; --card: #ffffffcc; --line: #0000001a; --accent: #0a23c6; }
+@media (prefers-color-scheme: dark) { :root { --fg: #f5f5f7; --dim: #a1a1a6; --bg: #111113; --card: #1c1c1fcc; --line: #ffffff1f; --accent: #5b6eff; } }
 * { box-sizing: border-box; }
-body { margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center; background: radial-gradient(1200px 600px at 50% -10%, #7b5cff33, transparent), var(--bg); color: var(--fg); font: 16px/1.5 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif; }
+body { margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center; background: radial-gradient(1200px 600px at 50% -10%, #fe588a2e, transparent), var(--bg); color: var(--fg); font: 16px/1.5 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif; }
 main { width: min(640px, 100% - 48px); padding: 48px 0; }
-.mark { width: 64px; height: 64px; border-radius: 16px; background: linear-gradient(145deg, #9d86ff, #5b3cf0); display: flex; align-items: center; justify-content: center; font-size: 34px; color: #fff; box-shadow: 0 10px 30px #5b3cf055; }
+.mark { display: block; width: 64px; height: 64px; border-radius: 15px; box-shadow: 0 10px 30px #0a23c655; }
 h1 { font-size: 44px; letter-spacing: -0.02em; margin: 24px 0 8px; }
 h2 { font-size: 26px; margin: 24px 0 8px; }
 p { color: var(--dim); margin: 0 0 16px; }
@@ -41,7 +43,7 @@ footer { margin-top: 40px; font-size: 13px; color: var(--dim); }
 `
 
 fn page(title, content) {
-    return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${title}</title><style>${STYLE}</style></head><body><main><div class="mark">M</div>${content}</main></body></html>`
+    return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${title}</title><link rel="icon" type="image/png" href="${FAVICON_PNG}"><link rel="apple-touch-icon" href="${ICON_PNG}"><style>${STYLE}</style></head><body><main><img class="mark" src="${ICON_PNG}" width="64" height="64" alt="Moo">${content}</main></body></html>`
 }
 
 let HOME = page("Moo, a native launcher for macOS", `
