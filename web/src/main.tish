@@ -65,7 +65,7 @@ nav .links a.pill { color: #fff; background: var(--fg); color: var(--bg); paddin
 /* hero */
 .hero { text-align: center; padding: 88px 0 40px; }
 .hero h1 { font-size: clamp(96px, 22vw, 230px); line-height: .82; letter-spacing: -.075em; font-weight: 850; margin: 28px 0 18px; }
-.hero h1 span { display: inline-block; background: var(--grad); background-size: 200% 100%; -webkit-background-clip: text; background-clip: text; color: transparent; animation: shimmer 8s linear infinite; filter: drop-shadow(0 20px 60px #fe588a40); }
+.hero h1 span { display: inline-block; padding: 0 .1em .04em 0; margin-right: -.025em; background: var(--grad); background-size: 200% 100%; -webkit-background-clip: text; background-clip: text; color: transparent; animation: shimmer 8s linear infinite; filter: drop-shadow(0 20px 60px #fe588a40); }
 @keyframes shimmer { to { background-position: -200% 0; } }
 .hero .lede { font-size: clamp(18px, 2.4vw, 22px); color: var(--dim); max-width: 34ch; margin: 0 auto 34px; }
 .hero .lede b { color: var(--fg); font-weight: 600; }
