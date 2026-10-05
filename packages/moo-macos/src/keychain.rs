@@ -1,9 +1,11 @@
 //! Secrets (AI API keys, OAuth tokens) in the login Keychain as generic passwords under the service
-//! "Nimble". A plain index file lists which accounts have one, so checking never touches the
+//! "Moo". A plain index file lists which accounts have one, so checking never touches the
 //! Keychain (a rebuilt, differently signed binary makes macOS ask before reading).
 
+use std::collections::HashMap;
 use std::ffi::c_void;
 use std::path::PathBuf;
+use std::sync::Mutex;
 
 use objc2::rc::Retained;
 use objc2_foundation::NSString;
@@ -47,7 +49,7 @@ const ERR_DUPLICATE: i32 = -25299;
 const ERR_NOT_FOUND: i32 = -25300;
 
 fn service() -> String {
-    std::env::var("NIMBLE_KEYCHAIN_SERVICE").unwrap_or_else(|_| "Nimble".into())
+    std::env::var("MOO_KEYCHAIN_SERVICE").unwrap_or_else(|_| "Moo".into())
 }
 
 unsafe fn dict(pairs: &[(CFTypeRef, CFTypeRef)]) -> CFTypeRef {
@@ -67,8 +69,49 @@ fn cf(s: &Retained<NSString>) -> CFTypeRef {
     Retained::as_ptr(s) as CFTypeRef
 }
 
+/// The service secrets were saved under before the rename to Moo.
+const LEGACY_SERVICE: &str = "Nimble";
+
+/// Secrets already read by this process. macOS may ask for the login password on each read the
+/// item's access list doesn't cover, so every secret is read at most once per launch.
+static CACHE: Mutex<Option<HashMap<String, String>>> = Mutex::new(None);
+
+fn cached(account: &str) -> Option<String> {
+    CACHE.lock().ok()?.as_ref()?.get(account).cloned()
+}
+
+fn remember(account: &str, secret: Option<&str>) {
+    if let Ok(mut c) = CACHE.lock() {
+        let map = c.get_or_insert_with(HashMap::new);
+        match secret {
+            Some(s) => map.insert(account.to_string(), s.to_string()),
+            None => map.remove(account),
+        };
+    }
+}
+
 pub fn get(account: &str) -> Option<String> {
-    let (svc, acct) = (NSString::from_str(&service()), NSString::from_str(account));
+    if let Some(s) = cached(account) {
+        return Some(s);
+    }
+    match read(&service(), account) {
+        Ok(s) => {
+            remember(account, Some(&s));
+            Some(s)
+        }
+        // Only a missing item falls back; a refused prompt must not lead to another one.
+        Err(ERR_NOT_FOUND) if std::env::var_os("MOO_KEYCHAIN_SERVICE").is_none() => {
+            let old = read(LEGACY_SERVICE, account).ok()?;
+            let _ = set(account, &old);
+            Some(old)
+        }
+        Err(_) => None,
+    }
+}
+
+/// The secret, or the Security status (`ERR_NOT_FOUND`, or e.g. -128 when the prompt was refused).
+fn read(service: &str, account: &str) -> Result<String, i32> {
+    let (svc, acct) = (NSString::from_str(service), NSString::from_str(account));
     unsafe {
         let q = dict(&[
             (kSecClass, kSecClassGenericPassword),
@@ -81,11 +124,11 @@ pub fn get(account: &str) -> Option<String> {
         let st = SecItemCopyMatching(q, &mut out);
         CFRelease(q);
         if st != 0 || out.is_null() {
-            return None;
+            return Err(if st == 0 { ERR_NOT_FOUND } else { st });
         }
         let bytes = std::slice::from_raw_parts(CFDataGetBytePtr(out), CFDataGetLength(out) as usize).to_vec();
         CFRelease(out);
-        String::from_utf8(bytes).ok()
+        String::from_utf8(bytes).map_err(|_| ERR_NOT_FOUND)
     }
 }
 
@@ -114,6 +157,7 @@ pub fn set(account: &str, secret: &str) -> Result<(), String> {
     if st != 0 {
         return Err(format!("Keychain error {st}"));
     }
+    remember(account, Some(secret));
     index_edit(account, true);
     Ok(())
 }
@@ -126,15 +170,16 @@ pub fn delete(account: &str) -> bool {
         CFRelease(q);
         st
     };
+    remember(account, None);
     index_edit(account, false);
     st == 0 || st == ERR_NOT_FOUND
 }
 
 fn index_path() -> Option<PathBuf> {
-    if let Some(p) = std::env::var_os("NIMBLE_KEYCHAIN_INDEX") {
+    if let Some(p) = std::env::var_os("MOO_KEYCHAIN_INDEX") {
         return Some(PathBuf::from(p));
     }
-    std::env::var_os("HOME").map(|h| PathBuf::from(h).join("Library/Application Support/Nimble/keychain-index.txt"))
+    std::env::var_os("HOME").map(|h| PathBuf::from(h).join("Library/Application Support/Moo/keychain-index.txt"))
 }
 
 fn index() -> Vec<String> {
@@ -164,9 +209,9 @@ mod tests {
 
     #[test]
     fn round_trip_in_the_login_keychain() {
-        std::env::set_var("NIMBLE_KEYCHAIN_SERVICE", "Nimble Test");
-        let idx = std::env::temp_dir().join(format!("nimble-keychain-index-{}", std::process::id()));
-        std::env::set_var("NIMBLE_KEYCHAIN_INDEX", &idx);
+        std::env::set_var("MOO_KEYCHAIN_SERVICE", "Moo Test");
+        let idx = std::env::temp_dir().join(format!("moo-keychain-index-{}", std::process::id()));
+        std::env::set_var("MOO_KEYCHAIN_INDEX", &idx);
         let account = format!("test-{}", std::process::id());
         assert!(!has(&account));
         set(&account, "sk-first").unwrap();

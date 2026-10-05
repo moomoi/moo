@@ -1,4 +1,4 @@
-// Nimble Utils: a first-party Tier B plugin, compiled to a native module and loaded at runtime.
+// Moo Utils: a first-party Tier B plugin, compiled to a native module and loaded at runtime.
 // Contract: manifest(); run(command) for "no-view" commands; list(command, query) for "list" commands.
 // Results carry an action the shell performs: { copy }, { open } or { hud }.
 
@@ -7,7 +7,7 @@ let runs = 0
 export fn manifest() {
   return {
     id: "utils",
-    title: "Nimble Utils",
+    title: "Moo Utils",
     commands: [
       { name: "uuid", title: "Generate UUID", subtitle: "Copy a random v4 UUID", mode: "no-view" },
       { name: "emoji", title: "Search Emoji", subtitle: "Find and copy an emoji", mode: "list" },
@@ -38,7 +38,7 @@ export fn run(command) {
     return { copy: id, hud: "Copied " + id }
   }
   if (command === "stats") {
-    return { hud: "Nimble Utils has run " + runs + " times since launch" }
+    return { hud: "Moo Utils has run " + runs + " times since launch" }
   }
   return { hud: "Unknown command " + command }
 }

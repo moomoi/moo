@@ -1,5 +1,5 @@
 //! Accessibility: move and resize the frontmost app's focused window (geometry in layout.rs), read
-//! the selected text in the focused field and replace a typed snippet keyword. All need Nimble in
+//! the selected text in the focused field and replace a typed snippet keyword. All need Moo in
 //! System Settings › Privacy & Security › Accessibility.
 
 use std::cell::RefCell;
@@ -126,8 +126,8 @@ fn text_in_range(element: CFTypeRef, location: isize, length: isize) -> Option<S
     (end <= all.len()).then(|| String::from_utf16_lossy(&all[start..end]))
 }
 
-/// Whether Nimble may use Accessibility. `prompt` asks macOS to show its permission dialog (once;
-/// later calls only add Nimble to the list in System Settings).
+/// Whether Moo may use Accessibility. `prompt` asks macOS to show its permission dialog (once;
+/// later calls only add Moo to the list in System Settings).
 pub fn trusted(prompt: bool) -> bool {
     unsafe {
         let Some(dict_cls) = AnyClass::get(c"NSDictionary") else { return false };
@@ -139,7 +139,7 @@ pub fn trusted(prompt: bool) -> bool {
     }
 }
 
-pub(crate) const NEEDS_PERMISSION: &str = "Nimble needs Accessibility: System Settings › Privacy & Security › Accessibility";
+pub(crate) const NEEDS_PERMISSION: &str = "Moo needs Accessibility: System Settings › Privacy & Security › Accessibility";
 
 /// Usable areas (Dock and menu bar left out) and full frames of every display, in Accessibility's
 /// top-left coordinates.
@@ -153,12 +153,12 @@ fn screens() -> Vec<(Rect, Rect)> {
 }
 
 thread_local! {
-    /// (pid, window hash) → the frame before Nimble last moved it, for Restore.
+    /// (pid, window hash) → the frame before Moo last moved it, for Restore.
     static BEFORE: RefCell<HashMap<(i32, usize), Rect>> = RefCell::new(HashMap::new());
 }
 
 /// Apply `layout` (an id from layout::LAYOUTS) to the frontmost app's focused window. Returns a
-/// short message; with `NIMBLE_SYSTEM_DRY_RUN` set it reports the frame without moving anything.
+/// short message; with `MOO_SYSTEM_DRY_RUN` set it reports the frame without moving anything.
 pub fn arrange(layout_id: &str) -> Result<String, String> {
     let title = layout::title(layout_id).ok_or_else(|| format!("unknown layout `{layout_id}`"))?;
     if !trusted(false) {
@@ -195,7 +195,7 @@ pub fn arrange(layout_id: &str) -> Result<String, String> {
         "restore" => BEFORE.with(|b| b.borrow().get(&key).copied()).ok_or_else(|| format!("nothing to restore for {name}"))?,
         id => layout::frame(id, all[i].0, cur).ok_or_else(|| format!("unknown layout `{id}`"))?,
     };
-    if std::env::var_os("NIMBLE_SYSTEM_DRY_RUN").is_some() {
+    if std::env::var_os("MOO_SYSTEM_DRY_RUN").is_some() {
         return Ok(format!("dry run: {title} {name} {x},{y} {w}×{h} → {},{} {}×{}", target.x, target.y, target.w, target.h));
     }
     if layout_id != "restore" {
@@ -246,7 +246,7 @@ fn replace_before_cursor(field: CFTypeRef, typed: &str, text: &str) -> Result<()
         return Err(format!("the text before the cursor is not {typed}"));
     }
     if set_range(field, start, n) != 0 {
-        return Err("the field did not let Nimble select the keyword".into());
+        return Err("the field did not let Moo select the keyword".into());
     }
     let attr = NSString::from_str("AXSelectedText");
     let value = NSString::from_str(text);
@@ -276,7 +276,7 @@ mod tests {
             eprintln!("skipped: TextEdit is open or this process lacks Accessibility");
             return;
         }
-        let file = std::env::temp_dir().join("nimble-snippet-test.txt");
+        let file = std::env::temp_dir().join("moo-snippet-test.txt");
         std::fs::write(&file, "Thanks ;sig").unwrap();
         assert!(std::process::Command::new("/usr/bin/open").args(["-g", "-a", "TextEdit"]).arg(&file).status().unwrap().success());
         let mut field = None;
@@ -292,7 +292,7 @@ mod tests {
         }
         let quit = || {
             let _ = std::process::Command::new("/usr/bin/osascript").args(["-e", "tell application \"TextEdit\" to quit saving no"]).status();
-            let _ = std::fs::remove_file(std::env::temp_dir().join("nimble-snippet-test.txt"));
+            let _ = std::fs::remove_file(std::env::temp_dir().join("moo-snippet-test.txt"));
         };
         let Some(field) = field else {
             quit();

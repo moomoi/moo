@@ -2,7 +2,7 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-  <key>CFBundleName</key><string>Nimble</string>
-  <key>NSContactsUsageDescription</key><string>Nimble searches your contacts when you type a name.</string>
+  <key>CFBundleName</key><string>Moo</string>
+  <key>NSContactsUsageDescription</key><string>Moo searches your contacts when you type a name.</string>
 </dict>
 </plist>

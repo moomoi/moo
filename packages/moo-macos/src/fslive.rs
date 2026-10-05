@@ -1,6 +1,6 @@
 //! The file index as a service. A background thread loads the snapshot (or crawls when there is no
 //! valid one) at utility QoS with throttled I/O; FSEvents then keeps it live from the snapshot's
-//! event id, so changes made while Nimble was not running are replayed from the system journal.
+//! event id, so changes made while Moo was not running are replayed from the system journal.
 //! Event handling runs on its own serial queue; searches run on the main thread and never wait
 //! for it (a search that finds the index busy reports "not ready" and the shell falls back).
 
@@ -117,11 +117,11 @@ fn refresh_counts(ix: &Index) {
 }
 
 pub fn snapshot_path() -> Option<PathBuf> {
-    if let Some(p) = std::env::var_os("NIMBLE_FILE_INDEX") {
+    if let Some(p) = std::env::var_os("MOO_FILE_INDEX") {
         return Some(PathBuf::from(p));
     }
     let home = std::env::var_os("HOME")?;
-    Some(PathBuf::from(home).join("Library/Caches/Nimble/files.idx"))
+    Some(PathBuf::from(home).join("Library/Caches/Moo/files.idx"))
 }
 
 /// Start the index (once). Returns immediately; `status().state` turns "ready" when searchable.
@@ -129,7 +129,7 @@ pub fn start() -> bool {
     if STARTED.swap(true, Ordering::AcqRel) {
         return true;
     }
-    std::thread::Builder::new().name("nimble-fsindex".into()).spawn(build).is_ok()
+    std::thread::Builder::new().name("moo-fsindex".into()).spawn(build).is_ok()
 }
 
 fn background_thread() {
@@ -173,7 +173,7 @@ fn build() {
             let ix = crawl_now();
             if let Some(p) = &path {
                 if let Err(e) = ix.save(p) {
-                    eprintln!("nimble: file index save failed: {e}");
+                    eprintln!("moo: file index save failed: {e}");
                 }
             }
             SAVE.lock().unwrap_or_else(|e| e.into_inner()).last = Some(Instant::now());
@@ -188,7 +188,7 @@ fn build() {
     *INDEX.write().unwrap_or_else(|e| e.into_inner()) = Some(ix);
     set_state("ready");
     if !watch_roots(&watch, &exclude, since) {
-        eprintln!("nimble: file index is not watching for changes");
+        eprintln!("moo: file index is not watching for changes");
     }
 }
 
@@ -206,7 +206,7 @@ fn ns_array(items: &[String]) -> Retained<NSArray<NSString>> {
 fn watch_roots(roots: &[String], exclude: &[String], since: u64) -> bool {
     let paths = ns_array(roots);
     let excluded = ns_array(exclude);
-    let queue = QUEUE.get_or_init(|| DispatchQueue::new("nimble.fsindex", None));
+    let queue = QUEUE.get_or_init(|| DispatchQueue::new("moo.fsindex", None));
     unsafe {
         let ctx = FSEventStreamContext {
             version: 0,
@@ -228,7 +228,7 @@ fn watch_roots(roots: &[String], exclude: &[String], since: u64) -> bool {
             return false;
         }
         if !exclude.is_empty() && FSEventStreamSetExclusionPaths(stream, Retained::as_ptr(&excluded) as *const c_void) == 0 {
-            eprintln!("nimble: file index could not exclude {exclude:?}");
+            eprintln!("moo: file index could not exclude {exclude:?}");
         }
         FSEventStreamSetDispatchQueue(stream, &**queue as *const DispatchQueue as *const c_void);
         FSEventStreamStart(stream) != 0
@@ -316,7 +316,7 @@ fn maybe_save() {
     }
     let result = INDEX.read().unwrap_or_else(|e| e.into_inner()).as_ref().map(|ix| ix.save(&path));
     if let Some(Err(e)) = result {
-        eprintln!("nimble: file index save failed: {e}");
+        eprintln!("moo: file index save failed: {e}");
     }
     let mut s = SAVE.lock().unwrap_or_else(|e| e.into_inner());
     s.dirty = false;
@@ -358,13 +358,13 @@ mod tests {
     #[test]
     #[ignore]
     fn live_index_follows_changes() {
-        let root = std::env::temp_dir().join(format!("nimble-fslive-{}", std::process::id()));
+        let root = std::env::temp_dir().join(format!("moo-fslive-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
         std::fs::create_dir_all(root.join("docs")).unwrap();
         std::fs::write(root.join("docs/quarterly-report.txt"), "x").unwrap();
         let snap = root.with_extension("idx");
-        std::env::set_var("NIMBLE_FILE_ROOTS", &root);
-        std::env::set_var("NIMBLE_FILE_INDEX", &snap);
+        std::env::set_var("MOO_FILE_ROOTS", &root);
+        std::env::set_var("MOO_FILE_INDEX", &snap);
 
         assert!(start());
         wait_until("ready", 10, || status().state == "ready");
@@ -414,7 +414,7 @@ mod tests {
         (cpu(u.utime) + cpu(u.stime), u.rest[0] as f64 / 1048576.0)
     }
 
-    /// `NIMBLE_FILE_INDEX=/tmp/x.idx cargo test real_home_live -- --ignored --nocapture`, twice:
+    /// `MOO_FILE_INDEX=/tmp/x.idx cargo test real_home_live -- --ignored --nocapture`, twice:
     /// the first run crawls, the second loads the snapshot.
     #[test]
     #[ignore]
@@ -435,7 +435,7 @@ mod tests {
             rss0,
             rss1
         );
-        for q in ["re", "readme", "invoice", "main.tish", "nimble docs", "scrnsht", "png"] {
+        for q in ["re", "readme", "invoice", "main.tish", "moo docs", "scrnsht", "png"] {
             let (hits, ms) = search(q, 8).unwrap();
             eprintln!("{q:>12}: {ms:.2} ms  {}", hits.first().map_or("-", |h| h.path.as_str()));
         }
@@ -447,7 +447,7 @@ mod tests {
     }
 }
 
-/// Files and folders opened through Nimble, most used first, that still exist.
+/// Files and folders opened through Moo, most used first, that still exist.
 pub fn recent(limit: usize) -> Vec<FileHit> {
     let guard = INDEX.read().unwrap_or_else(|e| e.into_inner());
     let Some(ix) = guard.as_ref() else { return Vec::new() };

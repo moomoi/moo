@@ -7,6 +7,9 @@
 //! process-global and its compiled loops never poll a deadline) and every call is budgeted by a
 //! per-thread execution deadline. A runaway plugin raises a catchable error instead of hanging the
 //! launcher.
+//!
+//! The VM's only way out is the `moo` global (`pluginhost`): fetch, storage, sign-in, limited to
+//! the hosts the manifest declares in `permissions.network`.
 
 use std::cell::RefCell;
 use std::collections::HashSet;
@@ -49,6 +52,10 @@ fn run_chunk(chunk: &Chunk, label: &str) -> Result<Value, String> {
     let mut vm = Vm::with_capabilities(HashSet::new());
     vm.set_jit_enabled(false);
     vm.set_global(Arc::from("register"), Value::native(register));
+    #[cfg(target_os = "macos")]
+    let host: crate::pluginhost::Shared = Arc::new(std::sync::Mutex::new(crate::pluginhost::Host { id: label.to_string(), network: Vec::new() }));
+    #[cfg(target_os = "macos")]
+    vm.set_global(Arc::from("moo"), crate::pluginhost::object(host.clone()));
     REGISTERED.with(|r| r.borrow_mut().take());
     set_thread_execution_deadline(Some(LOAD_BUDGET_MS));
     let result = vm.run(chunk);
@@ -62,7 +69,26 @@ fn run_chunk(chunk: &Chunk, label: &str) -> Result<Value, String> {
     let exports = REGISTERED
         .with(|r| r.borrow_mut().take())
         .ok_or_else(|| "plugin never called register()".to_string())?;
-    Ok(budgeted_exports(&exports, label))
+    let exports = budgeted_exports(&exports, label);
+    #[cfg(target_os = "macos")]
+    if let Some(Value::Function(manifest)) = field(&exports, "manifest") {
+        let m = manifest.call(&[]);
+        take_pending_throw();
+        let mut h = host.lock().unwrap_or_else(|e| e.into_inner());
+        h.network = crate::pluginhost::network_permissions(&m);
+        if let Some(Value::String(id)) = field(&m, "id") {
+            h.id = id.to_string();
+        }
+    }
+    Ok(exports)
+}
+
+#[cfg(target_os = "macos")]
+fn field(v: &Value, key: &str) -> Option<Value> {
+    match v {
+        Value::Object(o) => o.borrow().strings.get(key).cloned(),
+        _ => None,
+    }
 }
 
 /// Copy of `exports` whose functions run under [`CALL_BUDGET_MS`]; other fields pass through.
@@ -79,7 +105,7 @@ fn budgeted_exports(exports: &Value, label: &str) -> Value {
     Value::object(out)
 }
 
-fn budgeted(f: Value, what: String) -> Value {
+pub(crate) fn budgeted(f: Value, what: String) -> Value {
     Value::native(move |args: &[Value]| {
         let Value::Function(inner) = &f else { return Value::Null };
         set_thread_execution_deadline(Some(CALL_BUDGET_MS));
@@ -217,7 +243,7 @@ mod tests {
         get(v, "id")
     }
 
-    /// Lattish views from @nimble/ui, end to end in a Tier A VM. Needs `plugins/build.sh` first.
+    /// Lattish views from @moo/ui, end to end in a Tier A VM. Needs `plugins/build.sh` first.
     #[test]
     fn lattish_view_plugin_opens_and_dispatches() {
         let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../plugins/dist/hello-list.tishc");
@@ -271,6 +297,36 @@ mod tests {
         call(&exports, "open", &[Value::String("missing".into())]);
         let thrown = take_pending_throw().expect("unknown view must throw");
         assert!(message(&thrown).contains("no view"), "{}", message(&thrown));
+    }
+
+    /// The Slack plugin's commands, their arguments and its network permission, as the shell reads
+    /// them. Only the manifest: no Keychain, no network. Needs `plugins/build.sh` first.
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn slack_plugin_declares_arguments_and_network() {
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../plugins/dist/slack.tishc");
+        if !std::path::Path::new(path).exists() {
+            eprintln!("skip: {path} not built");
+            return;
+        }
+        let (exports, _) = load(path).expect("load");
+        for f in ["suggest", "blocker", "visible"] {
+            assert!(matches!(get(&exports, f), Value::Function(_)), "{f}");
+        }
+        let m = call(&exports, "manifest", &[]);
+        assert!(take_pending_throw().is_none());
+        assert_eq!(crate::pluginhost::network_permissions(&m), ["slack.com"]);
+        let commands = items(&get(&m, "commands"));
+        let send = commands.iter().find(|c| get(c, "name").to_display_string() == "send").expect("send command");
+        assert_eq!(get(send, "keyword").to_display_string(), "slack");
+        let args: Vec<(String, String)> = items(&get(send, "arguments"))
+            .iter()
+            .map(|a| (get(a, "name").to_display_string(), get(a, "type").to_display_string()))
+            .collect();
+        assert_eq!(args, [("to".to_string(), "dropdown".to_string()), ("message".to_string(), "text".to_string())]);
+        let suggested = call(&exports, "suggest", &[Value::String("search".into()), Value::String("query".into()), Value::String("x".into()), Value::Null]);
+        assert!(take_pending_throw().is_none());
+        assert!(items(&suggested).is_empty(), "only Send Message's To has suggestions");
     }
 
     #[test]

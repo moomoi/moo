@@ -1,0 +1,5 @@
+{
+  "id": "slack",
+  "tier": "A",
+  "entry": "src/plugin.tish"
+}

@@ -5,7 +5,7 @@ import Foundation
 
 /// `(request, kind, status, text)`. kind: 0 response started (status), 1 a line of the body,
 /// 2 finished, 3 failed (message), 4 cancelled. Called on a Swift concurrency thread.
-public typealias NimbleHTTPCallback = @convention(c) (UInt64, Int32, Int32, UnsafePointer<CChar>?) -> Void
+public typealias MooHTTPCallback = @convention(c) (UInt64, Int32, Int32, UnsafePointer<CChar>?) -> Void
 
 private let httpLock = NSLock()
 nonisolated(unsafe) private var httpTasks: [UInt64: Task<Void, Never>] = [:]
@@ -13,21 +13,21 @@ nonisolated(unsafe) private var httpTasks: [UInt64: Task<Void, Never>] = [:]
 private let httpSession: URLSession = {
     let c = URLSessionConfiguration.ephemeral
     c.requestCachePolicy = .reloadIgnoringLocalCacheData
-    c.httpAdditionalHeaders = ["User-Agent": "Nimble"]
+    c.httpAdditionalHeaders = ["User-Agent": "Moo"]
     return URLSession(configuration: c)
 }()
 
-private func send(_ cb: NimbleHTTPCallback, _ id: UInt64, _ kind: Int32, _ status: Int32, _ text: String?) {
+private func send(_ cb: MooHTTPCallback, _ id: UInt64, _ kind: Int32, _ status: Int32, _ text: String?) {
     guard let text else { return cb(id, kind, status, nil) }
     text.withCString { cb(id, kind, status, $0) }
 }
 
 /// Start a request. `headers` is a JSON object of strings; `timeout` is the longest wait for data
 /// (an idle timeout, so long streams are fine). Returns false for an invalid URL.
-@_cdecl("nimble_http_start")
-public func nimble_http_start(
+@_cdecl("moo_http_start")
+public func moo_http_start(
     _ id: UInt64, _ method: UnsafePointer<CChar>, _ url: UnsafePointer<CChar>, _ headers: UnsafePointer<CChar>,
-    _ body: UnsafePointer<UInt8>?, _ bodyLen: Int, _ timeout: Double, _ cb: NimbleHTTPCallback
+    _ body: UnsafePointer<UInt8>?, _ bodyLen: Int, _ timeout: Double, _ cb: MooHTTPCallback
 ) -> Bool {
     guard let u = URL(string: String(cString: url)) else { return false }
     var req = URLRequest(url: u)
@@ -66,8 +66,8 @@ public func nimble_http_start(
 /// The Rust callback is thread-safe (it only takes a lock and runs a handler).
 private final class HTTPJob: @unchecked Sendable {
     let request: URLRequest
-    let cb: NimbleHTTPCallback
-    init(request: URLRequest, cb: NimbleHTTPCallback) {
+    let cb: MooHTTPCallback
+    init(request: URLRequest, cb: MooHTTPCallback) {
         self.request = request
         self.cb = cb
     }
@@ -79,8 +79,8 @@ private func forget(_ id: UInt64) {
     httpLock.unlock()
 }
 
-@_cdecl("nimble_http_cancel")
-public func nimble_http_cancel(_ id: UInt64) {
+@_cdecl("moo_http_cancel")
+public func moo_http_cancel(_ id: UInt64) {
     httpLock.lock()
     let t = httpTasks[id]
     httpLock.unlock()

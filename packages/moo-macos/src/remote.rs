@@ -28,6 +28,9 @@ pub struct Provider {
     /// Scopes to ask for at sign-in.
     pub scope: &'static str,
     pub client_id: String,
+    /// The registered OAuth redirect when it is a relay page (see `oauth::login`); empty for a
+    /// loopback redirect.
+    pub redirect: String,
     pub local: bool,
     /// Appended to `{url}/models`.
     pub models_query: &'static str,
@@ -35,11 +38,32 @@ pub struct Provider {
     pub public_models: bool,
     /// Hypery's balance and user endpoints on the URL's origin.
     pub account: bool,
+    /// The selected organization's id, sent as `ORG_HEADER`; empty for the personal one.
+    pub organization: String,
 }
 
-/// Nimble's OAuth app on hypery.ai (public client: PKCE, redirect `http://127.0.0.1/callback`,
-/// scopes `ai:chat ai:models`). Empty until registered; config and `NIMBLE_HYPERY_CLIENT_ID` win.
-const HYPERY_CLIENT_ID: &str = "";
+/// Picks which of the user's Hypery organizations a request acts for and bills to.
+const ORG_HEADER: &str = "x-hypery-active-organization-id";
+
+impl Provider {
+    fn authorized<'a>(&self, req: http::Request<'a>, key: &str) -> http::Request<'a> {
+        with_org(req.header("Authorization", format!("Bearer {key}")), &self.organization)
+    }
+}
+
+fn with_org<'a>(req: http::Request<'a>, org: &str) -> http::Request<'a> {
+    if org.is_empty() {
+        req
+    } else {
+        req.header(ORG_HEADER, org.to_string())
+    }
+}
+
+/// Moo's OAuth app on hypery.ai (public client: PKCE, scopes `ai:chat ai:models`). Its registered
+/// redirect is the moo.moi relay (web/ in this repo), which hands the code to the loopback
+/// listener. Config and `MOO_HYPERY_CLIENT_ID` / `MOO_HYPERY_REDIRECT` win.
+const HYPERY_CLIENT_ID: &str = "app_1791139621564_l2l6kzx0m";
+const HYPERY_REDIRECT: &str = "https://moo.moi/callback";
 
 fn builtins() -> Vec<Provider> {
     let p = |id: &str, title: &str, url: &str, key_env: &str, local: bool| Provider {
@@ -50,10 +74,12 @@ fn builtins() -> Vec<Provider> {
         oauth: None,
         scope: "",
         client_id: String::new(),
+        redirect: String::new(),
         local,
         models_query: "",
         public_models: false,
         account: false,
+        organization: String::new(),
     };
     let mut hypery = p("hypery", "Hypery", "https://hypery.ai/v1", "HYPERY_API_KEY", false);
     hypery.oauth = Some(("/api/oauth/authorize", "/api/oauth/token"));
@@ -89,10 +115,12 @@ pub fn providers(cfg: &AiConfig) -> Vec<Provider> {
                     oauth: None,
                     scope: "",
                     client_id: String::new(),
+                    redirect: String::new(),
                     local: false,
                     models_query: "",
                     public_models: false,
                     account: false,
+                    organization: String::new(),
                 });
                 list.len() - 1
             }
@@ -111,11 +139,25 @@ pub fn providers(cfg: &AiConfig) -> Vec<Provider> {
         if !c.client_id.is_empty() {
             p.client_id = c.client_id.clone();
         }
+        if !c.redirect_uri.is_empty() {
+            p.redirect = c.redirect_uri.clone();
+        }
+        p.organization = c.organization.clone();
     }
-    for p in list.iter_mut().filter(|p| p.client_id.is_empty() && p.oauth.is_some()) {
-        p.client_id = std::env::var(format!("NIMBLE_{}_CLIENT_ID", p.id.to_uppercase())).unwrap_or_default();
-        if p.client_id.is_empty() && p.id == "hypery" {
-            p.client_id = HYPERY_CLIENT_ID.into();
+    for p in list.iter_mut().filter(|p| p.oauth.is_some()) {
+        let id = p.id.to_uppercase();
+        let hypery = p.id == "hypery";
+        if p.client_id.is_empty() {
+            p.client_id = std::env::var(format!("MOO_{id}_CLIENT_ID")).unwrap_or_default();
+            if p.client_id.is_empty() && hypery {
+                p.client_id = HYPERY_CLIENT_ID.into();
+            }
+        }
+        if p.redirect.is_empty() {
+            p.redirect = std::env::var(format!("MOO_{id}_REDIRECT")).unwrap_or_default();
+            if p.redirect.is_empty() && hypery {
+                p.redirect = HYPERY_REDIRECT.into();
+            }
         }
     }
     list
@@ -144,7 +186,14 @@ fn origin(url: &str) -> &str {
 pub fn endpoints(p: &Provider) -> Option<oauth::Endpoints> {
     let (auth, token) = p.oauth?;
     let o = origin(&p.url);
-    Some(oauth::Endpoints { authorize: format!("{o}{auth}"), token: format!("{o}{token}"), client_id: p.client_id.clone(), scope: p.scope.into() })
+    Some(oauth::Endpoints {
+        authorize: format!("{o}{auth}"),
+        token: format!("{o}{token}"),
+        client_id: p.client_id.clone(),
+        scope: p.scope.into(),
+        relay: p.redirect.clone(),
+        extra: Vec::new(),
+    })
 }
 
 fn oauth_account(id: &str) -> String {
@@ -195,12 +244,12 @@ pub fn credential(p: &Provider) -> Result<Option<String>, String> {
 }
 
 fn no_credential(p: &Provider) -> String {
-    let mut how = format!("{} needs an API key: `nimble ai key {} <key>`", p.title, p.id);
+    let mut how = format!("{} needs an API key: `moo ai key {} <key>`", p.title, p.id);
     if !p.key_env.is_empty() {
         how.push_str(&format!(" or ${}", p.key_env));
     }
     if p.oauth.is_some() {
-        how.push_str(&format!(", or sign in with `nimble ai login {}`", p.id));
+        how.push_str(&format!(", or sign in with `moo ai login {}`", p.id));
     }
     how
 }
@@ -475,7 +524,7 @@ pub fn chat(model: &str, messages: &str, tools: &str, cb: Option<Value>) -> u64 
     std::thread::spawn(move || {
         let Some(p) = provider else { return fail(request, format!("unknown AI provider `{pid}`")) };
         if name.is_empty() {
-            return fail(request, format!("name a model: `{pid}:<model>` (see `nimble ai models`)"));
+            return fail(request, format!("name a model: `{pid}:<model>` (see `moo ai models`)"));
         }
         let key = match credential(&p) {
             Ok(Some(k)) => Some(k),
@@ -492,24 +541,24 @@ pub fn chat(model: &str, messages: &str, tools: &str, cb: Option<Value>) -> u64 
             body.push_str(&tools);
         }
         body.push('}');
-        send(request, format!("{}/chat/completions", p.url), key, body, 0);
+        send(request, format!("{}/chat/completions", p.url), key, p.organization.clone(), body, 0);
     });
     request
 }
 
-fn send(request: u64, url: String, key: Option<String>, body: String, attempt: u32) {
+fn send(request: u64, url: String, key: Option<String>, org: String, body: String, attempt: u32) {
     if is_cancelled(request) {
         return emit(Out { request, kind: "cancelled", text: String::new(), calls: Vec::new(), finish: String::new() });
     }
     let mut req = http::Request::post_json(&url, body.clone()).header("Accept", "text/event-stream");
     req.timeout = 120.0;
     if let Some(k) = &key {
-        req = req.header("Authorization", format!("Bearer {k}"));
+        req = with_org(req.header("Authorization", format!("Bearer {k}")), &org);
     }
     let mut status = 0u16;
     let mut stream = Stream::default();
     let mut error_body = String::new();
-    let retry = (url.clone(), key.clone(), body.clone());
+    let retry = (url.clone(), key.clone(), org.clone(), body.clone());
     let handler: http::Handler = Box::new(move |e| match e {
         http::Event::Status(st) => status = st,
         http::Event::Line(l) if status == 200 => {
@@ -526,10 +575,10 @@ fn send(request: u64, url: String, key: Option<String>, body: String, attempt: u
             if status != 200 {
                 let limited = status == 429 || error_body.contains("RATE_LIMITED");
                 if limited && attempt < 2 {
-                    let (url, key, body) = retry.clone();
+                    let (url, key, org, body) = retry.clone();
                     std::thread::spawn(move || {
                         std::thread::sleep(Duration::from_millis(1500 << attempt));
-                        send(request, url, key, body, attempt + 1);
+                        send(request, url, key, org, body, attempt + 1);
                     });
                     return;
                 }
@@ -588,11 +637,16 @@ pub fn models(cb: Option<Value>) {
             .map(|p| {
                 std::thread::spawn(move || {
                     let mut l = Listing { id: p.id.clone(), title: p.title.clone(), models: Vec::new(), error: String::new() };
-                    let key = match credential(&p) {
-                        Ok(k) => k,
-                        Err(e) => {
-                            l.error = e;
-                            return l;
+                    // A public list needs no key, so listing never reads the Keychain for it.
+                    let key = if p.public_models {
+                        None
+                    } else {
+                        match credential(&p) {
+                            Ok(k) => k,
+                            Err(e) => {
+                                l.error = e;
+                                return l;
+                            }
                         }
                     };
                     if key.is_none() && !p.local && !p.public_models {
@@ -679,13 +733,53 @@ struct Account {
     email: String,
     name: String,
     /// Settings URLs on the provider's site.
+    manage: String,
     billing: String,
     keys: String,
     /// US dollars; -1 when unknown.
     balance: f64,
     month_spent: f64,
     month_limit: f64,
+    /// The organization the balance and links are for, and every one the user belongs to.
+    organization: String,
+    orgs: Vec<Org>,
     error: String,
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+struct Org {
+    id: String,
+    name: String,
+    slug: String,
+    /// Icon URL; empty when the organization has none.
+    image: String,
+    personal: bool,
+    role: String,
+}
+
+/// `GET /api/auth/list_memberships` -> the user's organizations, personal first.
+fn parse_orgs(body: &str) -> Vec<Org> {
+    let Ok(v) = json_parse(body) else { return Vec::new() };
+    let mut orgs: Vec<Org> = list(&v, "memberships")
+        .iter()
+        .filter_map(|m| get(m, "team"))
+        .map(|t| Org {
+            id: text(&t, "id"),
+            name: text(&t, "name"),
+            slug: text(&t, "slug"),
+            image: text(&t, "image"),
+            personal: matches!(get(&t, "isPersonal"), Some(Value::Bool(true))),
+            role: text(&t, "role"),
+        })
+        .filter(|o| !o.id.is_empty())
+        .collect();
+    orgs.sort_by_key(|o| !o.personal);
+    orgs
+}
+
+/// The chosen organization when the user belongs to it, else the personal one.
+fn active_org<'a>(orgs: &'a [Org], chosen: &str) -> Option<&'a Org> {
+    orgs.iter().find(|o| !chosen.is_empty() && o.id == chosen).or_else(|| orgs.iter().find(|o| o.personal))
 }
 
 /// Credits as dollars (100 credits = $1).
@@ -698,6 +792,7 @@ fn fetch_account(p: &Provider) -> Account {
     let o = origin(&p.url).to_string();
     a.billing = format!("{o}/dashboard");
     a.keys = a.billing.clone();
+    a.manage = a.billing.clone();
     if !p.account {
         a.error = format!("{} has no account details", p.title);
         return a;
@@ -715,40 +810,73 @@ fn fetch_account(p: &Provider) -> Account {
     };
     let fetch_path = |path: &str| {
         let url = format!("{o}{path}");
-        let mut req = http::Request::get(&url).header("Authorization", format!("Bearer {key}"));
+        let mut req = p.authorized(http::Request::get(&url), &key);
         req.timeout = 15.0;
         http::fetch(&req)
+    };
+    let links = |a: &mut Account, slug: &str| {
+        if !slug.is_empty() {
+            a.manage = format!("{o}/settings/{slug}");
+            a.billing = format!("{o}/settings/{slug}/billing");
+            a.keys = format!("{o}/settings/{slug}/api-keys");
+        }
     };
     if a.credential == "signed in" {
         if let Ok((200, body)) = fetch_path("/api/user/me") {
             if let Ok(v) = json_parse(&body) {
                 a.email = text(&v, "email");
                 a.name = text(&v, "name");
-                let slug = text(&v, "slug");
-                if !slug.is_empty() {
-                    a.billing = format!("{o}/settings/{slug}/billing");
-                    a.keys = format!("{o}/settings/{slug}/api-keys");
-                }
+                links(&mut a, &text(&v, "slug"));
             }
         }
     }
-    match fetch_path("/api/wallet/balance") {
-        Ok((200, body)) => match json_parse(&body).ok().and_then(|v| get(&v, "balance")) {
-            Some(b) => {
-                a.balance = dollars(&text(&b, "current"));
-                a.month_spent = dollars(&text(&b, "monthlySpent"));
-                a.month_limit = dollars(&text(&b, "monthlyLimit"));
-            }
-            None => a.error = "the balance reply had no balance".into(),
+    if let Ok((200, body)) = fetch_path("/api/auth/list_memberships") {
+        a.orgs = parse_orgs(&body);
+    }
+    let active = active_org(&a.orgs, &p.organization).cloned();
+    let personal = active.as_ref().map_or(true, |o| o.personal);
+    if let Some(org) = &active {
+        a.organization = org.id.clone();
+        links(&mut a, &org.slug);
+    }
+    let read = |a: &mut Account, body: &str| match json_parse(body).ok().and_then(|v| get(&v, "balance")) {
+        Some(b) => {
+            a.balance = dollars(&text(&b, "current"));
+            a.month_spent = dollars(&text(&b, "monthlySpent"));
+            a.month_limit = dollars(&text(&b, "monthlyLimit"));
+        }
+        None => a.error = "the balance reply had no balance".into(),
+    };
+    // The wallet of the organization in the header; it needs `billing:read`. Without that
+    // scope only the personal wallet is readable.
+    match fetch_path("/api/wallet/state") {
+        Ok((200, body)) => read(&mut a, &body),
+        Ok((403, _)) | Ok((404, _)) if personal => match fetch_path("/api/wallet/balance") {
+            Ok((200, body)) => read(&mut a, &body),
+            Ok((st, body)) => a.error = error_message(st, &body),
+            Err(e) => a.error = e,
         },
+        Ok((403, _)) => a.error = "this organization's balance needs billing access".into(),
         Ok((st, body)) => a.error = error_message(st, &body),
         Err(e) => a.error = e,
     }
     a
 }
 
-/// `cb({ provider, credential, email, name, billing, keys, balance, monthSpent, monthLimit, error })`
-/// on the main thread. Amounts are US dollars, -1 when unknown.
+fn org_value(o: &Org) -> Value {
+    obj(vec![
+        ("id", s(&o.id)),
+        ("name", s(&o.name)),
+        ("slug", s(&o.slug)),
+        ("image", s(&o.image)),
+        ("personal", Value::Bool(o.personal)),
+        ("role", s(&o.role)),
+    ])
+}
+
+/// `cb({ provider, credential, email, name, manage, billing, keys, balance, monthSpent, monthLimit,
+/// organization, orgs: [{ id, name, slug, image, personal, role }], error })` on the main thread.
+/// Amounts are US dollars, -1 when unknown; the balance and links are `organization`'s.
 pub fn account(provider: &str, cb: Option<Value>) {
     let request = bridge::hold(cb);
     let p = providers(&load_config()).into_iter().find(|p| p.id == provider);
@@ -767,11 +895,14 @@ pub fn account(provider: &str, cb: Option<Value>) {
                     ("credential", s(&a.credential)),
                     ("email", s(&a.email)),
                     ("name", s(&a.name)),
+                    ("manage", s(&a.manage)),
                     ("billing", s(&a.billing)),
                     ("keys", s(&a.keys)),
                     ("balance", Value::Number(a.balance)),
                     ("monthSpent", Value::Number(a.month_spent)),
                     ("monthLimit", Value::Number(a.month_limit)),
+                    ("organization", s(&a.organization)),
+                    ("orgs", Value::Array(VmRef::new(a.orgs.iter().map(org_value).collect()))),
                     ("error", s(&a.error)),
                 ])
             },
@@ -814,7 +945,7 @@ pub fn login(provider: &str, cb: Option<Value>) {
             let ep = endpoints(&p).ok_or_else(|| format!("{} has no browser sign-in; use an API key", p.title))?;
             if ep.client_id.is_empty() {
                 return Err(format!(
-                    "{} sign-in needs an OAuth client id: set ai.providers.{}.clientId in shortcuts.json or NIMBLE_{}_CLIENT_ID",
+                    "{} sign-in needs an OAuth client id: set ai.providers.{}.clientId in shortcuts.json or MOO_{}_CLIENT_ID",
                     p.title,
                     p.id,
                     p.id.to_uppercase()
@@ -926,7 +1057,7 @@ mod tests {
         let mut p = builtins().remove(0);
         p.id = format!("hypery-test-{}", std::process::id());
         p.url = format!("{base}/v1");
-        p.key_env = format!("NIMBLE_TEST_ACCOUNT_KEY_{}", std::process::id());
+        p.key_env = format!("MOO_TEST_ACCOUNT_KEY_{}", std::process::id());
         std::env::set_var(&p.key_env, "ak_test");
         let a = fetch_account(&p);
         assert_eq!(a.error, "");
@@ -935,6 +1066,42 @@ mod tests {
         std::env::set_var(&p.key_env, "ak_wrong");
         let bad = fetch_account(&p);
         assert!(bad.error.starts_with("HTTP 401"), "{}", bad.error);
+        std::env::remove_var(&p.key_env);
+    }
+
+    #[test]
+    fn account_for_the_selected_organization() {
+        let base = crate::http::tests::serve(|line, headers, _b| {
+            let h = headers.to_ascii_lowercase();
+            let org = h.lines().find_map(|l| l.strip_prefix("x-hypery-active-organization-id: ")).unwrap_or("").trim().to_string();
+            if line.starts_with("GET /api/auth/list_memberships") {
+                (200, "application/json", vec![r#"{"memberships":[{"team":{"id":"t2","name":"Acme","slug":"acme","image":"https://cdn.example/acme.png","isPersonal":false,"role":"admin"}},{"team":{"id":"t1","name":"Me","slug":"me","image":null,"isPersonal":true,"role":"owner"}}]}"#.into()])
+            } else if line.starts_with("GET /api/wallet/state") && org == "t2" {
+                (200, "application/json", vec![r#"{"team":{"id":"t2","slug":"acme"},"balance":{"current":500,"monthlySpent":25,"monthlyLimit":1000}}"#.into()])
+            } else if line.starts_with("GET /api/wallet/state") {
+                (403, "application/json", vec![r#"{"error":"Forbidden"}"#.into()])
+            } else if line.starts_with("GET /api/wallet/balance") {
+                (200, "application/json", vec![r#"{"balance":{"current":100,"monthlySpent":0,"monthlyLimit":1000}}"#.into()])
+            } else {
+                (404, "text/plain", vec![])
+            }
+        });
+        let mut p = builtins().remove(0);
+        p.id = format!("hypery-org-{}", std::process::id());
+        p.url = format!("{base}/v1");
+        p.key_env = format!("MOO_TEST_ORG_KEY_{}", std::process::id());
+        std::env::set_var(&p.key_env, "ak_test");
+
+        let mine = fetch_account(&p);
+        assert_eq!((mine.error.as_str(), mine.organization.as_str(), mine.balance), ("", "t1", 1.0), "personal falls back to the balance endpoint");
+        assert_eq!(mine.orgs.iter().map(|o| o.name.as_str()).collect::<Vec<_>>(), ["Me", "Acme"], "personal first");
+        assert_eq!(mine.orgs[1].image, "https://cdn.example/acme.png");
+        assert!(mine.billing.ends_with("/settings/me/billing"), "{}", mine.billing);
+
+        p.organization = "t2".into();
+        let acme = fetch_account(&p);
+        assert_eq!((acme.error.as_str(), acme.organization.as_str(), acme.balance, acme.month_spent), ("", "t2", 5.0, 0.25));
+        assert!(acme.manage.ends_with("/settings/acme"), "{}", acme.manage);
         std::env::remove_var(&p.key_env);
     }
 }

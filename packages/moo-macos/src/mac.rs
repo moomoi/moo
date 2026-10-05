@@ -176,7 +176,7 @@ define_class!(
     /// windows by default).
     #[unsafe(super(NSPanel, NSWindow, NSResponder, NSObject))]
     #[thread_kind = MainThreadOnly]
-    #[name = "NimbleLauncherPanel"]
+    #[name = "MooLauncherPanel"]
     struct LauncherPanel;
 
     impl LauncherPanel {
@@ -216,7 +216,7 @@ define_class!(
     /// Hands Quick Look the one file being previewed.
     #[unsafe(super(NSObject))]
     #[thread_kind = MainThreadOnly]
-    #[name = "NimblePreviewSource"]
+    #[name = "MooPreviewSource"]
     struct PreviewSource;
 
     impl PreviewSource {
@@ -326,7 +326,7 @@ define_class!(
     /// the panel, as it would if the click had gone to the window below.
     #[unsafe(super(NSView, NSResponder, NSObject))]
     #[thread_kind = MainThreadOnly]
-    #[name = "NimblePanelStage"]
+    #[name = "MooPanelStage"]
     struct PanelStage;
 
     impl PanelStage {
@@ -348,7 +348,7 @@ define_class!(
     /// bar) the header stays at the top and the rest is clipped below.
     #[unsafe(super(NSView, NSResponder, NSObject))]
     #[thread_kind = MainThreadOnly]
-    #[name = "NimbleTopAnchoredView"]
+    #[name = "MooTopAnchoredView"]
     struct TopAnchoredView;
 
     impl TopAnchoredView {
@@ -374,7 +374,7 @@ fn adopt_into_panel(host_window: &NSWindow, mtm: MainThreadMarker) -> Option<Ret
     let margin = theme.margin;
     let rect = NSRect::new(NSPoint::new(0.0, 0.0), NSSize::new(pw, ph));
     let outer = NSRect::new(NSPoint::new(0.0, 0.0), NSSize::new(pw + 2.0 * margin, ph + 2.0 * margin));
-    let glass = std::env::var_os("NIMBLE_NO_GLASS").is_none() && AnyClass::get(c"NSGlassEffectView").is_some();
+    let glass = std::env::var_os("MOO_NO_GLASS").is_none() && AnyClass::get(c"NSGlassEffectView").is_some();
     GLASS.with(|g| g.set(glass));
 
     let placeholder = NSView::initWithFrame(NSView::alloc(mtm), rect);
@@ -560,7 +560,7 @@ pub fn set_panel_shape(h: f64, segs: Vec<Piece>) {
     let animate = SHOWN.with(|s| s.get())
         && w.isVisible()
         && theme::get().morph.secs > 0.0
-        && std::env::var_os("NIMBLE_NO_ANIMATION").is_none();
+        && std::env::var_os("MOO_NO_ANIMATION").is_none();
     if animate {
         stop_open_animation();
         stop_morph();
@@ -702,7 +702,7 @@ fn stop_open_animation() {
 fn animate_open() {
     stop_open_animation();
     let secs = theme::get().open.secs;
-    if secs <= 0.0 || std::env::var_os("NIMBLE_NO_ANIMATION").is_some() {
+    if secs <= 0.0 || std::env::var_os("MOO_NO_ANIMATION").is_some() {
         return;
     }
     layout_open(0.0);
@@ -810,9 +810,9 @@ fn stop_morph() {
 
 fn debug_log(msg: &str) {
     static START: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
-    if std::env::var_os("NIMBLE_DEBUG").is_some() {
+    if std::env::var_os("MOO_DEBUG").is_some() {
         let t = START.get_or_init(std::time::Instant::now).elapsed().as_secs_f64() * 1000.0;
-        eprintln!("nimble: [{t:.1} ms] {msg}");
+        eprintln!("moo: [{t:.1} ms] {msg}");
     }
 }
 
@@ -949,7 +949,7 @@ pub fn show() {
     defer_callback("show", "show");
 }
 
-/// Test hook for `nimble type`: feed `text` to whatever has focus through `insertText:`, one
+/// Test hook for `moo type`: feed `text` to whatever has focus through `insertText:`, one
 /// character every 120 ms, reporting where focus is after each.
 pub fn type_text(text: String) {
     let chars: Vec<char> = text.chars().collect();
@@ -962,7 +962,7 @@ fn type_step(chars: Vec<char>, i: usize) {
     let responder = |w: &NSWindow| w.firstResponder().map(|r| r.class().name().to_string_lossy().into_owned()).unwrap_or_default();
     let field = || w.contentView().and_then(|c| first_editable_text_field(&c)).map(|tf| tf.stringValue().to_string()).unwrap_or_default();
     if i >= chars.len() {
-        eprintln!("nimble: TYPE done: responder={} field={:?}", responder(&w), field());
+        eprintln!("moo: TYPE done: responder={} field={:?}", responder(&w), field());
         return;
     }
     let before = responder(&w);
@@ -970,7 +970,7 @@ fn type_step(chars: Vec<char>, i: usize) {
         let s = NSString::from_str(&chars[i].to_string());
         let _: () = unsafe { msg_send![&*r, insertText: &*s] };
     }
-    eprintln!("nimble: TYPE {:?}: before={before} after={} field={:?}", chars[i], responder(&w), field());
+    eprintln!("moo: TYPE {:?}: before={before} after={} field={:?}", chars[i], responder(&w), field());
     let when = DispatchTime::try_from(std::time::Duration::from_millis(120)).unwrap_or(DispatchTime::NOW);
     let _ = DispatchQueue::main().after(when, move || type_step(chars, i + 1));
 }
@@ -1291,7 +1291,7 @@ pub const TOGGLE: &str = "toggle";
 /// One hotkey as the user wrote it; registered once per logical modifier combination.
 struct Binding {
     action: String,
-    /// What the hotkey runs, for messages: "Google", "the Nimble launcher".
+    /// What the hotkey runs, for messages: "Google", "the Moo launcher".
     label: String,
     display: String,
     /// `(Carbon hotkey ref, key code, logical modifiers)` per registration.
@@ -1346,7 +1346,7 @@ pub struct Hotkey {
 }
 
 /// The logical combinations `spec` needs, or why it cannot be bound: a system shortcut or another
-/// Nimble hotkey owns it, or a modifier is remapped away on every keyboard.
+/// Moo hotkey owns it, or a modifier is remapped away on every keyboard.
 fn plan_hotkey(spec: &str) -> Result<(keys::Spec, String, Vec<u32>, Vec<String>), String> {
     let s = keys::parse(spec)?;
     let display = keys::display(s.mods, s.key);
@@ -1422,7 +1422,7 @@ pub fn register_hotkey(spec: &str, action: &str, label: &str) -> Result<Hotkey, 
     }
     debug_log(&format!("hotkey {display} -> {action} registered as {}", registered.join(", ")));
     let label = match label {
-        "" if action == TOGGLE => "the Nimble launcher".to_string(),
+        "" if action == TOGGLE => "the Moo launcher".to_string(),
         "" => action.to_string(),
         l => l.to_string(),
     };
@@ -1511,7 +1511,7 @@ pub fn copy_text(text: &str) -> bool {
 define_class!(
     #[unsafe(super(NSObject))]
     #[thread_kind = MainThreadOnly]
-    #[name = "NimbleMenuTarget"]
+    #[name = "MooMenuTarget"]
     struct MenuTarget;
 
     impl MenuTarget {
@@ -1546,8 +1546,8 @@ define_class!(
             });
         }
 
-        #[unsafe(method(quitNimble:))]
-        fn quit_nimble(&self, _sender: Option<&AnyObject>) {
+        #[unsafe(method(quitMoo:))]
+        fn quit_moo(&self, _sender: Option<&AnyObject>) {
             quit();
         }
     }
@@ -1566,7 +1566,7 @@ pub struct StatusItem {
 }
 
 /// Menu bar icon, installed once the run loop is live. A click shows the panel; a right click
-/// (or Control-click) opens Settings… / Quit Nimble, and Settings calls `on_menu("settings")`.
+/// (or Control-click) opens Settings… / Quit Moo, and Settings calls `on_menu("settings")`.
 /// `hotkey` goes in the tooltip as a reminder.
 pub fn status_item(hotkey: &str, symbol: &str, on_menu: Box<dyn Fn(&str)>) -> bool {
     if STATUS.with(|s| s.borrow().is_some()) {
@@ -1592,7 +1592,7 @@ fn install_status_item(hotkey: &str, symbol: &str) {
     // NSVariableStatusItemLength
     let item = NSStatusBar::systemStatusBar().statusItemWithLength(-1.0);
     if let Some(button) = item.button(mtm) {
-        let desc = NSString::from_str("Nimble");
+        let desc = NSString::from_str("Moo");
         match NSImage::imageWithSystemSymbolName_accessibilityDescription(&NSString::from_str(symbol), Some(&desc)) {
             Some(img) => {
                 img.setTemplate(true);
@@ -1611,7 +1611,7 @@ fn install_status_item(hotkey: &str, symbol: &str) {
         button.sendActionOn(NSEventMask::LeftMouseUp | NSEventMask::RightMouseUp);
     }
     let menu = NSMenu::new(mtm);
-    let entries = [(Some("Settings…"), Some(sel!(openSettings:)), ","), (None, None, ""), (Some("Quit Nimble"), Some(sel!(quitNimble:)), "q")];
+    let entries = [(Some("Settings…"), Some(sel!(openSettings:)), ","), (None, None, ""), (Some("Quit Moo"), Some(sel!(quitMoo:)), "q")];
     for (title, action, key) in entries {
         let Some(title) = title else {
             menu.addItem(&NSMenuItem::separatorItem(mtm));
@@ -1627,13 +1627,13 @@ fn install_status_item(hotkey: &str, symbol: &str) {
 }
 
 fn set_status_tooltip(button: &NSView, hotkey: &str) {
-    let tip = if hotkey.is_empty() { "Nimble".to_string() } else { format!("Nimble  ({hotkey})") };
+    let tip = if hotkey.is_empty() { "Moo".to_string() } else { format!("Moo  ({hotkey})") };
     button.setToolTip(Some(&NSString::from_str(&tip)));
 }
 
 /// Register SF Symbol `symbol` as a named image (once) and return the name.
 pub fn symbol_icon(symbol: &str) -> String {
-    let name = format!("nimble-symbol-{symbol}");
+    let name = format!("moo-symbol-{symbol}");
     let ns_name = NSString::from_str(&name);
     if NSImage::imageNamed(&ns_name).is_none() {
         let desc = NSString::from_str(symbol);
@@ -1665,7 +1665,7 @@ pub fn icon_name(path: &str) -> String {
         }
         slot
     });
-    let name = format!("nimble-icon-{slot}");
+    let name = format!("moo-icon-{slot}");
     let ns_name = NSString::from_str(&name);
     if let Some(old) = NSImage::imageNamed(&ns_name) {
         old.setName(None);

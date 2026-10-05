@@ -4,7 +4,7 @@
 import { manifest, greet, search, stats, fail } from "ffi:./plugins/hello.lib"
 
 console.log("manifest  =", JSON.stringify(manifest()))
-console.log("greet     =", greet("Nimble"))
+console.log("greet     =", greet("Moo"))
 
 let items = ["Safari", "Slack", "System Settings", "Terminal"]
 let titled = items.map((t) => ({ title: t }))

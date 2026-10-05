@@ -9,15 +9,39 @@ thread_local! {
 }
 
 pub fn store_path() -> Option<PathBuf> {
-    if let Some(p) = std::env::var_os("NIMBLE_PREFS") {
+    if let Some(p) = std::env::var_os("MOO_PREFS") {
         return Some(PathBuf::from(p));
     }
     let home = PathBuf::from(std::env::var_os("HOME")?);
     #[cfg(target_os = "macos")]
-    let dir = home.join("Library/Application Support/Nimble");
+    let dir = home.join("Library/Application Support/Moo");
     #[cfg(not(target_os = "macos"))]
-    let dir = home.join(".local/share/nimble");
+    let dir = home.join(".local/share/moo");
     Some(dir.join("prefs.tsv"))
+}
+
+/// Before the rename to Moo, data lived under "Nimble" / "nimble". Move each old folder to its new
+/// place once, when only the old one exists. Skipped when any data path is overridden (tests).
+pub fn migrate_legacy_dirs() {
+    let overridden = ["MOO_CONFIG", "MOO_PREFS", "MOO_SOCKET", "MOO_HISTORY", "MOO_FRECENCY", "MOO_KEYCHAIN_INDEX"]
+        .iter()
+        .any(|k| std::env::var_os(k).is_some());
+    let Some(home) = std::env::var_os("HOME").map(PathBuf::from) else { return };
+    if overridden {
+        return;
+    }
+    #[cfg(target_os = "macos")]
+    let data = ("Library/Application Support/Nimble", "Library/Application Support/Moo");
+    #[cfg(not(target_os = "macos"))]
+    let data = (".local/share/nimble", ".local/share/moo");
+    for (old, new) in [data, (".config/nimble", ".config/moo")] {
+        let (old, new) = (home.join(old), home.join(new));
+        if old.is_dir() && !new.exists() && std::fs::rename(&old, &new).is_ok() {
+            // The old instance's socket; the new one is made at its own name.
+            let _ = std::fs::remove_file(new.join("nimble.sock"));
+            eprintln!("moo: moved {} to {}", old.display(), new.display());
+        }
+    }
 }
 
 fn load() -> Vec<(String, String)> {
@@ -57,7 +81,7 @@ pub fn set(key: &str, value: &str) {
             None => items.push((key, value)),
         }
         if let Err(e) = save(items) {
-            eprintln!("nimble: prefs save failed: {e}");
+            eprintln!("moo: prefs save failed: {e}");
         }
     });
 }
@@ -68,8 +92,8 @@ mod tests {
 
     #[test]
     fn set_get_and_reload() {
-        let path = std::env::temp_dir().join(format!("nimble-prefs-{}.tsv", std::process::id()));
-        std::env::set_var("NIMBLE_PREFS", &path);
+        let path = std::env::temp_dir().join(format!("moo-prefs-{}.tsv", std::process::id()));
+        std::env::set_var("MOO_PREFS", &path);
         let _ = std::fs::remove_file(&path);
         assert_eq!(get("appsView"), "");
         set("appsView", "list");

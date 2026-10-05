@@ -6,4 +6,7 @@ poc/host-native/host
 app/dist/
 app/node_modules/
 plugins/dist/
+web/dist/
+web/.vercel/
 /dist/
+/.toolchain/

@@ -1,6 +1,6 @@
 # AI
 
-Nimble's AI features route through one provider interface. Apple's on-device model is the default
+Moo's AI features route through one provider interface. Apple's on-device model is the default
 and is built (Quick AI, below). Hypery for remote models, Uzu, and OpenAI-compatible servers on
 localhost are designed but not built.
 
@@ -17,23 +17,23 @@ keeps the conversation's context. Enter on an empty field copies the answer; esc
 answer, then leaves.
 
 **How it is wired.** FoundationModels is Swift-only (no Objective-C headers), so
-`packages/nimble-macos/swift/ai.swift` wraps it in a C ABI (`nimble_ai_availability`,
+`packages/moo-macos/swift/ai.swift` wraps it in a C ABI (`moo_ai_availability`,
 `_session_new`, `_ask`, `_cancel`, `_prewarm`), compiled to a static library by `build.rs` and linked
 into the one binary. Replies stream on a Swift concurrency thread; `src/ai.rs` queues events,
 collapses consecutive partial replies, and delivers them on the main queue. Tish sees `aiAvailability`,
 `aiSession`, `aiAsk(session, prompt, onEvent)`, `aiCancel`, `aiPrewarm` and `aiEndSession`.
 
 **Older macOS.** Every FoundationModels use is behind `#available`, so the framework is weak-linked
-and Nimble still launches on macOS 14; `aiAvailability()` then returns `requires macOS 26`. Other
+and Moo still launches on macOS 14; `aiAvailability()` then returns `requires macOS 26`. Other
 reasons it reports: `deviceNotEligible`, `appleIntelligenceNotEnabled`, `modelNotReady`. The Swift
-runtime comes from `/usr/lib/swift`, which needs a deployment target of 12 or later (Nimble uses 14).
+runtime comes from `/usr/lib/swift`, which needs a deployment target of 12 or later (Moo uses 14).
 
 **Tools.** The model can act, not just answer. `aiSession(instructions, toolsJson, onTool)` takes
 tools as `[{ name, description, params: [{ name, description, optional?, choices? }] }]` (string
 parameters; `choices` limits one to fixed values); Swift turns each into a FoundationModels `Tool`
 with a `DynamicGenerationSchema`. When the model calls one, the Swift thread waits on the main queue
 while `onTool(name, argsJson)` runs in Tish, and the returned text goes back to the model. Every
-call is logged to stderr as `nimble: AI tool <name> <args> -> <first line of the reply>`.
+call is logged to stderr as `moo: AI tool <name> <args> -> <first line of the reply>`.
 
 Without a tool the model cannot see the Mac, and it will invent an answer ("I couldn't find any
 large files") rather than say so. The tools, defined in `aiTools()` in `main.tish`:
@@ -46,7 +46,7 @@ large files") rather than say so. The tools, defined in `aiTools()` in `main.tis
 | `revealFile` | Select a file in Finder |
 | `findApps` | Installed apps by name (the app index) |
 | `runningApps` | Apps with a Dock icon, frontmost and hidden marked |
-| `clipboardHistory` | Nimble's in-memory clipboard history, optionally filtered |
+| `clipboardHistory` | Moo's in-memory clipboard history, optionally filtered |
 | `systemInfo` | macOS version, model, chip, cores, memory, disk free, battery, uptime |
 | `runShortcut` | Run a user shortcut by keyword (listed in the tool description); commands are left to the user |
 | `controlMac` | Dark mode, volume and mute, lock screen, sleep displays, screen saver, hide all apps, eject disks. Restart, shut down, sleep, log out, quit all apps and empty Trash are choices too, but the tool refuses them and tells the model to name the command for the user: with no matching choice, the on-device model picked the nearest action and claimed it had restarted |
@@ -63,10 +63,10 @@ floor, the largest files matching the other filters come back instead.
 
 Tool results that are files, apps or clipboard entries also appear as rows under the answer (at
 most four answer lines stay visible above them). ↓ scrolls the answer, then walks the rows; ↵ opens
-or copies the selected row, ⌘↵ shows it in Finder, ⌥↵ copies its path, esc deselects. `nimble ask`
+or copies the selected row, ⌘↵ shows it in Finder, ⌥↵ copies its path, esc deselects. `moo ask`
 uses the same tools and prints only the answer.
 
-Checked with `nimble ask` on this Mac: "find large files created in the last 2 days" called
+Checked with `moo ask` on this Mac: "find large files created in the last 2 days" called
 `findFiles {minSize: 100 MB, createdWithin: 2 days}` and listed the 8 largest; "which apps are open
 right now?", "do I have any photo editing apps installed?", "how much disk space do I have left and
 what's my battery at?", "run my stamp shortcut" and "show … in Finder" each called the matching
@@ -76,7 +76,7 @@ with `/Users/<you>/Documents` in 3 of 3 runs (`ai::tests::model_calls_a_host_too
 **Limits.** A small model with a context window Apple documents as 4,096 tokens: good for short
 answers, rewriting and extraction, weak on long input and broad knowledge. Long conversations fail
 with `exceededContextWindowSize` (shown as a message; esc starts over). Apple's safety filter can
-refuse (`guardrailViolation`); Nimble uses the `permissiveContentTransformations` guardrails, Apple's
+refuse (`guardrailViolation`); Moo uses the `permissiveContentTransformations` guardrails, Apple's
 less strict level for plain-text replies, and puts a refused question back in the field.
 
 ## Features
@@ -106,9 +106,10 @@ ids look like `custom:<provider>:<model>`.
 - Base URL `https://hypery.ai/v1`, OpenAI-compatible: `chat/completions` (SSE streaming and tools),
   `models`, `embeddings`, `audio/*`, `images/*`.
 - **Auth:** OAuth 2.0 with PKCE (S256) through `/api/oauth/authorize` and `/api/oauth/token`.
-  Loopback redirects to `127.0.0.1` on any port are allowed. Refresh tokens last 90 days and
-  rotate on use. On macOS prefer `ASWebAuthenticationSession`, with the loopback listener as
-  fallback. API keys work as an alternative.
+  The redirect must be registered with the OAuth app. Moo's app allows only
+  `https://moo.moi/callback`, which relays the browser back to Moo's loopback listener (see
+  [web.md](web.md)). Refresh tokens last 90 days and rotate on use. API keys work as an
+  alternative.
 - **Key resolution order:** explicit key, then the stored OAuth token, then an environment
   variable. (Skipping the stored-token step caused 401s in Dune.)
 - **Token storage:** the Keychain, as one cached blob, with keychain work off the main thread and a

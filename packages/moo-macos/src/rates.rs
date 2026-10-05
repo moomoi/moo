@@ -1,5 +1,5 @@
 //! Currency rates for the calculator: the European Central Bank's daily reference rates, cached
-//! in `~/Library/Caches/Nimble/rates.txt` and refetched in the background when over 12 hours old.
+//! in `~/Library/Caches/Moo/rates.txt` and refetched in the background when over 12 hours old.
 
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -22,10 +22,10 @@ static LOADED: AtomicBool = AtomicBool::new(false);
 static FETCHING: AtomicBool = AtomicBool::new(false);
 
 fn path() -> Option<PathBuf> {
-    if let Some(p) = std::env::var_os("NIMBLE_RATES") {
+    if let Some(p) = std::env::var_os("MOO_RATES") {
         return Some(PathBuf::from(p));
     }
-    std::env::var_os("HOME").map(|h| PathBuf::from(h).join("Library/Caches/Nimble/rates.txt"))
+    std::env::var_os("HOME").map(|h| PathBuf::from(h).join("Library/Caches/Moo/rates.txt"))
 }
 
 fn now() -> f64 {
@@ -83,8 +83,8 @@ pub fn refresh_if_stale() {
                     *CACHE.lock().unwrap_or_else(|e| e.into_inner()) = Some(c);
                 }
             }
-            Ok((st, _)) => eprintln!("nimble: currency rates: HTTP {st}"),
-            Err(e) => eprintln!("nimble: currency rates: {e}"),
+            Ok((st, _)) => eprintln!("moo: currency rates: HTTP {st}"),
+            Err(e) => eprintln!("moo: currency rates: {e}"),
         }
         FETCHING.store(false, Ordering::Release);
     });
@@ -106,8 +106,8 @@ mod tests {
         rates.insert("USD".into(), 1.08);
         rates.insert("EUR".into(), 1.0);
         let c = Cached { rates, date: "2026-10-02".into(), fetched: 1000.0 };
-        let p = std::env::temp_dir().join(format!("nimble-rates-{}", std::process::id()));
-        std::env::set_var("NIMBLE_RATES", &p);
+        let p = std::env::temp_dir().join(format!("moo-rates-{}", std::process::id()));
+        std::env::set_var("MOO_RATES", &p);
         write_file(&c);
         let back = parse_file(&std::fs::read_to_string(&p).unwrap()).unwrap();
         assert_eq!((back.date.as_str(), back.fetched, back.rates.get("USD").copied()), ("2026-10-02", 1000.0, Some(1.08)));

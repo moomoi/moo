@@ -1,0 +1,154 @@
+// moo.moi: the landing page and the sign-in relay.
+//
+// Hypery only redirects to the registered https://moo.moi/callback, so /callback sends the browser
+// on, query untouched, to the loopback listener Moo opened for that sign-in. The listener's port
+// travels in `state` as `<port>.<nonce>`. Moo checks the whole state and redeems the code with its
+// PKCE verifier, which never leaves the Mac, so nothing passing through here can be redeemed alone.
+
+// Promoted releases are mirrored to this public repo under a fixed asset name (docs/release.md).
+let DOWNLOAD_URL = "https://github.com/moomoi/moo/releases/latest/download/Moo-macos-universal.dmg"
+
+let DIGITS = "0123456789"
+let NONCE_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
+
+// Pages carry no script; the policy keeps it that way.
+let PAGE_HEADERS = {
+    "Content-Type": "text/html; charset=utf-8",
+    "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+    "Referrer-Policy": "no-referrer",
+    "X-Content-Type-Options": "nosniff",
+    "Strict-Transport-Security": "max-age=31536000"
+}
+
+let STYLE = `
+:root { color-scheme: light dark; --fg: #1d1d1f; --dim: #6e6e73; --bg: #f5f5f7; --card: #ffffffcc; --line: #0000001a; --accent: #7b5cff; }
+@media (prefers-color-scheme: dark) { :root { --fg: #f5f5f7; --dim: #a1a1a6; --bg: #111113; --card: #1c1c1fcc; --line: #ffffff1f; } }
+* { box-sizing: border-box; }
+body { margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center; background: radial-gradient(1200px 600px at 50% -10%, #7b5cff33, transparent), var(--bg); color: var(--fg); font: 16px/1.5 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif; }
+main { width: min(640px, 100% - 48px); padding: 48px 0; }
+.mark { width: 64px; height: 64px; border-radius: 16px; background: linear-gradient(145deg, #9d86ff, #5b3cf0); display: flex; align-items: center; justify-content: center; font-size: 34px; color: #fff; box-shadow: 0 10px 30px #5b3cf055; }
+h1 { font-size: 44px; letter-spacing: -0.02em; margin: 24px 0 8px; }
+h2 { font-size: 26px; margin: 24px 0 8px; }
+p { color: var(--dim); margin: 0 0 16px; }
+.bar { margin: 32px 0; padding: 14px 18px; border: 1px solid var(--line); border-radius: 14px; background: var(--card); backdrop-filter: blur(20px); font-size: 20px; color: var(--dim); }
+.bar b { color: var(--fg); font-weight: 500; }
+ul { list-style: none; padding: 0; margin: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; }
+li { padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--card); font-size: 14px; color: var(--dim); }
+li b { display: block; color: var(--fg); font-weight: 600; }
+kbd { font: 13px ui-monospace, Menlo, monospace; padding: 2px 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); }
+footer { margin-top: 40px; font-size: 13px; color: var(--dim); }
+.get { display: inline-block; padding: 10px 18px; border-radius: 12px; background: var(--accent); color: #fff; font-weight: 600; text-decoration: none; }
+`
+
+fn page(title, content) {
+    return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${title}</title><style>${STYLE}</style></head><body><main><div class="mark">M</div>${content}</main></body></html>`
+}
+
+let HOME = page("Moo, a native launcher for macOS", `
+<h1>Moo</h1>
+<p>A fast, native launcher for macOS. Apps, files, calculations, clipboard history, window layouts and AI, one keystroke away.</p>
+<div class="bar"><b>One hotkey</b> &nbsp;then type anything</div>
+<p><a class="get" href="/download">Download for Mac</a> &nbsp;macOS 14 or later, Apple silicon and Intel. Or <kbd>brew install --cask moomoi/moo/moo</kbd></p>
+<ul>
+<li><b>Native</b>AppKit all the way down. No webviews, no Electron.</li>
+<li><b>Instant answers</b>Math, units, currencies, time zones and definitions as you type.</li>
+<li><b>Your Mac, by keyboard</b>Windows, volume, dark mode, running apps and system commands.</li>
+<li><b>AI built in</b>On-device Apple Intelligence or your own provider, with Hypery sign-in.</li>
+</ul>
+<footer>moo.moi</footer>
+`)
+
+let SIGN_IN_FAILED = page("Sign-in link not recognised · Moo", `
+<h2>This sign-in link isn't from Moo</h2>
+<p>Moo couldn't be found for this sign-in. Start again from Moo: open it, go to Settings, choose your account and sign in.</p>
+<footer>moo.moi</footer>
+`)
+
+let NOT_FOUND = page("Not found · Moo", `
+<h2>Nothing here</h2>
+<p><a href="/" style="color: var(--accent)">Go to moo.moi</a></p>
+`)
+
+fn queryParam(query, name) {
+    let parts = query.split("&")
+    for (let i = 0; i < parts.length; i = i + 1) {
+        let p = parts[i]
+        let eq = p.indexOf("=")
+        let key = eq < 0 ? p : p.slice(0, eq)
+        if (key === name) {
+            return eq < 0 ? "" : p.slice(eq + 1)
+        }
+    }
+    return null
+}
+
+// The loopback port named by a relay state, or 0 when the state isn't `<port>.<nonce>`.
+fn relayPort(state) {
+    if (state === null) {
+        return 0
+    }
+    let dot = state.indexOf(".")
+    if (dot < 4 || dot > 5) {
+        return 0
+    }
+    let nonce = state.slice(dot + 1)
+    if (nonce.length < 16 || nonce.length > 128) {
+        return 0
+    }
+    let port = 0
+    for (let i = 0; i < dot; i = i + 1) {
+        let d = DIGITS.indexOf(state[i])
+        if (d < 0) {
+            return 0
+        }
+        port = port * 10 + d
+    }
+    for (let i = 0; i < nonce.length; i = i + 1) {
+        if (NONCE_CHARS.indexOf(nonce[i]) < 0) {
+            return 0
+        }
+    }
+    if (port < 1024 || port > 65535) {
+        return 0
+    }
+    return port
+}
+
+fn callback(req) {
+    let port = relayPort(queryParam(req.query, "state"))
+    if (port === 0) {
+        return { status: 400, headers: PAGE_HEADERS, body: SIGN_IN_FAILED }
+    }
+    return {
+        status: 302,
+        headers: {
+            "Location": `http://127.0.0.1:${port}/callback?${req.query}`,
+            "Cache-Control": "no-store",
+            "Referrer-Policy": "no-referrer"
+        },
+        body: ""
+    }
+}
+
+fn handle(req) {
+    if (req.method !== "GET" && req.method !== "HEAD") {
+        return { status: 405, headers: { "Allow": "GET, HEAD" }, body: "" }
+    }
+    if (req.path === "/callback") {
+        return callback(req)
+    }
+    if (req.path === "/download") {
+        return { status: 302, headers: { "Location": DOWNLOAD_URL, "Cache-Control": "no-store" }, body: "" }
+    }
+    if (req.path === "/health") {
+        return { status: 200, headers: { "Content-Type": "text/plain", "Cache-Control": "no-store" }, body: "ok" }
+    }
+    if (req.path === "/" || req.path === "/index.html") {
+        return { status: 200, headers: PAGE_HEADERS, body: HOME }
+    }
+    return { status: 404, headers: PAGE_HEADERS, body: NOT_FOUND }
+}
+
+let port = "PORT" in process.env ? parseInt(process.env.PORT) : 8080
+console.log(`moo.moi listening on ${port}`)
+serve(port, handle)

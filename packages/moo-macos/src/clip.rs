@@ -52,7 +52,7 @@ pub fn watch() -> bool {
     true
 }
 
-/// Nimble's own copies (copy actions, re-copying a history item) are attributed to Nimble.
+/// Moo's own copies (copy actions, re-copying a history item) are attributed to Moo.
 pub fn note_own_change() {
     OWN_CHANGE.with(|c| c.set(NSPasteboard::generalPasteboard().changeCount()));
 }
@@ -86,7 +86,7 @@ fn poll() {
         text.truncate(cut);
     }
     let (app, app_path) = if OWN_CHANGE.with(|c| c.get()) == change {
-        ("Nimble".to_string(), String::new())
+        ("Moo".to_string(), String::new())
     } else {
         source_app()
     };
@@ -98,7 +98,7 @@ fn poll() {
     });
 }
 
-/// Nimble never activates, so the frontmost app is where the copy happened.
+/// Moo never activates, so the frontmost app is where the copy happened.
 fn source_app() -> (String, String) {
     let Some(a) = NSWorkspace::sharedWorkspace().frontmostApplication() else { return (String::new(), String::new()) };
     let name = a.localizedName().map(|n| n.to_string()).unwrap_or_default();

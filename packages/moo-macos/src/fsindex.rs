@@ -1,4 +1,4 @@
-//! Nimble's own file name index: every name under the roots in memory, so a search is a scan of
+//! Moo's own file name index: every name under the roots in memory, so a search is a scan of
 //! compact arrays (a few milliseconds) instead of a Spotlight round trip. Portable: no AppKit.
 //!
 //! Layout: one entry per file or folder, stored as columns (`parent`, `name_off`, `name_len`,
@@ -884,9 +884,9 @@ impl Reader<'_> {
 }
 
 /// The home folder (without `~/Library`) and iCloud Drive when present.
-/// Home (without ~/Library) plus iCloud Drive. `NIMBLE_FILE_ROOTS` (colon-separated) replaces them.
+/// Home (without ~/Library) plus iCloud Drive. `MOO_FILE_ROOTS` (colon-separated) replaces them.
 pub fn default_roots() -> Vec<Root> {
-    if let Some(list) = std::env::var_os("NIMBLE_FILE_ROOTS") {
+    if let Some(list) = std::env::var_os("MOO_FILE_ROOTS") {
         return std::env::split_paths(&list)
             .filter_map(|p| p.canonicalize().ok())
             .map(|p| {
@@ -913,7 +913,7 @@ mod tests {
 
     impl TempTree {
         fn new(tag: &str) -> TempTree {
-            let p = std::env::temp_dir().join(format!("nimble-fsindex-{tag}-{}", std::process::id()));
+            let p = std::env::temp_dir().join(format!("moo-fsindex-{tag}-{}", std::process::id()));
             let _ = std::fs::remove_dir_all(&p);
             std::fs::create_dir_all(&p).unwrap();
             TempTree(p)
@@ -986,13 +986,13 @@ mod tests {
     #[test]
     fn extra_words_can_match_parent_folders() {
         let t = TempTree::new("words");
-        t.file("Projects/nimble/app/main.tish");
+        t.file("Projects/moo/app/main.tish");
         t.file("Projects/other/main.tish");
         let (ix, _) = Index::crawl(vec![t.root()]);
-        let hits = ix.search("nimble main", 10, |_| 0);
+        let hits = ix.search("moo main", 10, |_| 0);
         assert_eq!(hits.len(), 1, "{:?}", names(&hits));
-        assert!(hits[0].path.ends_with("nimble/app/main.tish"));
-        assert_eq!(hits[0].detail, "~/Projects/nimble/app");
+        assert!(hits[0].path.ends_with("moo/app/main.tish"));
+        assert_eq!(hits[0].detail, "~/Projects/moo/app");
     }
 
     #[test]
@@ -1046,7 +1046,7 @@ mod tests {
             ix.bytes() as f64 / 1e6,
             ix.bytes() as f64 / stats.entries as f64
         );
-        let file = std::env::temp_dir().join("nimble-fsindex-bench.idx");
+        let file = std::env::temp_dir().join("moo-fsindex-bench.idx");
         let t0 = Instant::now();
         ix.save(&file).unwrap();
         let size = std::fs::metadata(&file).unwrap().len();
@@ -1055,7 +1055,7 @@ mod tests {
         let back = Index::load(&file, &default_roots()).expect("load");
         eprintln!("load: {:.0} ms", t0.elapsed().as_secs_f64() * 1000.0);
         let _ = std::fs::remove_file(&file);
-        for q in ["a", "ma", "main", "readme", "main.tish", "nimble main", "pdf", "qrtly", "zzzzqx", "cargo toml"] {
+        for q in ["a", "ma", "main", "readme", "main.tish", "moo main", "pdf", "qrtly", "zzzzqx", "cargo toml"] {
             let t0 = Instant::now();
             let hits = back.search(q, 8, |_| 0);
             let ms = t0.elapsed().as_secs_f64() * 1000.0;

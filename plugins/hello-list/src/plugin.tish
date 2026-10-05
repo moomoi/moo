@@ -1,4 +1,4 @@
-// Hello List: a Tier A plugin whose commands are Lattish views (@nimble/ui). It runs in a
+// Hello List: a Tier A plugin whose commands are Lattish views (@moo/ui). It runs in a
 // capability-free VM; the shell renders the committed tree and sends events back.
 //   "Hello List": the shell filters the items; enter stars one (component state).
 //   "Change Case": the plugin handles the search text itself; enter copies a variant.

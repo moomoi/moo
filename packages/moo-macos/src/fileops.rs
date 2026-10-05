@@ -6,12 +6,12 @@ use objc2::rc::Retained;
 use objc2_app_kit::{NSWorkspace, NSWorkspaceOpenConfiguration};
 use objc2_foundation::{NSArray, NSFileManager, NSString, NSURL};
 
-/// Move `path` to the Trash. Returns where it went. With `NIMBLE_SYSTEM_DRY_RUN` set nothing moves.
+/// Move `path` to the Trash. Returns where it went. With `MOO_SYSTEM_DRY_RUN` set nothing moves.
 pub fn trash(path: &str) -> Result<String, String> {
     if !Path::new(path).exists() {
         return Err(format!("no such file: {path}"));
     }
-    if std::env::var_os("NIMBLE_SYSTEM_DRY_RUN").is_some() {
+    if std::env::var_os("MOO_SYSTEM_DRY_RUN").is_some() {
         return Ok(format!("dry run: trash {path}"));
     }
     let url = NSURL::fileURLWithPath(&NSString::from_str(path));
@@ -75,7 +75,7 @@ mod tests {
         let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("target/fileops-test");
         std::fs::create_dir_all(&dir).unwrap();
         let file = dir.join(name);
-        std::fs::write(&file, "nimble").unwrap();
+        std::fs::write(&file, "moo").unwrap();
         file
     }
 
@@ -93,7 +93,7 @@ mod tests {
     /// Moves a scratch file to the Trash, then deletes it from there.
     #[test]
     fn trash_moves_a_file_and_reports_where() {
-        if std::env::var_os("NIMBLE_SYSTEM_DRY_RUN").is_some() {
+        if std::env::var_os("MOO_SYSTEM_DRY_RUN").is_some() {
             return;
         }
         let file = scratch("trash-me.txt");

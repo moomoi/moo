@@ -1,6 +1,7 @@
-//! OAuth 2.0 sign-in with PKCE (S256) through a loopback redirect: Nimble listens on
+//! OAuth 2.0 sign-in with PKCE (S256) through a loopback redirect: Moo listens on
 //! `127.0.0.1:<any port>/callback`, opens the provider's authorize page in the browser, takes the
-//! code from the redirect and exchanges it for tokens. Refresh tokens rotate on use.
+//! code from the redirect (directly, or forwarded by a relay page such as moo.moi/callback) and
+//! exchanges it for tokens. Refresh tokens rotate on use.
 
 use std::io::{BufRead, BufReader, Write};
 use std::net::TcpListener;
@@ -16,6 +17,12 @@ pub struct Endpoints {
     pub token: String,
     pub client_id: String,
     pub scope: String,
+    /// The registered redirect when it is a web page rather than the loopback address: it reads
+    /// the listener's port from `state` (`<port>.<nonce>`) and redirects the browser, code and all,
+    /// to `http://127.0.0.1:<port>/callback`. Empty: the loopback address is the redirect.
+    pub relay: String,
+    /// More authorize parameters (Slack names its user scopes `user_scope`, say).
+    pub extra: Vec<(String, String)>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -82,8 +89,8 @@ fn parse_tokens(body: &str, old_refresh: &str) -> Result<Tokens, String> {
     let v = json_parse(body).map_err(|_| format!("token endpoint sent something other than JSON: {}", body.chars().take(120).collect::<String>()))?;
     let access = field(&v, "access_token");
     if access.is_empty() {
-        let err = field(&v, "error_description");
-        return Err(if err.is_empty() { format!("no access token: {}", body.chars().take(160).collect::<String>()) } else { err });
+        let err = [field(&v, "error_description"), field(&v, "error")].into_iter().find(|e| !e.is_empty());
+        return Err(err.unwrap_or_else(|| format!("no access token: {}", body.chars().take(160).collect::<String>())));
     }
     let refresh = field(&v, "refresh_token");
     let expires_in: f64 = field(&v, "expires_in").parse().unwrap_or(0.0);
@@ -150,7 +157,7 @@ fn parse_request_line(line: &str) -> (String, Vec<(String, String)>) {
     (path.to_string(), params)
 }
 
-const PAGE: &str = "<!doctype html><meta charset=utf-8><title>Nimble</title><body style=\"font:16px -apple-system;margin:4em;text-align:center\"><h2>{title}</h2><p>{text}</p></body>";
+const PAGE: &str = "<!doctype html><meta charset=utf-8><title>Moo</title><body style=\"font:16px -apple-system;margin:4em;text-align:center\"><h2>{title}</h2><p>{text}</p></body>";
 
 /// Run the browser sign-in. `open(url)` shows the authorize page; waits up to 5 minutes for the
 /// redirect unless `cancel` is set. Blocks: run on a worker thread.
@@ -159,9 +166,13 @@ pub fn login(ep: &Endpoints, open: impl FnOnce(&str), cancel: &AtomicBool) -> Re
         return Err("no OAuth client id configured".into());
     }
     let listener = TcpListener::bind("127.0.0.1:0").map_err(|e| format!("cannot listen for the sign-in redirect: {e}"))?;
-    let redirect = format!("http://127.0.0.1:{}/callback", listener.local_addr().map_err(|e| e.to_string())?.port());
+    let port = listener.local_addr().map_err(|e| e.to_string())?.port();
     let (verifier, challenge) = pkce();
-    let state = base64url(&random(16));
+    let (redirect, state) = if ep.relay.is_empty() {
+        (format!("http://127.0.0.1:{port}/callback"), base64url(&random(16)))
+    } else {
+        (ep.relay.clone(), format!("{port}.{}", base64url(&random(16))))
+    };
     let enc = crate::shortcuts::percent_encode;
     let mut url = format!(
         "{}?response_type=code&client_id={}&redirect_uri={}&code_challenge={}&code_challenge_method=S256&state={}",
@@ -173,6 +184,9 @@ pub fn login(ep: &Endpoints, open: impl FnOnce(&str), cancel: &AtomicBool) -> Re
     );
     if !ep.scope.is_empty() {
         url.push_str(&format!("&scope={}", enc(&ep.scope)));
+    }
+    for (k, v) in &ep.extra {
+        url.push_str(&format!("&{}={}", enc(k), enc(v)));
     }
     open(&url);
     listener.set_nonblocking(true).map_err(|e| e.to_string())?;
@@ -216,7 +230,7 @@ pub fn login(ep: &Endpoints, open: impl FnOnce(&str), cancel: &AtomicBool) -> Re
             return Err(why);
         }
         if get("state") != state {
-            reply("Sign-in failed", "The response did not match this sign-in. Try again from Nimble.");
+            reply("Sign-in failed", "The response did not match this sign-in. Try again from Moo.");
             return Err("state mismatch".into());
         }
         let code = get("code");
@@ -226,7 +240,7 @@ pub fn login(ep: &Endpoints, open: impl FnOnce(&str), cancel: &AtomicBool) -> Re
             "",
         );
         match &result {
-            Ok(_) => reply("Signed in to Nimble", "You can close this tab."),
+            Ok(_) => reply("Signed in to Moo", "You can close this tab."),
             Err(e) => reply("Sign-in failed", e),
         }
         return result;
@@ -297,7 +311,7 @@ mod tests {
                 (404, "text/plain", vec![])
             }
         });
-        let ep = Endpoints { authorize: "https://example.invalid/authorize".into(), token: format!("{token_base}/token"), client_id: "nimble".into(), scope: String::new() };
+        let ep = Endpoints { authorize: "https://example.invalid/authorize".into(), token: format!("{token_base}/token"), client_id: "moo".into(), scope: String::new(), relay: String::new(), extra: Vec::new() };
         let cancel = AtomicBool::new(false);
         let tokens = login(
             &ep,
@@ -322,5 +336,77 @@ mod tests {
         assert_eq!((tokens.access.as_str(), tokens.refresh.as_str()), ("AT", "RT"));
         let body = VERIFIER_SEEN.lock().unwrap().clone();
         assert!(body.contains("grant_type=authorization_code") && body.contains("code=C0DE") && body.contains("code_verifier="), "{body}");
+    }
+
+    static RELAY_TOKEN_BODY: Mutex<String> = Mutex::new(String::new());
+
+    /// With a relay the authorize request names the relay page and `state` carries the listener's
+    /// port; the "relay" here forwards to that port as moo.moi does.
+    #[test]
+    fn login_through_a_relay_page() {
+        let token_base = crate::http::tests::serve(|line, _h, body| {
+            if line.starts_with("POST /token") {
+                *RELAY_TOKEN_BODY.lock().unwrap() = body.to_string();
+                (200, "application/json", vec![r#"{"access_token":"AT2","expires_in":60}"#.into()])
+            } else {
+                (404, "text/plain", vec![])
+            }
+        });
+        let relay = "https://moo.example/callback";
+        let ep = Endpoints { authorize: "https://example.invalid/authorize".into(), token: format!("{token_base}/token"), client_id: "moo".into(), scope: String::new(), relay: relay.into(), extra: Vec::new() };
+        let tokens = login(
+            &ep,
+            |url| {
+                let url = url.to_string();
+                std::thread::spawn(move || {
+                    let q = url.split_once('?').unwrap().1;
+                    let get = |k: &str| q.split('&').find_map(|p| p.strip_prefix(&format!("{k}="))).unwrap().to_string();
+                    assert_eq!(percent_decode(&get("redirect_uri")), "https://moo.example/callback");
+                    let state = get("state");
+                    let port: u16 = state.split_once('.').unwrap().0.parse().unwrap();
+                    let mut s = std::net::TcpStream::connect(("127.0.0.1", port)).unwrap();
+                    write!(s, "GET /callback?code=RELAYED&state={state} HTTP/1.1\r\nHost: x\r\n\r\n").unwrap();
+                    let mut page = String::new();
+                    let _ = std::io::Read::read_to_string(&mut s, &mut page);
+                    assert!(page.contains("Signed in"), "{page}");
+                });
+            },
+            &AtomicBool::new(false),
+        )
+        .unwrap();
+        assert_eq!(tokens.access, "AT2");
+        let body = RELAY_TOKEN_BODY.lock().unwrap().clone();
+        assert!(body.contains("code=RELAYED") && body.contains("redirect_uri=https%3A%2F%2Fmoo.example%2Fcallback"), "{body}");
+    }
+
+    /// Against a running web/ server: `MOO_TEST_RELAY=http://127.0.0.1:<port>/callback cargo test
+    /// --lib -- --ignored moo_web_relay`. curl plays the browser landing on the relay.
+    #[test]
+    #[ignore]
+    fn moo_web_relay() {
+        let relay = std::env::var("MOO_TEST_RELAY").expect("MOO_TEST_RELAY");
+        let token_base = crate::http::tests::serve(|line, _h, _b| {
+            if line.starts_with("POST /token") {
+                (200, "application/json", vec![r#"{"access_token":"WEB","expires_in":60}"#.into()])
+            } else {
+                (404, "text/plain", vec![])
+            }
+        });
+        let ep = Endpoints { authorize: "https://example.invalid/authorize".into(), token: format!("{token_base}/token"), client_id: "moo".into(), scope: String::new(), relay: relay.clone(), extra: Vec::new() };
+        let tokens = login(
+            &ep,
+            |url| {
+                let state = url.split("state=").nth(1).unwrap().split('&').next().unwrap().to_string();
+                let landing = format!("{relay}?code=FROMWEB&state={state}");
+                std::thread::spawn(move || {
+                    let out = std::process::Command::new("curl").args(["-s", "-L", "-o", "/dev/null", "-w", "%{http_code} %{url_effective}", &landing]).output().unwrap();
+                    let out = String::from_utf8_lossy(&out.stdout).to_string();
+                    assert!(out.starts_with("200 http://127.0.0.1:") && out.contains("/callback?code=FROMWEB&state="), "{out}");
+                });
+            },
+            &AtomicBool::new(false),
+        )
+        .unwrap();
+        assert_eq!(tokens.access, "WEB");
     }
 }

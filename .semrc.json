@@ -1,0 +1,21 @@
+{
+  "branches": [
+    "main"
+  ],
+  "plugins": [
+    "@sem/commit-analyzer",
+    "@sem/release-notes-generator",
+    [
+      "@sem/github",
+      {
+        "prerelease": true,
+        "successComment": false,
+        "assets": [
+          { "path": "dist/release/Moo-macos-universal.dmg", "label": "Moo for macOS (Apple silicon and Intel), disk image" },
+          { "path": "dist/release/Moo-macos-universal.zip", "label": "Moo for macOS (Apple silicon and Intel), zip" },
+          { "path": "dist/release/SHA256SUMS", "label": "SHA-256 checksums" }
+        ]
+      }
+    ]
+  ]
+}

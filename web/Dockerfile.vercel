@@ -1,0 +1,22 @@
+# moo.moi on Vercel: the Tish server compiled to a native Linux binary, served from distroless.
+# Vercel builds this on every `vercel deploy` from web/. The server only needs stock Tish (serve and
+# process.env), so the compiler comes from upstream at a pinned commit rather than the local
+# tish-nimble checkout. Also runs anywhere else: docker build -f Dockerfile.vercel -t moo-web .
+# Stay on Debian 12 in both stages: building on a newer glibc than distroless/cc-debian12 makes the
+# binary fail at start with "GLIBC_x.xx not found".
+
+FROM rust:bookworm AS build
+ARG TISH_REPO=https://github.com/tishlang/tish.git
+ARG TISH_COMMIT=34d5e468b2c1b00f2d8d24ba8dce69b3838f4473
+WORKDIR /tish
+RUN git init -q && git fetch -q --depth 1 "$TISH_REPO" "$TISH_COMMIT" && git checkout -q FETCH_HEAD
+RUN cargo build --release -p tishlang
+COPY src /web/src
+WORKDIR /web
+RUN /tish/target/release/tish build src/main.tish --target native --native-backend rust --feature http --feature process -o /moo-web
+
+FROM gcr.io/distroless/cc-debian12
+COPY --from=build /moo-web /moo-web
+ENV PORT=80
+EXPOSE 80
+ENTRYPOINT ["/moo-web"]

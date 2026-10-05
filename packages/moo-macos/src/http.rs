@@ -11,7 +11,7 @@ use std::time::Duration;
 type Callback = extern "C" fn(u64, i32, i32, *const c_char);
 
 extern "C" {
-    fn nimble_http_start(
+    fn moo_http_start(
         id: u64,
         method: *const c_char,
         url: *const c_char,
@@ -21,7 +21,7 @@ extern "C" {
         timeout: f64,
         cb: Callback,
     ) -> bool;
-    fn nimble_http_cancel(id: u64);
+    fn moo_http_cancel(id: u64);
 }
 
 #[derive(Debug)]
@@ -86,7 +86,7 @@ pub fn start(req: &Request, handler: Handler) -> Option<u64> {
     let c = |s: &str| CString::new(s.replace('\0', "")).unwrap();
     let (method, url, headers) = (c(req.method), c(req.url), c(&headers_json(&req.headers)));
     let ok = unsafe {
-        nimble_http_start(id, method.as_ptr(), url.as_ptr(), headers.as_ptr(), req.body.as_ptr(), req.body.len(), req.timeout, on_event)
+        moo_http_start(id, method.as_ptr(), url.as_ptr(), headers.as_ptr(), req.body.as_ptr(), req.body.len(), req.timeout, on_event)
     };
     if !ok {
         HANDLERS.lock().unwrap_or_else(|e| e.into_inner()).as_mut().map(|m| m.remove(&id));
@@ -96,7 +96,7 @@ pub fn start(req: &Request, handler: Handler) -> Option<u64> {
 }
 
 pub fn cancel(id: u64) {
-    unsafe { nimble_http_cancel(id) }
+    unsafe { moo_http_cancel(id) }
 }
 
 extern "C" fn on_event(id: u64, kind: i32, status: i32, text: *const c_char) {

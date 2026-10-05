@@ -1,14 +1,14 @@
 // Apple's on-device model (FoundationModels, macOS 26+) behind a C ABI for `src/ai.rs`.
-// FoundationModels is Swift-only, so this is the one Swift file in Nimble. It is compiled into a
+// FoundationModels is Swift-only, so this is the one Swift file in Moo. It is compiled into a
 // static library by build.rs; every use is behind `#available`, so the framework is weak-linked and
-// the app still launches on older macOS, where `nimble_ai_availability` reports why AI is off.
+// the app still launches on older macOS, where `moo_ai_availability` reports why AI is off.
 
 import Foundation
 import FoundationModels
 
 /// `(request, kind, text)`. kind: 0 partial (the whole reply so far), 1 done (final text),
 /// 2 error (message), 3 cancelled. Called on a Swift concurrency thread.
-public typealias NimbleAICallback = @convention(c) (UInt64, Int32, UnsafePointer<CChar>?) -> Void
+public typealias MooAICallback = @convention(c) (UInt64, Int32, UnsafePointer<CChar>?) -> Void
 
 private let lock = NSLock()
 nonisolated(unsafe) private var sessions: [UInt64: AnyObject] = [:]
@@ -21,14 +21,14 @@ private func locked<T>(_ f: () -> T) -> T {
     return f()
 }
 
-private func emit(_ cb: NimbleAICallback, _ request: UInt64, _ kind: Int32, _ text: String?) {
+private func emit(_ cb: MooAICallback, _ request: UInt64, _ kind: Int32, _ text: String?) {
     guard let text else { return cb(request, kind, nil) }
     text.withCString { cb(request, kind, $0) }
 }
 
-/// "available", or why not (a malloc'd string; free with `nimble_ai_free`).
-@_cdecl("nimble_ai_availability")
-public func nimble_ai_availability() -> UnsafeMutablePointer<CChar>? {
+/// "available", or why not (a malloc'd string; free with `moo_ai_free`).
+@_cdecl("moo_ai_availability")
+public func moo_ai_availability() -> UnsafeMutablePointer<CChar>? {
     guard #available(macOS 26.0, *) else { return strdup("requires macOS 26") }
     switch SystemLanguageModel.default.availability {
     case .available:
@@ -38,22 +38,22 @@ public func nimble_ai_availability() -> UnsafeMutablePointer<CChar>? {
     }
 }
 
-@_cdecl("nimble_ai_free")
-public func nimble_ai_free(_ p: UnsafeMutablePointer<CChar>?) {
+@_cdecl("moo_ai_free")
+public func moo_ai_free(_ p: UnsafeMutablePointer<CChar>?) {
     free(p)
 }
 
 /// `(session, tool name, arguments as JSON) -> result text` (malloc'd; freed here, may be null).
 /// Called on a Swift concurrency thread and may block while the host runs the tool.
-public typealias NimbleAIToolCallback = @convention(c) (UInt64, UnsafePointer<CChar>?, UnsafePointer<CChar>?) -> UnsafeMutablePointer<CChar>?
+public typealias MooAIToolCallback = @convention(c) (UInt64, UnsafePointer<CChar>?, UnsafePointer<CChar>?) -> UnsafeMutablePointer<CChar>?
 
 /// A conversation: later asks see earlier turns. `tools` is a JSON array of
 /// `{ name, description, params: [{ name, description, optional?, choices? }] }` (string parameters;
 /// `choices` limits one to those values); the model may call them while answering, through
 /// `toolCb`. Returns 0 when the model is unavailable.
-@_cdecl("nimble_ai_session_new")
-public func nimble_ai_session_new(
-    _ instructions: UnsafePointer<CChar>?, _ tools: UnsafePointer<CChar>?, _ toolCb: NimbleAIToolCallback?
+@_cdecl("moo_ai_session_new")
+public func moo_ai_session_new(
+    _ instructions: UnsafePointer<CChar>?, _ tools: UnsafePointer<CChar>?, _ toolCb: MooAIToolCallback?
 ) -> UInt64 {
     guard #available(macOS 26.0, *), case .available = SystemLanguageModel.default.availability else { return 0 }
     let text = instructions.map { String(cString: $0) } ?? ""
@@ -72,7 +72,7 @@ public func nimble_ai_session_new(
 }
 
 @available(macOS 26.0, *)
-private func makeTools(_ json: String, session: UInt64, cb: NimbleAIToolCallback) -> [any Tool] {
+private func makeTools(_ json: String, session: UInt64, cb: MooAIToolCallback) -> [any Tool] {
     guard let data = json.data(using: .utf8),
           let list = (try? JSONSerialization.jsonObject(with: data)) as? [[String: Any]]
     else { return [] }
@@ -102,7 +102,7 @@ private struct HostTool: Tool, @unchecked Sendable {
     let description: String
     let parameters: GenerationSchema
     let session: UInt64
-    let cb: NimbleAIToolCallback
+    let cb: MooAIToolCallback
 
     func call(arguments: GeneratedContent) async throws -> String {
         let out = name.withCString { n in arguments.jsonString.withCString { a in cb(session, n, a) } }
@@ -112,22 +112,22 @@ private struct HostTool: Tool, @unchecked Sendable {
     }
 }
 
-@_cdecl("nimble_ai_session_free")
-public func nimble_ai_session_free(_ id: UInt64) {
+@_cdecl("moo_ai_session_free")
+public func moo_ai_session_free(_ id: UInt64) {
     _ = locked { sessions.removeValue(forKey: id) }
 }
 
 /// Load the model ahead of the first ask (the first reply after a cold start takes about 2 s).
-@_cdecl("nimble_ai_prewarm")
-public func nimble_ai_prewarm(_ id: UInt64) {
+@_cdecl("moo_ai_prewarm")
+public func moo_ai_prewarm(_ id: UInt64) {
     guard #available(macOS 26.0, *) else { return }
     (locked { sessions[id] } as? LanguageModelSession)?.prewarm()
 }
 
 /// Stream a reply to `prompt` in session `id`, reporting through `cb` under `request`.
 /// Returns false if the session does not exist or is already answering.
-@_cdecl("nimble_ai_ask")
-public func nimble_ai_ask(_ id: UInt64, _ request: UInt64, _ prompt: UnsafePointer<CChar>, _ cb: NimbleAICallback) -> Bool {
+@_cdecl("moo_ai_ask")
+public func moo_ai_ask(_ id: UInt64, _ request: UInt64, _ prompt: UnsafePointer<CChar>, _ cb: MooAICallback) -> Bool {
     guard #available(macOS 26.0, *) else { return false }
     guard let session = locked({ sessions[id] }) as? LanguageModelSession, !session.isResponding else { return false }
     let job = Job(session: session, cb: cb)
@@ -159,14 +159,14 @@ public func nimble_ai_ask(_ id: UInt64, _ request: UInt64, _ prompt: UnsafePoint
 @available(macOS 26.0, *)
 private final class Job: @unchecked Sendable {
     let session: LanguageModelSession
-    let cb: NimbleAICallback
-    init(session: LanguageModelSession, cb: NimbleAICallback) {
+    let cb: MooAICallback
+    init(session: LanguageModelSession, cb: MooAICallback) {
         self.session = session
         self.cb = cb
     }
 }
 
-@_cdecl("nimble_ai_cancel")
-public func nimble_ai_cancel(_ request: UInt64) {
+@_cdecl("moo_ai_cancel")
+public func moo_ai_cancel(_ request: UInt64) {
     locked { tasks[request] }?.cancel()
 }

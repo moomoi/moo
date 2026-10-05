@@ -1,4 +1,4 @@
-//! The `nimble` command line. The app binary doubles as its own client: run with arguments, it
+//! The `moo` command line. The app binary doubles as its own client: run with arguments, it
 //! connects to the running app's Unix socket, sends them, prints what comes back and exits with
 //! the app's exit code. Nothing else runs in the client (no window, no index), so hotkey daemons
 //! (skhd, Karabiner, BetterTouchTool, Keyboard Maestro, Hammerspoon) and scripts can call it cheaply.
@@ -20,16 +20,16 @@ use std::time::{Duration, Instant};
 use tishlang_core::{json_parse, Value};
 
 pub const USAGE: &str = "\
-usage: nimble [command] [args]
+usage: moo [command] [args]
 
-  (no command)                 show the launcher (starts Nimble if needed)
+  (no command)                 show the launcher (starts Moo if needed)
   toggle | show | hide | quit
   search <text>                show the launcher with <text> typed
   category <name> [text]       show Applications, Files, Actions, Clipboard or Recent searches
   key <name>                   act as if a key was pressed in the open launcher (tab, shift+tab, enter, escape, …)
   type <text>                  insert text into the focused field, one character every 120 ms
   history [--clear]            recent searches, newest first
-  run <keyword|id> [text]      run a shortcut or command (ids: nimble list commands)
+  run <keyword|id> [text]      run a shortcut or command (ids: moo list commands)
   open <path|url>              open with the default app
   files <query> [-n N] [--contents]
                                file paths, best match first; --contents searches inside files
@@ -53,7 +53,7 @@ usage: nimble [command] [args]
   define <word>                the word's senses, pronunciation and origin from the macOS
                                dictionary, every homograph (--json for the parsed entry)
   contacts [name]              contacts whose name matches (all when empty); needs access,
-                               which Search Contacts in Nimble asks for
+                               which Search Contacts in Moo asks for
   system [command] [arg]       list system commands, or run one: lock, sleep, sleep-displays,
                                screen-saver, dark-mode, mute, volume, eject, hide-all, quit-all,
                                empty-trash, restart, shut-down, log-out
@@ -77,23 +77,30 @@ usage: nimble [command] [args]
   hotkey rm <keys>
   config                       print the path of shortcuts.json
   status
+  --version                    the installed version
 
   --json                       machine-readable output (files, apps, list, clipboard, status)
 
 Templates take {query}, {clipboard}, {date} and {time}.
 ";
 
+/// Release builds set `MOO_VERSION` (scripts/build-universal.sh); local builds say "dev".
+pub const VERSION: &str = match option_env!("MOO_VERSION") {
+    Some(v) => v,
+    None => "dev",
+};
+
 const MAX_REQUEST: u64 = 1 << 20;
 
 pub fn socket_path() -> PathBuf {
-    if let Some(p) = std::env::var_os("NIMBLE_SOCKET") {
+    if let Some(p) = std::env::var_os("MOO_SOCKET") {
         return PathBuf::from(p);
     }
     let home = std::env::var_os("HOME").map(PathBuf::from).unwrap_or_else(std::env::temp_dir);
-    home.join("Library/Application Support/Nimble/nimble.sock")
+    home.join("Library/Application Support/Moo/moo.sock")
 }
 
-/// Arguments meant for Nimble: launch-services and Xcode extras (`-psn_…`, `-NSDocument… YES`)
+/// Arguments meant for Moo: launch-services and Xcode extras (`-psn_…`, `-NSDocument… YES`)
 /// are dropped.
 pub fn args() -> Vec<String> {
     let mut out = Vec::new();
@@ -145,9 +152,9 @@ fn request_json(args: &[String], cwd: &str) -> String {
 
 /// Start the app in the background and wait for its socket.
 fn start_app() -> Result<UnixStream, String> {
-    let exe = std::env::current_exe().and_then(|p| p.canonicalize()).map_err(|e| format!("cannot find the Nimble binary: {e}"))?;
+    let exe = std::env::current_exe().and_then(|p| p.canonicalize()).map_err(|e| format!("cannot find the Moo binary: {e}"))?;
     let mut cmd = std::process::Command::new(&exe);
-    cmd.env("NIMBLE_START_HIDDEN", "1")
+    cmd.env("MOO_START_HIDDEN", "1")
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null());
@@ -155,14 +162,14 @@ fn start_app() -> Result<UnixStream, String> {
         cmd.current_dir(dir);
     }
     std::os::unix::process::CommandExt::process_group(&mut cmd, 0);
-    cmd.spawn().map_err(|e| format!("cannot start Nimble: {e}"))?;
+    cmd.spawn().map_err(|e| format!("cannot start Moo: {e}"))?;
     let t0 = Instant::now();
     loop {
         if let Ok(s) = UnixStream::connect(socket_path()) {
             return Ok(s);
         }
         if t0.elapsed() > Duration::from_secs(10) {
-            return Err("Nimble did not start within 10 s".into());
+            return Err("Moo did not start within 10 s".into());
         }
         std::thread::sleep(Duration::from_millis(25));
     }
@@ -195,17 +202,21 @@ pub fn client(args: &[String]) -> i32 {
         print!("{USAGE}");
         return 0;
     }
+    if matches!(first, "-v" | "--version") {
+        println!("Moo {VERSION}");
+        return 0;
+    }
     let stream = match UnixStream::connect(socket_path()) {
         Ok(s) => s,
         Err(_) if first == "quit" || first == "hide" => return 0,
         Err(_) if first == "status" => {
-            println!("Nimble is not running");
+            println!("Moo is not running");
             return 1;
         }
         Err(_) => match start_app() {
             Ok(s) => s,
             Err(e) => {
-                eprintln!("nimble: {e}");
+                eprintln!("moo: {e}");
                 return 1;
             }
         },
@@ -214,12 +225,12 @@ pub fn client(args: &[String]) -> i32 {
     let mut writer = match stream.try_clone() {
         Ok(w) => w,
         Err(e) => {
-            eprintln!("nimble: {e}");
+            eprintln!("moo: {e}");
             return 1;
         }
     };
     if let Err(e) = writer.write_all(request_json(args, &cwd).as_bytes()) {
-        eprintln!("nimble: cannot talk to Nimble: {e}");
+        eprintln!("moo: cannot talk to Moo: {e}");
         return 1;
     }
     let mut stdout = std::io::stdout().lock();
@@ -236,7 +247,7 @@ pub fn client(args: &[String]) -> i32 {
             return code as i32;
         }
     }
-    eprintln!("nimble: Nimble closed the connection");
+    eprintln!("moo: Moo closed the connection");
     1
 }
 
@@ -283,7 +294,7 @@ fn read_request(stream: &UnixStream) -> Option<(Vec<String>, String)> {
 pub fn serve(dispatch: impl Fn(Request) + Send + Sync + 'static) -> Result<PathBuf, String> {
     let path = socket_path();
     if UnixStream::connect(&path).is_ok() {
-        return Err(format!("another Nimble is listening on {}", path.display()));
+        return Err(format!("another Moo is listening on {}", path.display()));
     }
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
@@ -295,7 +306,7 @@ pub fn serve(dispatch: impl Fn(Request) + Send + Sync + 'static) -> Result<PathB
     CONNECTIONS.lock().unwrap_or_else(|e| e.into_inner()).get_or_insert_with(HashMap::new);
     let dispatch = std::sync::Arc::new(dispatch);
     std::thread::Builder::new()
-        .name("nimble-cli".into())
+        .name("moo-cli".into())
         .spawn(move || {
             for stream in listener.incoming().flatten() {
                 let dispatch = dispatch.clone();
@@ -367,9 +378,9 @@ mod tests {
     /// A real socket: the dispatcher answers on another thread, as the main thread does in the app.
     #[test]
     fn socket_round_trip() {
-        let dir = std::env::temp_dir().join(format!("nimble-cli-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("moo-cli-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
-        std::env::set_var("NIMBLE_SOCKET", dir.join("s.sock"));
+        std::env::set_var("MOO_SOCKET", dir.join("s.sock"));
         serve(|req: Request| {
             std::thread::spawn(move || {
                 write(req.token, "out", &format!("{} in {}\n", req.args.join(" "), req.cwd));
@@ -379,7 +390,7 @@ mod tests {
         })
         .unwrap();
         assert!(running());
-        assert!(serve(|_| {}).unwrap_err().contains("another Nimble"));
+        assert!(serve(|_| {}).unwrap_err().contains("another Moo"));
 
         let mut s = UnixStream::connect(socket_path()).unwrap();
         s.write_all(request_json(&["files".into(), "a b".into()], "/w").as_bytes()).unwrap();

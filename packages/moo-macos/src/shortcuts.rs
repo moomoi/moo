@@ -1,5 +1,5 @@
-//! User shortcuts and hotkeys, stored as hand-editable JSON in `~/.config/nimble/shortcuts.json`
-//! (`$XDG_CONFIG_HOME/nimble`, or `NIMBLE_CONFIG` for the file itself):
+//! User shortcuts and hotkeys, stored as hand-editable JSON in `~/.config/moo/shortcuts.json`
+//! (`$XDG_CONFIG_HOME/moo`, or `MOO_CONFIG` for the file itself):
 //!
 //! ```json
 //! {
@@ -8,7 +8,7 @@
 //!     { "keyword": "g", "name": "Google", "kind": "url", "target": "https://www.google.com/search?q={query}" },
 //!     { "keyword": "dl", "name": "Downloads", "kind": "open", "target": "~/Downloads", "hotkey": "ctrl+alt+d" }
 //!   ],
-//!   "hotkeys": [{ "keys": "cmd+shift+v", "run": "nimble:clipboard" }],
+//!   "hotkeys": [{ "keys": "cmd+shift+v", "run": "moo:clipboard" }],
 //!   "search": "https://duckduckgo.com/?q={query}",
 //!   "ai": { "model": "hypery:gpt-5-mini", "providers": { "work": { "url": "https://llm.example/v1", "keyEnv": "WORK_KEY" } } }
 //! }
@@ -16,7 +16,7 @@
 //!
 //! Type a keyword, a space and some text: the text fills `{query}`. Kinds: `url` opens the
 //! expanded URL (query percent-encoded), `open` opens an app, file or folder, `command` runs a
-//! Nimble or plugin command with `input` as its search text, `shell` runs `/bin/sh -c` (query
+//! Moo or plugin command with `input` as its search text, `shell` runs `/bin/sh -c` (query
 //! single-quoted) and shows, copies or discards the output, `text` copies the expanded text (or,
 //! with `"expand": true`, replaces the keyword wherever it is typed), `ai` sends the expanded
 //! prompt to `model` (or the default model). Templates also take `{clipboard}`, `{selection}` (the
@@ -76,7 +76,7 @@ pub struct Shortcut {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct HotkeyBinding {
     pub keys: String,
-    /// What to run: `nimble:toggle`, `nimble:clipboard`, `plugin:<id>/<command>`, a shortcut
+    /// What to run: `moo:toggle`, `moo:clipboard`, `plugin:<id>/<command>`, a shortcut
     /// keyword, ...
     pub run: String,
     /// Text to run it with (fills `{query}` / the command's search field).
@@ -85,7 +85,7 @@ pub struct HotkeyBinding {
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Config {
-    /// Launcher hotkey; empty means Nimble's default.
+    /// Launcher hotkey; empty means Moo's default.
     pub launcher: String,
     pub shortcuts: Vec<Shortcut>,
     pub hotkeys: Vec<HotkeyBinding>,
@@ -112,19 +112,24 @@ pub struct ProviderConfig {
     pub key_env: String,
     /// OAuth client id, for providers with browser sign-in.
     pub client_id: String,
+    /// A web page registered as the OAuth redirect that forwards the code to Moo's loopback
+    /// listener; empty to register `http://127.0.0.1/callback` directly.
+    pub redirect_uri: String,
+    /// The organization (team id) that requests act for and bill to; empty for the personal one.
+    pub organization: String,
 }
 
 pub const OUTPUTS: [&str; 3] = ["show", "copy", "none"];
 const MAX_KEYWORD: usize = 32;
 
 pub fn config_path() -> Option<PathBuf> {
-    if let Some(p) = std::env::var_os("NIMBLE_CONFIG") {
+    if let Some(p) = std::env::var_os("MOO_CONFIG") {
         return Some(PathBuf::from(p));
     }
     if let Some(x) = std::env::var_os("XDG_CONFIG_HOME").filter(|x| !x.is_empty()) {
-        return Some(PathBuf::from(x).join("nimble/shortcuts.json"));
+        return Some(PathBuf::from(x).join("moo/shortcuts.json"));
     }
-    std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".config/nimble/shortcuts.json"))
+    std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".config/moo/shortcuts.json"))
 }
 
 fn field(v: &Value, key: &str) -> Option<Value> {
@@ -170,6 +175,8 @@ pub fn parse(json: &str) -> Result<(Config, Vec<String>), String> {
                     url: text(v, "url"),
                     key_env: text(v, "keyEnv"),
                     client_id: text(v, "clientId"),
+                    redirect_uri: text(v, "redirectUri"),
+                    organization: text(v, "organization"),
                 });
             }
         }
@@ -363,7 +370,7 @@ pub fn to_json(cfg: &Config) -> String {
                 out.push_str(if i == 0 { "\n    " } else { ",\n    " });
                 json_str(&mut out, &p.id);
                 out.push_str(": {");
-                let fields = [("title", &p.title), ("url", &p.url), ("keyEnv", &p.key_env), ("clientId", &p.client_id)];
+                let fields = [("title", &p.title), ("url", &p.url), ("keyEnv", &p.key_env), ("clientId", &p.client_id), ("redirectUri", &p.redirect_uri), ("organization", &p.organization)];
                 let mut first = true;
                 for (k, v) in fields.iter().filter(|f| !f.1.is_empty()) {
                     out.push_str(if first { " " } else { ", " });
@@ -581,7 +588,7 @@ mod tests {
             { "keyword": "ip", "kind": "shell", "target": "curl -s ifconfig.me", "output": "copy" },
             { "keyword": "cc", "kind": "command", "target": "plugin:hello-list/change-case" }
           ],
-          "hotkeys": [{ "keys": "cmd+shift+v", "run": "nimble:clipboard" }, { "keys": "cmd+1" }]
+          "hotkeys": [{ "keys": "cmd+shift+v", "run": "moo:clipboard" }, { "keys": "cmd+1" }]
         }"#;
         let (cfg, warnings) = parse(json).unwrap();
         assert_eq!(cfg.launcher, "cmd+space");
@@ -593,7 +600,7 @@ mod tests {
         assert!(warnings[2].contains("needs `keys` and `run`"));
         assert_eq!(cfg.shortcuts[1].name, "dl", "name defaults to the keyword");
         assert_eq!(cfg.shortcuts[3].input, "{query}");
-        assert_eq!(cfg.hotkeys, vec![HotkeyBinding { keys: "cmd+shift+v".into(), run: "nimble:clipboard".into(), query: String::new() }]);
+        assert_eq!(cfg.hotkeys, vec![HotkeyBinding { keys: "cmd+shift+v".into(), run: "moo:clipboard".into(), query: String::new() }]);
 
         let written = to_json(&cfg);
         let (again, w2) = parse(&written).unwrap();
@@ -631,10 +638,10 @@ mod tests {
     #[test]
     fn hotkey_bindings() {
         let mut cfg = Config::default();
-        bind(&mut cfg, "cmd+shift+v", "nimble:clipboard", "");
-        bind(&mut cfg, "CMD+SHIFT+V", "nimble:files", "");
+        bind(&mut cfg, "cmd+shift+v", "moo:clipboard", "");
+        bind(&mut cfg, "CMD+SHIFT+V", "moo:files", "");
         assert_eq!(cfg.hotkeys.len(), 1);
-        assert_eq!(cfg.hotkeys[0].run, "nimble:files");
+        assert_eq!(cfg.hotkeys[0].run, "moo:files");
         let mut s = sc("dl", Kind::Open, "~/Downloads");
         s.hotkey = "ctrl+alt+d".into();
         upsert(&mut cfg, s, None).unwrap();

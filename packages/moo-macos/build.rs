@@ -15,7 +15,8 @@ fn main() {
     let out = PathBuf::from(env::var("OUT_DIR").unwrap());
     let arch = match env::var("CARGO_CFG_TARGET_ARCH").unwrap().as_str() {
         "aarch64" => "arm64",
-        other => return println!("cargo:warning=nimble AI bridge: unsupported arch {other}"),
+        "x86_64" => "x86_64",
+        other => return println!("cargo:warning=moo AI bridge: unsupported arch {other}"),
     };
     let deployment = env::var("MACOSX_DEPLOYMENT_TARGET").unwrap_or_else(|_| "14.0".into());
     let sdk = xcrun(&["--show-sdk-path"]);
@@ -23,16 +24,16 @@ fn main() {
 
     let status = Command::new(&swiftc)
         .args(["-parse-as-library", "-emit-library", "-static", "-O", "-swift-version", "6"])
-        .args(["-module-name", "NimbleAI", "-target", &format!("{arch}-apple-macos{deployment}"), "-sdk", &sdk])
+        .args(["-module-name", "MooAI", "-target", &format!("{arch}-apple-macos{deployment}"), "-sdk", &sdk])
         .args(["swift/ai.swift", "swift/http.swift"])
         .arg("-o")
-        .arg(out.join("libnimble_ai.a"))
+        .arg(out.join("libmoo_ai.a"))
         .status()
         .expect("run swiftc");
     assert!(status.success(), "swiftc failed to build the Swift sources");
 
     println!("cargo:rustc-link-search=native={}", out.display());
-    println!("cargo:rustc-link-lib=static=nimble_ai");
+    println!("cargo:rustc-link-lib=static=moo_ai");
     println!("cargo:rustc-link-search=native={sdk}/usr/lib/swift");
     let toolchain_lib = PathBuf::from(&swiftc).parent().unwrap().join("../lib/swift/macosx");
     println!("cargo:rustc-link-search=native={}", toolchain_lib.display());

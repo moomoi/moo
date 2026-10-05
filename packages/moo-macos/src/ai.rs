@@ -14,14 +14,14 @@ type Callback = extern "C" fn(u64, i32, *const c_char);
 type ToolCallback = extern "C" fn(u64, *const c_char, *const c_char) -> *mut c_char;
 
 extern "C" {
-    fn nimble_ai_availability() -> *mut c_char;
-    fn nimble_ai_free(p: *mut c_char);
-    fn nimble_ai_session_new(instructions: *const c_char, tools: *const c_char, tool_cb: Option<ToolCallback>) -> u64;
+    fn moo_ai_availability() -> *mut c_char;
+    fn moo_ai_free(p: *mut c_char);
+    fn moo_ai_session_new(instructions: *const c_char, tools: *const c_char, tool_cb: Option<ToolCallback>) -> u64;
     fn strdup(s: *const c_char) -> *mut c_char;
-    fn nimble_ai_session_free(id: u64);
-    fn nimble_ai_prewarm(id: u64);
-    fn nimble_ai_ask(session: u64, request: u64, prompt: *const c_char, cb: Callback) -> bool;
-    fn nimble_ai_cancel(request: u64);
+    fn moo_ai_session_free(id: u64);
+    fn moo_ai_prewarm(id: u64);
+    fn moo_ai_ask(session: u64, request: u64, prompt: *const c_char, cb: Callback) -> bool;
+    fn moo_ai_cancel(request: u64);
 }
 
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -71,9 +71,9 @@ thread_local! {
 /// `Ok(())` when the model can answer, else the reason (e.g. `appleIntelligenceNotEnabled`).
 pub fn availability() -> Result<(), String> {
     let s = unsafe {
-        let p = nimble_ai_availability();
+        let p = moo_ai_availability();
         let s = CStr::from_ptr(p).to_string_lossy().into_owned();
-        nimble_ai_free(p);
+        moo_ai_free(p);
         s
     };
     if s == "available" { Ok(()) } else { Err(s) }
@@ -87,7 +87,7 @@ pub fn session(instructions: &str, tools_json: &str, on_tool: Option<Value>) -> 
     let c = CString::new(instructions.replace('\0', "")).unwrap();
     let t = CString::new(tools_json.replace('\0', "")).unwrap();
     let cb: Option<ToolCallback> = if on_tool.is_some() { Some(on_swift_tool) } else { None };
-    let id = unsafe { nimble_ai_session_new(c.as_ptr(), t.as_ptr(), cb) };
+    let id = unsafe { moo_ai_session_new(c.as_ptr(), t.as_ptr(), cb) };
     if let (true, Some(f)) = (id != 0, on_tool) {
         TOOL_HANDLERS.with(|h| h.borrow_mut().insert(id, f));
     }
@@ -95,7 +95,7 @@ pub fn session(instructions: &str, tools_json: &str, on_tool: Option<Value>) -> 
 }
 
 pub fn end_session(id: u64) {
-    unsafe { nimble_ai_session_free(id) }
+    unsafe { moo_ai_session_free(id) }
     TOOL_HANDLERS.with(|h| h.borrow_mut().remove(&id));
 }
 
@@ -116,7 +116,7 @@ extern "C" fn on_swift_tool(session: u64, name: *const c_char, args: *const c_ch
         *slot.lock().unwrap() = reply;
     });
     let reply = std::mem::take(&mut *out.lock().unwrap());
-    eprintln!("nimble: AI tool {call} -> {}", reply.lines().next().unwrap_or(""));
+    eprintln!("moo: AI tool {call} -> {}", reply.lines().next().unwrap_or(""));
     let c = CString::new(reply.replace('\0', "")).unwrap();
     unsafe { strdup(c.as_ptr()) }
 }
@@ -142,7 +142,7 @@ fn error_text(e: &Value) -> String {
 }
 
 pub fn prewarm(id: u64) {
-    unsafe { nimble_ai_prewarm(id) }
+    unsafe { moo_ai_prewarm(id) }
 }
 
 /// Start a streamed reply; `on_event` gets `(kind, text)` on the main thread. Returns the request id,
@@ -151,7 +151,7 @@ pub fn ask(session: u64, prompt: &str, on_event: Value) -> u64 {
     let request = NEXT_REQUEST.fetch_add(1, Ordering::Relaxed);
     CALLBACKS.with(|c| c.borrow_mut().insert(request, on_event));
     let c = CString::new(prompt.replace('\0', "")).unwrap();
-    if unsafe { nimble_ai_ask(session, request, c.as_ptr(), on_swift_event) } {
+    if unsafe { moo_ai_ask(session, request, c.as_ptr(), on_swift_event) } {
         request
     } else {
         CALLBACKS.with(|c| c.borrow_mut().remove(&request));
@@ -160,7 +160,7 @@ pub fn ask(session: u64, prompt: &str, on_event: Value) -> u64 {
 }
 
 pub fn cancel(request: u64) {
-    unsafe { nimble_ai_cancel(request) }
+    unsafe { moo_ai_cancel(request) }
 }
 
 extern "C" fn on_swift_event(request: u64, kind: i32, text: *const c_char) {

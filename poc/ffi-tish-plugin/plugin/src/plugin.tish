@@ -1,4 +1,4 @@
-// A Nimble plugin written in Tish, compiled to a dynamically loadable native module.
+// A Moo plugin written in Tish, compiled to a dynamically loadable native module.
 
 let calls = 0
 

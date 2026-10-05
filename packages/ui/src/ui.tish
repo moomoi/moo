@@ -1,4 +1,4 @@
-// @nimble/ui: the SDK for plugin view commands. A view is a Lattish component that runs in the
+// @moo/ui: the SDK for plugin view commands. A view is a Lattish component that runs in the
 // plugin's own VM. Its host config keeps the committed tree as plain data; the shell reads that
 // tree and sends events back through `dispatch`. Nothing here touches AppKit, and the plugin needs
 // no capabilities.
@@ -168,6 +168,9 @@ export fn definePlugin(spec) {
   }
   if (spec.list) {
     out.list = spec.list
+  }
+  if (spec.suggest) {
+    out.suggest = spec.suggest
   }
   out.open = (command) => {
     let App = spec.views ? spec.views[command] : null

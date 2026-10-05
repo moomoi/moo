@@ -1,15 +1,15 @@
 # Architecture
 
-Nimble is one native macOS process built from Tish. There are no Node hosts, no webviews and no
+Moo is one native macOS process built from Tish. There are no Node hosts, no webviews and no
 JavaScript running anywhere. This page describes what is built today and where it is heading.
 
 ## Process layout
 
 ```mermaid
 flowchart TB
-  subgraph host [Nimble process: tish native build]
+  subgraph host [Moo process: tish native build]
     Shell["app/src/main.tish: JSX on tish-macos"]
-    Natives["packages/nimble-macos (tish:nimble): panel, hotkey, ranking, sources"]
+    Natives["packages/moo-macos (tish:moo): panel, hotkey, ranking, sources"]
     VM["Tier A plugins: bytecode in capability-free tish_vm"]
     Native["Tier B plugins: Tish-compiled cdylibs via tish:ffi"]
   end
@@ -26,7 +26,7 @@ flowchart TB
   Natives --> PB
 ```
 
-A planned third tier runs untrusted native plugins in a sandboxed `nimble-plughost` helper (also a
+A planned third tier runs untrusted native plugins in a sandboxed `moo-plughost` helper (also a
 Tish binary) over a Unix-socket RPC. It does not exist yet.
 
 ## Code map
@@ -35,13 +35,13 @@ Tish binary) over a Unix-socket RPC. It does not exist yet.
 | --- | --- |
 | `app/src/main.tish` | The launcher: state, search composition, plugin loading, key handling, view |
 | `app/src/theme.tish` | The whole look: colours, type, radii, icons, glass tints, panel geometry, motion |
-| `packages/nimble-macos` | Rust native module imported as `tish:nimble` |
+| `packages/moo-macos` | Rust native module imported as `tish:moo` |
 | `  src/mac.rs` | Panel, focus, key routing, Carbon hotkeys and the recorder, launch, icons, status item (click shows the panel, right click opens Settings… / Quit) |
 | `  src/theme.rs` | Holds the theme set from Tish (`setTheme`) and resolves its colours; no values of its own |
 | `  src/keys.rs` | Key names, hotkey spec parsing and display (`cmd+shift+k` → ⇧⌘K) |
 | `  src/keymap.rs` | Per-keyboard modifier remaps and macOS system shortcut conflicts |
 | `  src/shortcuts.rs` | `shortcuts.json`: parse, validate, save, templates (portable) |
-| `  src/cli.rs` | Unix-socket server and the `nimble` command-line client |
+| `  src/cli.rs` | Unix-socket server and the `moo` command-line client |
 | `  src/shell.rs` | Shell shortcuts: `/bin/sh` on a worker thread, capped output, timeout |
 | `  src/index.rs` | App index and nucleo fuzzy ranking (portable) |
 | `  src/fsindex.rs` | File name index: crawl, search, rescan, snapshot (portable) |
@@ -49,7 +49,7 @@ Tish binary) over a Unix-socket RPC. It does not exist yet.
 | `  src/files.rs` | Spotlight file search on a worker thread (fallback while indexing); metadata search (size, dates, kind, folder, words in the text) for the AI's `findFiles`; content search for Search Files |
 | `  src/fileops.rs` | Move to Trash, the apps that open a file, open with one of them |
 | `  src/sysinfo.rs` | OS, hardware, disk and battery facts for the AI's `systemInfo` tool |
-| `  src/system.rs` | System commands for `systemCommand`: lock, sleep, restart / shut down / log out (Apple Events to loginwindow), empty Trash, dark mode, volume and mute (CoreAudio), eject, hide / quit all apps; running apps with memory use and switch / hide / quit / force quit for Running Apps. `NIMBLE_SYSTEM_DRY_RUN=1` makes every command only report what it would do |
+| `  src/system.rs` | System commands for `systemCommand`: lock, sleep, restart / shut down / log out (Apple Events to loginwindow), empty Trash, dark mode, volume and mute (CoreAudio), eject, hide / quit all apps; running apps with memory use and switch / hide / quit / force quit for Running Apps. `MOO_SYSTEM_DRY_RUN=1` makes every command only report what it would do |
 | `  src/ax.rs` | Accessibility: arrange the frontmost app's focused window (remembers the frame for Restore), selected text for `{selection}`, replacing a typed snippet keyword, permission check |
 | `  src/snippets.rs` | Snippet keywords: the characters typed in other apps since the cursor last jumped, matched against expanding text shortcuts |
 | `  src/layout.rs` | Window layouts as pure geometry: halves, quarters, thirds, maximize, center, moving to another display |
@@ -57,13 +57,14 @@ Tish binary) over a Unix-socket RPC. It does not exist yet.
 | `  src/dict.rs` | Word definitions: Dictionary Services text for every homograph (the private record functions, looked up at run time, with the public first-homograph call as fallback), parsed into senses, examples and origin |
 | `  src/websearch.rs` | Search suggestions: an engine's OpenSearch JSON over URLSession (portable parser) |
 | `  src/contacts.rs` | Contacts: access status and request, name search and the full list (Contacts framework); embeds the usage description the bare dev binary needs in `__TEXT,__info_plist` |
-| `  src/rates.rs` | ECB exchange rates, fetched on a background thread and cached for 12 h (`NIMBLE_RATES`) |
+| `  src/rates.rs` | ECB exchange rates, fetched on a background thread and cached for 12 h (`MOO_RATES`) |
 | `  src/tz.rs` | Time zone answers ("time in tokyo", "3pm pst to cet") on `NSTimeZone` |
 | `  src/watch.rs` | FSEvents on the application folders |
 | `  src/frecency.rs` | Use counts with decay, persisted as TSV (portable) |
 | `  src/history.rs` | Recent searches for Spotlight's ↑ list, newest first (portable) |
 | `  src/clip.rs` | Clipboard history |
 | `  src/vmplug.rs` | Tier A loader: runs a bytecode chunk in a VM with no capabilities |
+| `web/` | The moo.moi site: landing page and the sign-in relay, a native Tish HTTP server (see [web.md](web.md)) |
 | `plugins/` | Example plugins (`utils` is Tier B, `convert` is Tier A) and `build.sh` |
 | `vendor/tish-apple` | Vendored tish-macos, pointed at the same tish checkout (see below) |
 | `scripts/` | Vendoring, `.app` bundling, UI drive scripts used for testing |
@@ -75,7 +76,7 @@ macOS 14 and later ignore activation requests from background apps, even from a 
 A launcher therefore has to take keystrokes without activating, which only an `NSPanel` with
 `NonactivatingPanel` does. tish-macos creates a plain `NSWindow`, and re-classing it to `NSPanel`
 crashes because AppKit's KVO observers are bound to the original class. So `adopt_into_panel`
-moves tish-macos's root view into Nimble's own panel and leaves the host window offscreen with a
+moves tish-macos's root view into Moo's own panel and leaves the host window offscreen with a
 same-size placeholder (tish-macos measures layout from its window's content view).
 
 All styling lives in Tish, in `app/src/theme.tish`, so a theme can be swapped without touching
@@ -93,7 +94,7 @@ a borderless, clear window (a small `NSPanel` subclass, since AppKit refuses key
 borderless windows), 36 pt larger than the panel's shape on every side. Behind the root view there
 is one Liquid Glass view (`NSGlassEffectView`) per piece of the shape, all in one
 `NSGlassEffectContainerView`, so pieces that come within 6 pt of each other melt into one shape.
-Before macOS 26 (or with `NIMBLE_NO_GLASS=1`) each piece is a rounded, tinted vibrancy view with a
+Before macOS 26 (or with `MOO_NO_GLASS=1`) each piece is a rounded, tinted vibrancy view with a
 hairline edge. `refresh_edge` applies the theme's tints for light or dark mode on every show: light
 on the bar, denser on the results panel so the desktop does not fight the text.
 
@@ -113,12 +114,12 @@ stepped on a 120 Hz timer that sets the glass views' frames, so the glass re-sha
 frame rather than being scaled as a picture. Changing shape (bar to panel and back) morphs the same
 way with a slower, softer spring (0.42 s, damping 0.78, 0.6 s): pieces in both shapes move, the
 others fade in or out where they are, and the window keeps the taller height until it settles.
-`NIMBLE_NO_ANIMATION=1` turns both off.
+`MOO_NO_ANIMATION=1` turns both off.
 
 In the idle bar Tab and Shift-Tab move a selection from the field through the four circles and back
 (`shell.bubble`); the selected circle is filled with the system accent colour (`controlAccent`)
 with a white icon, Return opens its category and Escape returns to the field. Typing clears it, and
-so does showing the panel. `nimble key <name>` feeds a key name to the same handler for scripting
+so does showing the panel. `moo key <name>` feeds a key name to the same handler for scripting
 and tests.
 
 The Tish view keeps one fixed shape in every state: a header (icon, a borderless search field
@@ -136,7 +137,7 @@ Applications is a grid by default, like Spotlight: every app A–Z (typing ranks
 icon over its name, cut in the middle when long. The grid rows are 1 pt tall in every other view;
 in the grid the slots shrink to the heading and the rows share the list's height. ⌘L (or its
 footer key cap) switches between grid and list, and the choice is kept in `prefs.tsv`
-(`NIMBLE_PREFS`, next to `history.txt`). While the grid shows, `setArrowKeys(true)` makes the key
+(`MOO_PREFS`, next to `history.txt`). While the grid shows, `setArrowKeys(true)` makes the key
 monitor deliver ← and → too; ↑↓ move by a row and the grid scrolls by rows.
 
 Workspace app icons load lazily: an image view draws a dashed placeholder and is not told when the
@@ -169,7 +170,7 @@ arrive later, keyed by query, so stale results are dropped.
 - **Apps:** the application folders are scanned in about 1 ms and kept in memory. FSEvents on
   those folders, coalesced over 2 s, triggers a rescan. Nothing is written to disk.
 - **Commands:** built-ins plus each plugin's `manifest()` commands, ranked with the same matcher.
-- **Files:** Nimble's own name index (`fsindex.rs`, kept live by `fslive.rs`), answered
+- **Files:** Moo's own name index (`fsindex.rs`, kept live by `fslive.rs`), answered
   synchronously on the main thread in 0.7–3.6 ms over ~600K entries. See "File index" below.
   While it builds, or in the rare moment it is applying changes, the query goes to Spotlight
   (`files.rs`, an in-process `MDQuery` on a worker thread, 65–760 ms) instead.
@@ -190,7 +191,7 @@ own index of names. Measured on a home folder with 605,739 entries (43,532 folde
 | | |
 | --- | --- |
 | First crawl | 1.1 s (3.2 s with a cold disk cache), utility QoS, throttled I/O |
-| Startup from snapshot | 54 ms (16.9 MB file at `~/Library/Caches/Nimble/files.idx`) |
+| Startup from snapshot | 54 ms (16.9 MB file at `~/Library/Caches/Moo/files.idx`) |
 | Memory | 17–18 MB (about 30 bytes per entry) |
 | Query | 0.7–3.6 ms (8 threads above 100K entries) |
 | Idle CPU | 0 ms over 10 s |
@@ -205,7 +206,7 @@ own index of names. Measured on a home folder with 605,739 entries (43,532 folde
   entries is indexed but its contents are not (generated data, caches). Entries under `vendor`,
   `third_party`, `build`, `dist` and similar rank lower but are kept.
 - **Matching:** every query word must match the name or a parent folder's name, and at least one
-  must match the name, so "nimble docs" finds `~/Projects/nimble/docs`. Exact name, stem, prefix
+  must match the name, so "moo docs" finds `~/Projects/moo/docs`. Exact name, stem, prefix
   and word-start matches score highest; shorter names and shallower paths win ties. When there
   are fewer substring hits than wanted, nucleo fuzzy-matches up to 3,000 mask-filtered candidates
   ("scrnsht"). The top 64 are re-ranked by frecency (×8) and modification time.
@@ -213,13 +214,13 @@ own index of names. Measured on a home folder with 605,739 entries (43,532 folde
   the kernel (`FSEventStreamSetExclusionPaths`). A change rescans that folder's direct children;
   "must scan subdirs" rescans the subtree; a root change recrawls. Removed entries are marked dead
   and compacted away when they reach 20%.
-- **Restarts:** the snapshot stores the FSEvents event id it is current to. At launch Nimble loads
+- **Restarts:** the snapshot stores the FSEvents event id it is current to. At launch Moo loads
   it and asks FSEvents for everything since, so changes made while it was not running are
   replayed instead of recrawled.
 - **Never blocking typing:** searches take a non-blocking read lock. If the event queue holds the
   write lock at that instant, the search falls back to Spotlight for that keystroke.
 
-`NIMBLE_FILE_ROOTS` (colon-separated) replaces the roots and `NIMBLE_FILE_INDEX` the snapshot
+`MOO_FILE_ROOTS` (colon-separated) replaces the roots and `MOO_FILE_INDEX` the snapshot
 path, for testing. `cargo test real_home_live -- --ignored --nocapture` measures the numbers above
 and `live_index_follows_changes` checks FSEvents updates on a temporary folder.
 
@@ -229,7 +230,7 @@ Modelled on Universal Launcher: a shortcut is a keyword bound to a target, and t
 the keyword fills the target's template. Typing `g rust traits` runs the `g` shortcut with
 "rust traits".
 
-**Shortcuts** live in `~/.config/nimble/shortcuts.json` (`$XDG_CONFIG_HOME` and `NIMBLE_CONFIG`
+**Shortcuts** live in `~/.config/moo/shortcuts.json` (`$XDG_CONFIG_HOME` and `MOO_CONFIG`
 override it). The file is meant to be edited by hand and shared:
 
 ```json
@@ -242,7 +243,7 @@ override it). The file is meant to be edited by hand and shared:
     { "keyword": "sig", "name": "Signature", "kind": "text", "target": "Best,\nAnn ({date})" }
   ],
   "hotkeys": [
-    { "keys": "cmd+shift+v", "run": "nimble:clipboard" },
+    { "keys": "cmd+shift+v", "run": "moo:clipboard" },
     { "keys": "f5", "run": "g", "query": "weather" }
   ]
 }
@@ -252,19 +253,19 @@ override it). The file is meant to be edited by hand and shared:
 | --- | --- | --- |
 | `url` | URL template | Opens it; inserted text is percent-encoded |
 | `open` | Path or app, `~` allowed | Opens it with the default app |
-| `command` | Command id (`nimble list commands`) | Opens the command; `input` (default `{query}`) becomes its search text |
+| `command` | Command id (`moo list commands`) | Opens the command; `input` (default `{query}`) becomes its search text |
 | `shell` | `/bin/sh` command | Runs it; inserted text is single-quoted, so it is one argument and never code. `output`: `show` (default), `copy` or `none` |
 | `text` | Text template | Copies it |
 
 Templates take `{query}` (or `{}`), `{clipboard}`, `{date}` and `{time}`. A shortcut whose template
 has `{query}` and is run without text puts `keyword ` in the launcher and waits for the rest.
-Invalid entries are skipped with a warning, not fatal. Nimble watches the folder with FSEvents
+Invalid entries are skipped with a warning, not fatal. Moo watches the folder with FSEvents
 and reloads within half a second of a save. It writes the file atomically (temporary file and
 rename), one shortcut per line, so diffs stay readable.
 
 In the launcher, "Create Shortcut" walks through kind, target (with app and file search for
 `open`, command search for `command`), keyword, name and hotkey, suggesting a name and keyword
-from the target. "Shortcuts" lists them: ↵ runs, ⌘↵ edits, ⌥↵ copies `nimble run <keyword>`, ⌘⌫
+from the target. "Shortcuts" lists them: ↵ runs, ⌘↵ edits, ⌥↵ copies `moo run <keyword>`, ⌘⌫
 twice deletes.
 
 **Hotkeys.** Each entry is registered with Carbon `RegisterEventHotKey`. The hotkey id maps to a
@@ -272,7 +273,7 @@ binding, and the binding's action reaches Tish as `onHotkey("hk:<index>")`. The 
 hotkey toggles the panel directly, without a round trip through Tish. Every key on an ANSI
 keyboard can be used (letters, digits, punctuation, return, space, delete, arrows, F1–F20, home,
 end, page up and down). A hotkey needs ⌘, ⌃ or ⌥ unless it is an F key. Before registering,
-Nimble checks:
+Moo checks:
 
 - that another entry does not already use the same combination, however it is spelled
   (`shift+cmd+k` equals `cmd+shift+k`), naming the owner: "⌃⌥⇧F18 is already bound to
@@ -283,23 +284,23 @@ Nimble checks:
 - the keyboards' modifier remaps, as for the launcher (see building.md).
 
 The command line refuses a conflicting hotkey before saving. A hand-edited conflict is shown as
-"not active" with its reason in `nimble list hotkeys`, `nimble status` and the Shortcuts list.
+"not active" with its reason in `moo list hotkeys`, `moo status` and the Shortcuts list.
 The recorder in Create Shortcut turns on `set_recording`, so the panel's key monitor sends the
 next combination to Tish as `record:<spec>` instead of typing it.
 
-**Command line.** The `nimble` binary is also its own client. With arguments, or when another
+**Command line.** The `moo` binary is also its own client. With arguments, or when another
 instance is already running, `cliMain()` (first line of `main.tish`) connects to
-`~/Library/Application Support/Nimble/nimble.sock` (mode 0600, `NIMBLE_SOCKET` overrides it),
+`~/Library/Application Support/Moo/moo.sock` (mode 0600, `MOO_SOCKET` overrides it),
 sends `{"args":[...],"cwd":"..."}`, prints the reply as it arrives and exits with the app's exit
 code. Replies are newline-delimited JSON: `{"out":...}` and `{"err":...}` messages, then
-`{"exit":n}`. If Nimble is not running, the client starts it hidden (`NIMBLE_START_HIDDEN=1`) in
+`{"exit":n}`. If Moo is not running, the client starts it hidden (`MOO_START_HIDDEN=1`) in
 its own process group and waits up to 10 s for the socket. On the app side, each connection gets
 a thread that hands the request to the main thread, where `onCli` in Tish answers it. Long
 answers (`ask`) stream.
 
-This makes Nimble scriptable from any hotkey tool (skhd, Karabiner-Elements, BetterTouchTool,
-Hammerspoon, Keyboard Maestro, Shortcuts.app) and from shell scripts: `nimble run g {text}`,
-`nimble files report -n 1 --json`, `nimble ask ...`. See building.md for the commands.
+This makes Moo scriptable from any hotkey tool (skhd, Karabiner-Elements, BetterTouchTool,
+Hammerspoon, Keyboard Maestro, Shortcuts.app) and from shell scripts: `moo run g {text}`,
+`moo files report -n 1 --json`, `moo ask ...`. See building.md for the commands.
 
 ## Plugins
 
@@ -336,14 +337,14 @@ binaries. So:
 
 - The main thread runs the AppKit run loop and never blocks.
 - Slow work (Spotlight queries, file indexing, AI; network later) runs on Rust worker threads
-  in `nimble-macos` and posts results with `DispatchQueue::main().exec_async`.
+  in `moo-macos` and posts results with `DispatchQueue::main().exec_async`.
 - Timers come from AppKit (`NSTimer`), not from Tish.
 
 ## Build
 
 See [building.md](building.md). Two constraints shape it:
 
-- Cargo identifies a path crate by its path, so tish-macos, `nimble-macos` and the compiler's
+- Cargo identifies a path crate by its path, so tish-macos, `moo-macos` and the compiler's
   runtime must all point at the same tish checkout, or two incompatible copies of `tishlang_core`
   get linked. `scripts/vendor-tish-apple.sh` vendors tish-macos with its paths rewritten.
 - The app build enables `send-values` on `tishlang_core`, so the embedded `tishlang_vm` must be
@@ -357,8 +358,8 @@ See [building.md](building.md). Two constraints shape it:
 | Hotkey to Tish show handler done | 10–24 ms (target was under 50 ms) |
 | Memory (`phys_footprint`), two plugins | 31 MB (target was under 40 MB) |
 | Idle CPU | about 0.25%, nearly all from the clipboard poll's run-loop wakeups |
-| CLI call to a running Nimble (`nimble status`) | 5.3 ms median, 20 ms worst over 20 runs |
-| CLI call that starts Nimble first | about 0.7 s |
+| CLI call to a running Moo (`moo status`) | 5.3 ms median, 20 ms worst over 20 runs |
+| CLI call that starts Moo first | about 0.7 s |
 | Binary / bundle | 9.8 MB / 13 MB |
 
 `ps` reports about 114 MB RSS, mostly shared system frameworks; use `footprint <pid>` instead.

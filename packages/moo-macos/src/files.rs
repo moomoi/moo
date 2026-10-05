@@ -111,7 +111,7 @@ pub fn latest_generation() -> u64 {
 pub fn request(query: &str, limit: usize, deliver: fn(Delivery)) -> u64 {
     WORKER.get_or_init(|| {
         std::thread::Builder::new()
-            .name("nimble-files".into())
+            .name("moo-files".into())
             .spawn(move || worker(deliver))
             .expect("spawn file search worker");
     });
@@ -520,7 +520,7 @@ mod tests {
     #[test]
     #[ignore = "queries this Mac's Spotlight index"]
     fn finds_a_file_by_its_contents() {
-        let word = format!("nimblecontent{}", std::process::id());
+        let word = format!("moocontent{}", std::process::id());
         let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("spotlight-scratch");
         std::fs::create_dir_all(&dir).unwrap();
         let file = dir.join("note.txt");

@@ -100,7 +100,7 @@ pub fn log_out() -> Result<(), String> {
     apple_event("com.apple.loginwindow", b"aevt", b"rlgo", 0.0)
 }
 
-/// Asks Finder (macOS asks the user once to allow Nimble to control Finder). Blocks: worker thread.
+/// Asks Finder (macOS asks the user once to allow Moo to control Finder). Blocks: worker thread.
 pub fn empty_trash() -> Result<(), String> {
     apple_event("com.apple.finder", b"fndr", b"empt", 60.0)
 }
@@ -260,7 +260,7 @@ fn footprint(pid: i32) -> u64 {
     }
 }
 
-/// Apps in the Dock (regular activation policy), Nimble excluded, by memory use.
+/// Apps in the Dock (regular activation policy), Moo excluded, by memory use.
 pub fn running_apps() -> Vec<RunningApp> {
     let me = std::process::id() as i32;
     let apps = NSWorkspace::sharedWorkspace().runningApplications();
@@ -289,14 +289,14 @@ fn app_by_pid(pid: i32) -> Option<Retained<NSRunningApplication>> {
 }
 
 /// `switch`, `hide`, `unhide`, `quit` or `force-quit` the app with `pid`. Returns a short message;
-/// with `NIMBLE_SYSTEM_DRY_RUN` set it only reports what it would do.
+/// with `MOO_SYSTEM_DRY_RUN` set it only reports what it would do.
 pub fn app_action(pid: i32, action: &str) -> Result<String, String> {
     let a = app_by_pid(pid).ok_or_else(|| format!("no app with pid {pid}"))?;
     let name = a.localizedName().map(|s| s.to_string()).unwrap_or_default();
     if !matches!(action, "switch" | "hide" | "unhide" | "quit" | "force-quit") {
         return Err(format!("unknown app action `{action}`"));
     }
-    if std::env::var_os("NIMBLE_SYSTEM_DRY_RUN").is_some() {
+    if std::env::var_os("MOO_SYSTEM_DRY_RUN").is_some() {
         return Ok(format!("dry run: {action} {name}"));
     }
     let ok = match action {
@@ -329,7 +329,7 @@ pub fn app_action(pid: i32, action: &str) -> Result<String, String> {
     })
 }
 
-/// Quit every app in the Dock but Finder (and Nimble). Returns how many were asked.
+/// Quit every app in the Dock but Finder (and Moo). Returns how many were asked.
 pub fn quit_all() -> usize {
     let mut n = 0;
     for a in running_apps().iter().filter(|a| a.bundle_id != "com.apple.finder") {
@@ -367,10 +367,10 @@ fn toggle_arg(arg: &str, current: bool) -> bool {
 
 /// Run system command `id`; `arg` is `on`/`off`/`toggle` for `dark-mode` and `mute`, and a
 /// percentage, `up` or `down` for `volume` (empty reports the level). Returns a short message.
-/// With `NIMBLE_SYSTEM_DRY_RUN` set, known commands only report what they would do.
+/// With `MOO_SYSTEM_DRY_RUN` set, known commands only report what they would do.
 pub fn run(id: &str, arg: &str) -> Result<String, String> {
     let arg = arg.trim().to_lowercase();
-    if std::env::var_os("NIMBLE_SYSTEM_DRY_RUN").is_some() {
+    if std::env::var_os("MOO_SYSTEM_DRY_RUN").is_some() {
         return match id {
             "lock" | "sleep" | "sleep-displays" | "restart" | "shut-down" | "log-out" | "empty-trash" | "screen-saver" | "dark-mode"
             | "mute" | "volume" | "eject" | "quit-all" | "hide-all" => Ok(format!("dry run: {id} {arg}").trim_end().to_string()),
@@ -455,7 +455,7 @@ mod tests {
 
     /// Starts Chess in the background and quits only that process. Skipped when Chess is already
     /// open. Looks the process up with pgrep: without a running run loop, NSWorkspace's app list in
-    /// a test process never updates. Hide and unhide need a GUI app, so they are checked in Nimble.
+    /// a test process never updates. Hide and unhide need a GUI app, so they are checked in Moo.
     #[test]
     #[ignore]
     fn acts_on_an_app_it_started() {

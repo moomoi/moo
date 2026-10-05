@@ -1,5 +1,5 @@
-//! Saved AI chats, one JSON file each in `~/Library/Application Support/Nimble/chats`
-//! (`NIMBLE_CHATS` for the folder). The shell owns the format; this only needs `title`, `model`
+//! Saved AI chats, one JSON file each in `~/Library/Application Support/Moo/chats`
+//! (`MOO_CHATS` for the folder). The shell owns the format; this only needs `title`, `model`
 //! and `updated` (Unix milliseconds) at the top level to list them.
 
 use std::path::PathBuf;
@@ -7,10 +7,10 @@ use std::path::PathBuf;
 use tishlang_core::{json_parse, Value};
 
 pub fn dir() -> Option<PathBuf> {
-    if let Some(d) = std::env::var_os("NIMBLE_CHATS") {
+    if let Some(d) = std::env::var_os("MOO_CHATS") {
         return Some(PathBuf::from(d));
     }
-    std::env::var_os("HOME").map(|h| PathBuf::from(h).join("Library/Application Support/Nimble/chats"))
+    std::env::var_os("HOME").map(|h| PathBuf::from(h).join("Library/Application Support/Moo/chats"))
 }
 
 fn valid(id: &str) -> bool {
@@ -87,8 +87,8 @@ mod tests {
 
     #[test]
     fn save_list_load_delete() {
-        let d = std::env::temp_dir().join(format!("nimble-chats-{}", std::process::id()));
-        std::env::set_var("NIMBLE_CHATS", &d);
+        let d = std::env::temp_dir().join(format!("moo-chats-{}", std::process::id()));
+        std::env::set_var("MOO_CHATS", &d);
         let a = save("", r#"{"title":"First","model":"apple","updated":1}"#).unwrap();
         save("b-2", r#"{"title":"Second","model":"ollama:x","updated":2}"#).unwrap();
         let l = list();

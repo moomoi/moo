@@ -1,4 +1,4 @@
-// Nimble's look: every colour, type size, corner radius, glass tint and animation timing. To
+// Moo's look: every colour, type size, corner radius, glass tint and animation timing. To
 // re-theme, edit or replace THEME; nothing visual is decided in Rust (setTheme hands the panel
 // part to the native side, the rest is used by the views in main.tish).
 //
@@ -77,6 +77,9 @@ export const THEME = {
     signOut: "rectangle.portrait.and.arrow.right",
     waiting: "globe",
     warning: "exclamationmark.triangle",
+    // SF Symbols of a Hypery organization without its own icon: a team, the personal one.
+    organization: "building.2",
+    personalOrg: "person.crop.square",
     row: 24,
     field: 22,
     category: 20,

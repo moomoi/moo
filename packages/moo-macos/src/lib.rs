@@ -1,5 +1,5 @@
-//! `nimble-macos`: native launcher services for the Nimble shell, imported from Tish as
-//! `import { reindex, search, launch, setup, ... } from "nimble-macos"`.
+//! `moo-macos`: native launcher services for the Moo shell, imported from Tish as
+//! `import { reindex, search, launch, setup, ... } from "moo-macos"`.
 
 #[cfg(target_os = "macos")]
 mod ai;
@@ -43,11 +43,15 @@ mod mac;
 #[cfg(target_os = "macos")]
 mod oauth;
 #[cfg(target_os = "macos")]
+mod pluginhost;
+#[cfg(target_os = "macos")]
 mod rates;
 #[cfg(target_os = "macos")]
 mod remote;
 #[cfg(target_os = "macos")]
 mod shell;
+#[cfg(target_os = "macos")]
+mod siteicon;
 #[cfg(unix)]
 mod shortcuts;
 mod snippets;
@@ -142,7 +146,7 @@ fn native_load_bytecode_plugin(args: &[Value]) -> Value {
     }
 }
 
-/// `bundleResources()` -> `Nimble.app/Contents/Resources` when running from an app bundle, else null.
+/// `bundleResources()` -> `Moo.app/Contents/Resources` when running from an app bundle, else null.
 fn native_bundle_resources(_args: &[Value]) -> Value {
     let exe = std::env::current_exe().ok().and_then(|p| p.canonicalize().ok());
     let contents = exe.as_deref().and_then(|p| p.parent()).filter(|d| d.ends_with("MacOS")).and_then(|d| d.parent());
@@ -223,7 +227,7 @@ mod natives {
     use super::*;
     use dispatch2::DispatchQueue;
 
-    /// `launch(target)`: open a file path or a URL (`scheme://...`); hides Nimble on success.
+    /// `launch(target)`: open a file path or a URL (`scheme://...`); hides Moo on success.
     pub fn launch(args: &[Value]) -> Value {
         let ok = mac::launch(&str_arg(args, 0));
         if ok {
@@ -266,7 +270,7 @@ mod natives {
         Value::Null
     }
 
-    /// `typeText(text)`: test hook behind `nimble type`; inserts `text` into the focused field.
+    /// `typeText(text)`: test hook behind `moo type`; inserts `text` into the focused field.
     pub fn type_text(args: &[Value]) -> Value {
         let text = str_arg(args, 0);
         dispatch2::DispatchQueue::main().exec_async(move || mac::type_text(text));
@@ -461,7 +465,7 @@ mod natives {
         let Some(path) = shortcuts::config_path() else { return s("") };
         if !path.exists() {
             if let Err(e) = shortcuts::save(&path, &Default::default()) {
-                eprintln!("nimble: {e}");
+                eprintln!("moo: {e}");
             }
         }
         s(&path.to_string_lossy())
@@ -550,7 +554,7 @@ mod natives {
     }
 
     /// `watchShortcuts(cb)`: call `cb()` when shortcuts.json changes (edited by hand, by the CLI or
-    /// by Nimble itself). Creates the folder so it can be watched.
+    /// by Moo itself). Creates the folder so it can be watched.
     pub fn watch_shortcuts(args: &[Value]) -> Value {
         let Some(dir) = shortcuts::config_path().and_then(|p| p.parent().map(|d| d.to_path_buf())) else { return Value::Bool(false) };
         let _ = std::fs::create_dir_all(&dir);
@@ -581,8 +585,8 @@ mod natives {
 
     // ── Command line ──
 
-    /// `cliMain()`: when this process was started as a command (`nimble files foo`), or another
-    /// Nimble is already running, act as its client and exit. Otherwise return false: be the app.
+    /// `cliMain()`: when this process was started as a command (`moo files foo`), or another
+    /// Moo is already running, act as its client and exit. Otherwise return false: be the app.
     pub fn cli_main(_a: &[Value]) -> Value {
         let a = cli::args();
         if !a.is_empty() || cli::running() {
@@ -591,7 +595,7 @@ mod natives {
         Value::Bool(false)
     }
 
-    /// `cliServe(onCli)`: answer `nimble` commands. `onCli(args, cwd, token)` runs on the main
+    /// `cliServe(onCli)`: answer `moo` commands. `onCli(args, cwd, token)` runs on the main
     /// thread and replies with `cliWrite(token, text, "out"|"err")` and `cliEnd(token, code)`.
     pub fn cli_serve(args: &[Value]) -> Value {
         cli::set_handler(args.first().cloned());
@@ -693,7 +697,7 @@ mod natives {
         }
     }
 
-    /// `recentFiles(limit)`: files and folders opened through Nimble, most used first.
+    /// `recentFiles(limit)`: files and folders opened through Moo, most used first.
     pub fn recent_files(args: &[Value]) -> Value {
         let limit = num_arg(args, 0, 8.0).max(0.0) as usize;
         file_rows(fslive::recent(limit), limit)
@@ -802,7 +806,7 @@ mod natives {
     }
 
     /// `runningApps()` -> `[{ name, path, icon, pid, bundleId, active, hidden, memory, memoryText }]`:
-    /// apps with a Dock icon, Nimble left out, most memory first.
+    /// apps with a Dock icon, Moo left out, most memory first.
     pub fn running_apps(_a: &[Value]) -> Value {
         let rows: Vec<Value> = crate::system::running_apps()
             .into_iter()
@@ -1112,7 +1116,7 @@ mod natives {
         crate::ax::selected_text().map(|t| s(&t)).unwrap_or(Value::Null)
     }
 
-    /// `accessibilityTrusted(prompt)` -> whether Nimble may use Accessibility; `prompt` shows the
+    /// `accessibilityTrusted(prompt)` -> whether Moo may use Accessibility; `prompt` shows the
     /// macOS dialog.
     pub fn accessibility_trusted(args: &[Value]) -> Value {
         Value::Bool(crate::ax::trusted(matches!(args.first(), Some(Value::Bool(true)))))
@@ -1193,7 +1197,7 @@ mod natives {
     }
 
     /// `statusItem(hotkey, symbol, onMenu)`: menu bar icon (an SF Symbol name). A click shows the
-    /// panel; a right click offers Settings… (calls `onMenu("settings")`) and Quit Nimble.
+    /// panel; a right click offers Settings… (calls `onMenu("settings")`) and Quit Moo.
     pub fn status_item(args: &[Value]) -> Value {
         thread_local! {
             static ON_MENU: std::cell::RefCell<Option<Value>> = const { std::cell::RefCell::new(None) };
@@ -1348,7 +1352,7 @@ mod natives {
     }
 
     /// `aiSetModel(model)` -> `{ ok, error }`: `ai.model` in shortcuts.json (`apple` or
-    /// `provider:model`; empty lets Nimble choose).
+    /// `provider:model`; empty lets Moo choose).
     pub fn ai_set_model(args: &[Value]) -> Value {
         let model = str_arg(args, 0).trim().to_string();
         edit_config(move |cfg| {
@@ -1368,9 +1372,41 @@ mod natives {
         })
     }
 
+    /// `aiSetOrganization(provider, id)` -> `{ ok, error }`: the organization requests act for
+    /// and bill to; "" for the personal one.
+    pub fn ai_set_organization(args: &[Value]) -> Value {
+        let (provider, id) = (str_arg(args, 0), str_arg(args, 1).trim().to_string());
+        edit_config(move |cfg| {
+            let mut p = cfg.ai.providers.iter().find(|p| p.id == provider).cloned().unwrap_or(shortcuts::ProviderConfig { id: provider.clone(), ..Default::default() });
+            p.organization = id;
+            shortcuts::set_provider(cfg, p);
+            Ok(())
+        })
+    }
+
     /// `symbolIcon(name)` -> an image name for `<image src>` showing SF Symbol `name`.
     pub fn symbol_icon(args: &[Value]) -> Value {
         Value::String(mac::symbol_icon(&str_arg(args, 0)).as_str().into())
+    }
+
+    /// `siteIcon(url, cb)` -> an image name for `<image src>` showing the site's favicon, or ""
+    /// until it is cached; `cb(name)` once a fresh copy has downloaded.
+    pub fn site_icon(args: &[Value]) -> Value {
+        let cb = bridge::hold(callback(args, 1));
+        Value::String(siteicon::site_icon(&str_arg(args, 0), cb).as_str().into())
+    }
+
+    /// `imageIcon(url, cb)` -> an image name for `<image src>` showing the image at `url`, or ""
+    /// until it is cached; `cb(name)` once a fresh copy has downloaded.
+    pub fn image_icon(args: &[Value]) -> Value {
+        let cb = bridge::hold(callback(args, 1));
+        Value::String(siteicon::image_icon(&str_arg(args, 0), cb).as_str().into())
+    }
+
+    /// `onPluginRefresh(cb)`: `cb()` whenever a plugin calls `moo.refresh()` (new data arrived).
+    pub fn on_plugin_refresh(args: &[Value]) -> Value {
+        pluginhost::on_refresh(callback(args, 0));
+        Value::Null
     }
 }
 
@@ -1478,10 +1514,15 @@ mod natives {
     pub use unsupported as ai_set_key;
     pub use unsupported as ai_set_model;
     pub use unsupported as ai_set_client_id;
+    pub use unsupported as ai_set_organization;
     pub fn symbol_icon(_a: &[Value]) -> Value { Value::String("".into()) }
+    pub fn site_icon(_a: &[Value]) -> Value { Value::String("".into()) }
+    pub use site_icon as image_icon;
+    pub fn on_plugin_refresh(_a: &[Value]) -> Value { Value::Null }
 }
 
-pub fn nimble_object() -> Value {
+pub fn moo_object() -> Value {
+    prefs::migrate_legacy_dirs();
     let mut m = ObjectMap::default();
     m.insert(Arc::from("reindex"), Value::native(native_reindex));
     m.insert(Arc::from("search"), Value::native(native_search));
@@ -1585,5 +1626,9 @@ pub fn nimble_object() -> Value {
     m.insert(Arc::from("aiSetModel"), Value::native(natives::ai_set_model));
     m.insert(Arc::from("aiSetClientId"), Value::native(natives::ai_set_client_id));
     m.insert(Arc::from("symbolIcon"), Value::native(natives::symbol_icon));
+    m.insert(Arc::from("siteIcon"), Value::native(natives::site_icon));
+    m.insert(Arc::from("imageIcon"), Value::native(natives::image_icon));
+    m.insert(Arc::from("onPluginRefresh"), Value::native(natives::on_plugin_refresh));
+    m.insert(Arc::from("aiSetOrganization"), Value::native(natives::ai_set_organization));
     Value::object(m)
 }

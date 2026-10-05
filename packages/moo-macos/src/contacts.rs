@@ -21,7 +21,7 @@ extern "C" {
 }
 
 /// macOS kills a bare binary that asks for Contacts without a usage description, and only
-/// Nimble.app has an Info.plist file; this section gives the unbundled binary one. No bundle id:
+/// Moo.app has an Info.plist file; this section gives the unbundled binary one. No bundle id:
 /// that would change how other permissions and notifications see the dev build.
 #[used]
 #[link_section = "__TEXT,__info_plist"]

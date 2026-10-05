@@ -11,14 +11,14 @@ thread_local! {
 }
 
 pub fn store_path() -> Option<PathBuf> {
-    if let Some(p) = std::env::var_os("NIMBLE_HISTORY") {
+    if let Some(p) = std::env::var_os("MOO_HISTORY") {
         return Some(PathBuf::from(p));
     }
     let home = PathBuf::from(std::env::var_os("HOME")?);
     #[cfg(target_os = "macos")]
-    let dir = home.join("Library/Application Support/Nimble");
+    let dir = home.join("Library/Application Support/Moo");
     #[cfg(not(target_os = "macos"))]
-    let dir = home.join(".local/share/nimble");
+    let dir = home.join(".local/share/moo");
     Some(dir.join("history.txt"))
 }
 
@@ -52,7 +52,7 @@ pub fn add(query: &str) {
         items.insert(0, q);
         items.truncate(MAX_ENTRIES);
         if let Err(e) = save(items) {
-            eprintln!("nimble: history save failed: {e}");
+            eprintln!("moo: history save failed: {e}");
         }
     });
 }
@@ -66,7 +66,7 @@ pub fn clear() {
     with_store(|items| {
         items.clear();
         if let Err(e) = save(items) {
-            eprintln!("nimble: history save failed: {e}");
+            eprintln!("moo: history save failed: {e}");
         }
     });
 }
@@ -77,8 +77,8 @@ mod tests {
 
     #[test]
     fn newest_first_without_duplicates() {
-        let path = std::env::temp_dir().join(format!("nimble-history-{}.txt", std::process::id()));
-        std::env::set_var("NIMBLE_HISTORY", &path);
+        let path = std::env::temp_dir().join(format!("moo-history-{}.txt", std::process::id()));
+        std::env::set_var("MOO_HISTORY", &path);
         let _ = std::fs::remove_file(&path);
         add("safari");
         add("  notes ");

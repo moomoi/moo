@@ -1,0 +1,6 @@
+{
+  "name": "moo-web",
+  "private": true,
+  "version": "0.1.0",
+  "description": "moo.moi: landing page and Hypery sign-in relay (native Tish HTTP server). Build: ./build.sh"
+}

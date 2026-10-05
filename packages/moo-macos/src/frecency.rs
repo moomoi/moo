@@ -34,14 +34,14 @@ fn decayed(e: Entry, t: f64) -> f64 {
 }
 
 pub fn store_path() -> Option<PathBuf> {
-    if let Some(p) = std::env::var_os("NIMBLE_FRECENCY") {
+    if let Some(p) = std::env::var_os("MOO_FRECENCY") {
         return Some(PathBuf::from(p));
     }
     let home = PathBuf::from(std::env::var_os("HOME")?);
     #[cfg(target_os = "macos")]
-    let dir = home.join("Library/Application Support/Nimble");
+    let dir = home.join("Library/Application Support/Moo");
     #[cfg(not(target_os = "macos"))]
-    let dir = home.join(".local/share/nimble");
+    let dir = home.join(".local/share/moo");
     Some(dir.join("frecency.tsv"))
 }
 
@@ -95,7 +95,7 @@ pub fn record(key: &str) {
             m.retain(|_, e| decayed(*e, t) >= cut);
         }
         if let Err(e) = save(m) {
-            eprintln!("nimble: frecency save failed: {e}");
+            eprintln!("moo: frecency save failed: {e}");
         }
     });
 }
@@ -135,8 +135,8 @@ mod tests {
 
     #[test]
     fn record_persists_and_boosts() {
-        let path = std::env::temp_dir().join(format!("nimble-frecency-{}.tsv", std::process::id()));
-        std::env::set_var("NIMBLE_FRECENCY", &path);
+        let path = std::env::temp_dir().join(format!("moo-frecency-{}.tsv", std::process::id()));
+        std::env::set_var("MOO_FRECENCY", &path);
         let _ = std::fs::remove_file(&path);
         assert_eq!(boost("/Applications/Safari.app"), 0);
         record("/Applications/Safari.app");

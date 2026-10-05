@@ -4,7 +4,7 @@
 import { manifest, greet, search, run, stats, fail } from "ffi:./plugins/hello-v2.lib"
 
 console.log("manifest =", JSON.stringify(manifest()))
-console.log("greet    =", greet("Nimble"))
+console.log("greet    =", greet("Moo"))
 
 let items = ["Safari", "Slack", "System Settings", "Terminal"].map((t) => ({ title: t }))
 console.log("search   =", JSON.stringify(search(items, "s")))

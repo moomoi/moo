@@ -1,5 +1,5 @@
-// Nimble launcher shell: Lattish-style JSX on tish-macos (`tish:macos`), launcher services from
-// packages/nimble-macos (`tish:nimble`), plugins loaded at runtime as native modules (`tish:ffi`).
+// Moo launcher shell: Lattish-style JSX on tish-macos (`tish:macos`), launcher services from
+// packages/moo-macos (`tish:moo`), plugins loaded at runtime as native modules (`tish:ffi`).
 // Follows macOS Spotlight: the hotkey opens a compact bar (search field plus Applications, Files,
 // Actions and Clipboard buttons, ⌘1–⌘4; Applications is a grid of icons or a list, ⌘L);
 // typing expands it into results grouped under a Top Hit;
@@ -8,11 +8,11 @@
 
 import { loadModule } from "tish:ffi"
 import { macos, useState } from "tish:macos"
-import { reindex, search, launch, setup, setPanelShape, setArrowKeys, setTheme, typeText, getPref, setPref, searchHistory, addSearchHistory, clearSearchHistory, registerHotkey, quit, hide, appCount, searchFiles, watchApps, fuzzy, pluginPaths, copyText, loadBytecodePlugin, bundleResources, recordUse, frecency, statusItem, watchClipboard, clipboardHistory, clearClipboardHistory, aiAvailability, aiSession, aiEndSession, aiPrewarm, aiAsk, aiCancel, aiProviders, aiModels, aiChat, aiChatCancel, aiSetKey, aiLogin, aiCancelLogin, aiLogout, aiAccount, aiSetModel, aiSetClientId, symbolIcon, fileIndexStart, findFiles, recentFiles, queryFiles, runningApps, systemInfo, calculate, define, dictionaryWarm, webSuggest, contactsAccess, contactsRequest, searchContacts, systemCommand, appAction, arrangeWindow, selectedText, watchSnippets, replaceTyped, trashFile, appsFor, openWith, quickLook, quickLookVisible, searchContents, accessibilityTrusted, fileIcon, revealFile, fileIndexStatus, show, toggle, unregisterHotkey, checkHotkey, hotkeyDisplay, recordHotkey, loadShortcuts, saveShortcut, checkKeyword, ensureShortcutsFile, removeShortcut, bindHotkey, unbindHotkey, setLauncherHotkey, expandTemplate, watchShortcuts, runShell, cliMain, cliServe, cliWrite, cliEnd, cliUsage } from "tish:nimble"
+import { reindex, search, launch, setup, setPanelShape, setArrowKeys, setTheme, typeText, getPref, setPref, searchHistory, addSearchHistory, clearSearchHistory, registerHotkey, quit, hide, appCount, searchFiles, watchApps, fuzzy, pluginPaths, copyText, loadBytecodePlugin, bundleResources, recordUse, frecency, statusItem, watchClipboard, clipboardHistory, clearClipboardHistory, aiAvailability, aiSession, aiEndSession, aiPrewarm, aiAsk, aiCancel, aiProviders, aiModels, aiChat, aiChatCancel, aiSetKey, aiLogin, aiCancelLogin, aiLogout, aiAccount, aiSetModel, aiSetClientId, aiSetOrganization, imageIcon, onPluginRefresh, siteIcon, symbolIcon, fileIndexStart, findFiles, recentFiles, queryFiles, runningApps, systemInfo, calculate, define, dictionaryWarm, webSuggest, contactsAccess, contactsRequest, searchContacts, systemCommand, appAction, arrangeWindow, selectedText, watchSnippets, replaceTyped, trashFile, appsFor, openWith, quickLook, quickLookVisible, searchContents, accessibilityTrusted, fileIcon, revealFile, fileIndexStatus, show, toggle, unregisterHotkey, checkHotkey, hotkeyDisplay, recordHotkey, loadShortcuts, saveShortcut, checkKeyword, ensureShortcutsFile, removeShortcut, bindHotkey, unbindHotkey, setLauncherHotkey, expandTemplate, watchShortcuts, runShell, cliMain, cliServe, cliWrite, cliEnd, cliUsage } from "tish:moo"
 import { env } from "tish:process"
 import { THEME } from "./theme.tish"
 
-// `nimble <command>` (or launching while Nimble already runs) makes this process a client of the
+// `moo <command>` (or launching while Moo already runs) makes this process a client of the
 // running app: it sends the arguments over the socket, prints the reply and exits here.
 cliMain()
 
@@ -24,7 +24,7 @@ const FILE_LIST_MAX = 100
 const AI_WRAP = 92
 const AI_TITLE = "Apple Intelligence"
 let HOME = env.HOME ? env.HOME : ""
-let AI_INSTRUCTIONS = "You are the assistant inside Nimble, a macOS launcher. Answer briefly and plainly in a few short sentences. Do not use Markdown. "
+let AI_INSTRUCTIONS = "You are the assistant inside Moo, a macOS launcher. Answer briefly and plainly in a few short sentences. Do not use Markdown. "
   + "Most questions, such as how to do something, general facts, advice or writing, need no tool: answer them from what you know. "
   + "Use a tool only when the question is about this Mac (its files, apps, clipboard history, settings or system facts) or is exactly what a tool does, call it once, then answer from its reply. Never say you searched without calling a tool. "
   + "When a tool lists results, the user also sees them as rows they can open, so summarise instead of repeating every path. "
@@ -70,7 +70,7 @@ fn aiTools() {
     { name: "revealFile", description: "Show a file or folder in Finder.", params: [{ name: "path", description: "The full path, e.g. ~/Downloads/report.pdf" }] },
     { name: "findApps", description: "Search the applications installed on this Mac by name.", params: [{ name: "query", description: "Part of the app name, e.g. photo" }] },
     { name: "runningApps", description: "List the applications that are open right now.", params: [] },
-    { name: "clipboardHistory", description: "Get what the user copied recently (Nimble keeps a clipboard history), newest first. Use whenever they ask what they copied or what is on the clipboard.", params: [opt("query", "Words to look for; all recent entries when omitted")] },
+    { name: "clipboardHistory", description: "Get what the user copied recently (Moo keeps a clipboard history), newest first. Use whenever they ask what they copied or what is on the clipboard.", params: [opt("query", "Words to look for; all recent entries when omitted")] },
     { name: "systemInfo", description: "Facts about this Mac: macOS version, model, chip, memory, disk space, battery and uptime.", params: [] },
     { name: "controlMac", description: "Change a setting on this Mac: dark mode, sound volume and mute, lock the screen, sleep the displays, start the screen saver, hide all apps, eject disks. Also call it for restart, shut down, sleep, log out, quit all apps and empty Trash, and repeat its reply.", params: [
       { name: "action", description: "What to do", choices: AI_SYSTEM_ACTIONS },
@@ -84,7 +84,7 @@ fn aiTools() {
   ]
   let list = config.shortcuts.slice(0, 30).map((s) => s.keyword + " (" + s.name + ")")
   if (list.length > 0) {
-    tools.push({ name: "runShortcut", description: "Run one of the user's Nimble shortcuts, only when the user asks to run or use it by name. Available: " + list.join(", ") + ".", params: [
+    tools.push({ name: "runShortcut", description: "Run one of the user's Moo shortcuts, only when the user asks to run or use it by name. Available: " + list.join(", ") + ".", params: [
       { name: "keyword", description: "The shortcut's keyword" },
       opt("input", "Text the shortcut needs, if any")
     ] })
@@ -99,11 +99,11 @@ let config = loadShortcuts()
 if (config.launcher !== "") {
   HOTKEYS = [config.launcher].concat(HOTKEYS)
 }
-if (env.NIMBLE_HOTKEY) {
-  HOTKEYS = [env.NIMBLE_HOTKEY].concat(HOTKEYS)
+if (env.MOO_HOTKEY) {
+  HOTKEYS = [env.MOO_HOTKEY].concat(HOTKEYS)
 }
 let resources = bundleResources()
-let PLUGIN_DIR = env.NIMBLE_PLUGINS ? env.NIMBLE_PLUGINS : (resources ? resources + "/plugins" : "../plugins/dist")
+let PLUGIN_DIR = env.MOO_PLUGINS ? env.MOO_PLUGINS : (resources ? resources + "/plugins" : "../plugins/dist")
 
 let index = reindex()
 let watching = watchApps()
@@ -118,9 +118,9 @@ for (let i = 0; i < HOTKEYS.length && hotkey === ""; i = i + 1) {
     hotkey = HOTKEYS[i]
     hotkeyLabel = r.display
     hotkeyId = r.id
-    console.log("nimble: hotkey " + r.display + " (registered as " + r.registered.join(", ") + ")")
+    console.log("moo: hotkey " + r.display + " (registered as " + r.registered.join(", ") + ")")
   } else {
-    console.log("nimble: hotkey " + r.error)
+    console.log("moo: hotkey " + r.error)
   }
 }
 statusItem(hotkeyLabel, THEME.statusIcon, (what) => onStatusMenu(what))
@@ -130,21 +130,21 @@ watchClipboard()
 
 let aiIcon = symbolIcon(THEME.icon.ai)
 let calcIcon = symbolIcon(THEME.icon.calculator)
-let APPS = { name: "Applications", path: "nimble:apps", icon: symbolIcon("square.grid.2x2"), kind: "Command", mode: "apps", pluginTitle: "Nimble" }
-let FILES = { name: "Search Files", path: "nimble:files", icon: symbolIcon("doc.text.magnifyingglass"), kind: "Command", mode: "files", pluginTitle: "Nimble" }
-let ACTIONS = { name: "Actions", path: "nimble:actions", icon: symbolIcon("square.2.layers.3d"), kind: "Command", mode: "actions", pluginTitle: "Nimble" }
-let CLIPBOARD = { name: "Clipboard History", path: "nimble:clipboard", icon: "NSMultipleDocuments", kind: "Command", mode: "clipboard", pluginTitle: "Nimble" }
-let HISTORY = { name: "Recent Searches", path: "nimble:history", icon: symbolIcon("clock.arrow.circlepath"), kind: "Command", mode: "history", pluginTitle: "Nimble" }
-let DICTIONARY = { name: "Define Word", path: "nimble:dictionary", icon: symbolIcon(THEME.icon.dictionary), kind: "Command", mode: "dictionary", pluginTitle: "Dictionary", entry: null }
+let APPS = { name: "Applications", path: "moo:apps", icon: symbolIcon("square.grid.2x2"), kind: "Command", mode: "apps", pluginTitle: "Moo" }
+let FILES = { name: "Search Files", path: "moo:files", icon: symbolIcon("doc.text.magnifyingglass"), kind: "Command", mode: "files", pluginTitle: "Moo" }
+let ACTIONS = { name: "Actions", path: "moo:actions", icon: symbolIcon("square.2.layers.3d"), kind: "Command", mode: "actions", pluginTitle: "Moo" }
+let CLIPBOARD = { name: "Clipboard History", path: "moo:clipboard", icon: "NSMultipleDocuments", kind: "Command", mode: "clipboard", pluginTitle: "Moo" }
+let HISTORY = { name: "Recent Searches", path: "moo:history", icon: symbolIcon("clock.arrow.circlepath"), kind: "Command", mode: "history", pluginTitle: "Moo" }
+let DICTIONARY = { name: "Define Word", path: "moo:dictionary", icon: symbolIcon(THEME.icon.dictionary), kind: "Command", mode: "dictionary", pluginTitle: "Dictionary", entry: null }
 let webIcon = symbolIcon(THEME.icon.web)
 // suggestions: the last answer, for `suggested` (the text it was for); error: why there is none.
-let WEB = { name: "Search the Web", path: "nimble:web", icon: webIcon, kind: "Command", mode: "web", pluginTitle: "Web", suggestions: [], suggested: "", error: "" }
+let WEB = { name: "Search the Web", path: "moo:web", icon: webIcon, kind: "Command", mode: "web", pluginTitle: "Web", suggestions: [], suggested: "", error: "" }
 let contactIcon = symbolIcon(THEME.icon.contact)
 // results: the last answer, for `searched` (the text it was for; null before the first).
-let CONTACTS = { name: "Search Contacts", path: "nimble:contacts", icon: contactIcon, kind: "Command", mode: "contacts", pluginTitle: "Contacts", results: [], searched: null, error: "" }
-let SETTINGS = { name: "Settings", path: "nimble:settings", icon: symbolIcon(THEME.icon.settings), kind: "Command", mode: "settings", pluginTitle: "Nimble" }
-let AI_MODELS = { name: "AI Models", path: "nimble:ai-models", icon: aiIcon, kind: "Command", mode: "ai-models", pluginTitle: "AI" }
-let HYPERY = { name: "Hypery Account", path: "nimble:hypery", icon: symbolIcon(THEME.icon.account), kind: "Command", mode: "hypery", pluginTitle: "Hypery" }
+let CONTACTS = { name: "Search Contacts", path: "moo:contacts", icon: contactIcon, kind: "Command", mode: "contacts", pluginTitle: "Contacts", results: [], searched: null, error: "" }
+let SETTINGS = { name: "Settings", path: "moo:settings", icon: symbolIcon(THEME.icon.settings), kind: "Command", mode: "settings", pluginTitle: "Moo" }
+let AI_MODELS = { name: "AI Models", path: "moo:ai-models", icon: aiIcon, kind: "Command", mode: "ai-models", pluginTitle: "AI" }
+let HYPERY = { name: "Hypery Account", path: "moo:hypery", icon: symbolIcon(THEME.icon.account), kind: "Command", mode: "hypery", pluginTitle: "Hypery" }
 // Spotlight's four category buttons, in ⌘1–⌘4 order. `symbol` is the SF Symbol on the button.
 let CATEGORIES = [
   { title: "Applications", command: APPS, symbol: "square.grid.2x2", key: "1" },
@@ -153,7 +153,7 @@ let CATEGORIES = [
   { title: "Clipboard", command: CLIPBOARD, symbol: "doc.on.clipboard", key: "4" }
 ]
 let commands = [
-  { name: "Ask AI", path: "nimble:ai", icon: aiIcon, kind: AI_TITLE, mode: "ai", pluginTitle: AI_TITLE, question: "" },
+  { name: "Ask AI", path: "moo:ai", icon: aiIcon, kind: AI_TITLE, mode: "ai", pluginTitle: AI_TITLE, question: "" },
   APPS,
   FILES,
   ACTIONS,
@@ -164,11 +164,11 @@ let commands = [
   SETTINGS,
   AI_MODELS,
   HYPERY,
-  { name: "Clear Clipboard History", path: "nimble:clipboard-clear", icon: "NSTrashEmpty", kind: "Command", mode: "builtin" },
-  { name: "Create Shortcut", path: "nimble:create-shortcut", icon: symbolIcon("plus.square"), kind: "Command", mode: "create", pluginTitle: "Nimble" },
-  { name: "Shortcuts", path: "nimble:shortcuts", icon: symbolIcon("command.square"), kind: "Command", mode: "shortcuts", pluginTitle: "Nimble" },
-  { name: "Edit shortcuts.json", path: "nimble:edit-shortcuts", icon: "NSActionTemplate", kind: "Command", mode: "builtin" },
-  { name: "Quit Nimble", path: "nimble:quit", icon: "NSStopProgressTemplate", kind: "Command", mode: "builtin" }
+  { name: "Clear Clipboard History", path: "moo:clipboard-clear", icon: "NSTrashEmpty", kind: "Command", mode: "builtin" },
+  { name: "Create Shortcut", path: "moo:create-shortcut", icon: symbolIcon("plus.square"), kind: "Command", mode: "create", pluginTitle: "Moo" },
+  { name: "Shortcuts", path: "moo:shortcuts", icon: symbolIcon("command.square"), kind: "Command", mode: "shortcuts", pluginTitle: "Moo" },
+  { name: "Edit shortcuts.json", path: "moo:edit-shortcuts", icon: "NSActionTemplate", kind: "Command", mode: "builtin" },
+  { name: "Quit Moo", path: "moo:quit", icon: "NSStopProgressTemplate", kind: "Command", mode: "builtin" }
 ]
 // System commands. `system` and `arg` go to systemCommand; `hides` closes the panel first so it
 // does not cover the lock screen or screen saver; `confirm` asks for a second Return.
@@ -215,12 +215,12 @@ let WINDOW_LAYOUTS = [
 ]
 for (let i = 0; i < WINDOW_LAYOUTS.length; i = i + 1) {
   let d = WINDOW_LAYOUTS[i]
-  commands.push({ name: d.name, path: "nimble:window:" + d.layout, icon: symbolIcon(d.symbol), kind: "Window", mode: "window", layout: d.layout, pluginTitle: "Window" })
+  commands.push({ name: d.name, path: "moo:window:" + d.layout, icon: symbolIcon(d.symbol), kind: "Window", mode: "window", layout: d.layout, pluginTitle: "Window" })
 }
-commands.push({ name: "Running Apps", path: "nimble:running", icon: symbolIcon("square.stack.3d.up"), kind: "Command", mode: "running", pluginTitle: "System" })
+commands.push({ name: "Running Apps", path: "moo:running", icon: symbolIcon("square.stack.3d.up"), kind: "Command", mode: "running", pluginTitle: "System" })
 for (let i = 0; i < SYSTEM_COMMANDS.length; i = i + 1) {
   let d = SYSTEM_COMMANDS[i]
-  commands.push({ name: d.name, path: "nimble:system:" + d.system + (d.arg ? "-" + d.arg : ""), icon: symbolIcon(d.symbol), kind: "System", mode: "system", system: d.system, arg: d.arg ? d.arg : "", hides: d.hides === true, confirm: d.confirm === true, pluginTitle: "System" })
+  commands.push({ name: d.name, path: "moo:system:" + d.system + (d.arg ? "-" + d.arg : ""), icon: symbolIcon(d.symbol), kind: "System", mode: "system", system: d.system, arg: d.arg ? d.arg : "", hides: d.hides === true, confirm: d.confirm === true, pluginTitle: "System" })
 }
 let ASK_AI = commands[0]
 let BUILTIN_COUNT = commands.length
@@ -233,15 +233,15 @@ fn loadPlugin(path) {
   if (path.indexOf(".tishc") >= 0) {
     let r = loadBytecodePlugin(path)
     if (!r.ok) {
-      console.log("nimble: plugin " + r.error)
+      console.log("moo: plugin " + r.error)
       return null
     }
-    console.log("nimble: tier A " + path + " in " + r.ms.toFixed(2) + " ms")
+    console.log("moo: tier A " + path + " in " + r.ms.toFixed(2) + " ms")
     return r.plugin
   }
   let t0 = Date.now()
   let mod = loadModule(path)
-  console.log("nimble: tier B " + path + " in " + (Date.now() - t0) + " ms")
+  console.log("moo: tier B " + path + " in " + (Date.now() - t0) + " ms")
   return mod
 }
 
@@ -249,15 +249,19 @@ fn addCommands(mod) {
   let m = mod.manifest()
   for (let j = 0; j < m.commands.length; j = j + 1) {
     let c = m.commands[j]
+    let symbol = c.icon ? c.icon : (m.icon ? m.icon : "")
     commands.push({
       name: c.title,
       path: "plugin:" + m.id + "/" + c.name,
-      icon: c.mode === "list" || c.mode === "view" ? "NSListViewTemplate" : "NSActionTemplate",
+      icon: symbol.indexOf("symbol:") === 0 ? symbolIcon(symbol.slice(7)) : (c.mode === "list" || c.mode === "view" ? "NSListViewTemplate" : "NSActionTemplate"),
       kind: m.title,
       mode: c.mode,
       plugin: mod,
       command: c.name,
-      pluginTitle: m.title
+      pluginTitle: m.title,
+      arguments: c.arguments ? c.arguments : [],
+      keyword: c.keyword ? c.keyword.toLowerCase() : "",
+      args: {}
     })
   }
   pluginCount = pluginCount + 1
@@ -271,11 +275,27 @@ for (let i = 0; i < pluginFiles.length; i = i + 1) {
       addCommands(mod)
     }
   } catch (e) {
-    console.log("nimble: plugin " + pluginFiles[i] + " failed: " + e.message)
+    console.log("moo: plugin " + pluginFiles[i] + " failed: " + e.message)
   }
 }
-let commandTitles = commands.map((c) => c.name)
-console.log("nimble: indexed " + index.count + " apps in " + index.ms.toFixed(1) + " ms, watching " + watching
+// What the root search matches a command by: its title, and a plugin command's keyword and plugin.
+fn commandMatchText(c) {
+  return c.plugin ? [c.name, c.keyword, c.pluginTitle].filter((s) => s !== "").join(" ") : c.name
+}
+
+let commandTitles = commands.map(commandMatchText)
+
+// A plugin's data arrived (moo.refresh()): search its list or suggestions again. With a message
+// (moo.notify(text)): show it in the status line.
+onPluginRefresh((message) => {
+  if (message) {
+    shell.hud = message
+    refresh()
+  } else if (shell.mode !== null && (shell.mode.mode === "args" || shell.mode.plugin)) {
+    relist()
+  }
+})
+console.log("moo: indexed " + index.count + " apps in " + index.ms.toFixed(1) + " ms, watching " + watching
   + ", " + pluginCount + " plugins / " + (commands.length - BUILTIN_COUNT) + " commands in " + (Date.now() - pluginT0) + " ms, hotkey " + hotkeyLabel)
 
 // ── Shell state ──
@@ -369,7 +389,7 @@ fn refresh() {
 let KINDS = [
   { kind: "url", title: "Open a URL", hint: "{query} becomes the text you type after the keyword, URL-encoded", icon: symbolIcon("globe") },
   { kind: "open", title: "Open an app, file or folder", hint: "Pick what to open", icon: "NSFolder" },
-  { kind: "command", title: "Run a Nimble command", hint: "Starts the command with the text you type", icon: "NSActionTemplate" },
+  { kind: "command", title: "Run a Moo command", hint: "Starts the command with the text you type", icon: "NSActionTemplate" },
   { kind: "shell", title: "Run a shell command", hint: "{query} is inserted single-quoted; the output is shown", icon: symbolIcon("terminal") },
   { kind: "text", title: "Copy text", hint: "{query}, {clipboard}, {date} and {time} are filled in; \\n is a new line", icon: symbolIcon("text.quote") },
   { kind: "snippet", title: "Expand a snippet as you type", hint: "Typing the keyword in any app replaces it; {clipboard}, {date} and {time} are filled in; \\n is a new line", icon: symbolIcon("text.insert") }
@@ -437,7 +457,7 @@ fn syncShortcutCommands() {
     kept.push({ name: s.name, path: "shortcut:" + s.keyword, icon: shortcutIcon(s), kind: shortcutKind(s), mode: "shortcut", shortcut: s, query: "", pluginTitle: "Shortcut" })
   }
   commands = kept
-  commandTitles = commands.map((c) => c.name)
+  commandTitles = commands.map(commandMatchText)
 }
 
 // "Google" for a shortcut keyword, "Clipboard History" for a command id, else the target itself.
@@ -446,8 +466,8 @@ fn targetLabel(run) {
   if (s !== null) {
     return "“" + s.name + "”"
   }
-  if (run === "nimble:toggle" || run === "nimble:show" || run === "nimble:hide") {
-    return "the Nimble launcher"
+  if (run === "moo:toggle" || run === "moo:show" || run === "moo:hide") {
+    return "the Moo launcher"
   }
   let c = findCommand(run)
   if (c !== null) {
@@ -467,7 +487,7 @@ fn targetLabel(run) {
 fn hotkeyConflict(keys, replacing) {
   let d = hotkeyDisplay(keys)
   if (d === hotkeyLabel) {
-    return d + " is the Nimble launcher hotkey"
+    return d + " is the Moo launcher hotkey"
   }
   for (let i = 0; i < hotkeyStatus.length; i = i + 1) {
     let h = hotkeyStatus[i]
@@ -506,7 +526,7 @@ fn bindHotkeys() {
     let r = registerHotkey(w.keys, "hk:" + i, targetLabel(w.run))
     hotkeyStatus.push({ keys: w.keys, run: w.run, query: w.query, shortcut: w.shortcut, display: r.ok ? r.display : hotkeyDisplay(w.keys), id: r.ok ? r.id : 0, error: r.ok ? "" : r.error })
     if (!r.ok) {
-      console.log("nimble: hotkey " + w.keys + " → " + w.run + ": " + r.error)
+      console.log("moo: hotkey " + w.keys + " → " + w.run + ": " + r.error)
     }
   }
 }
@@ -514,10 +534,10 @@ fn bindHotkeys() {
 fn reloadShortcuts() {
   config = loadShortcuts()
   if (!config.ok) {
-    console.log("nimble: shortcuts: " + config.error)
+    console.log("moo: shortcuts: " + config.error)
   }
   for (let i = 0; i < config.warnings.length; i = i + 1) {
-    console.log("nimble: shortcuts: " + config.warnings[i])
+    console.log("moo: shortcuts: " + config.warnings[i])
   }
   syncShortcutCommands()
   bindHotkeys()
@@ -535,7 +555,7 @@ fn syncSnippets() {
   }
   let r = watchSnippets(keywords, onSnippetTyped)
   if (!r.ok) {
-    console.log("nimble: snippets: " + r.error)
+    console.log("moo: snippets: " + r.error)
   }
 }
 
@@ -557,7 +577,7 @@ fn onSnippetTyped(keyword) {
   if (r.ok) {
     recordUse("shortcut:" + s.keyword)
   } else {
-    console.log("nimble: snippet " + keyword + ": " + r.error)
+    console.log("moo: snippet " + keyword + ": " + r.error)
   }
 }
 
@@ -613,7 +633,9 @@ fn openCommand(c, query) {
   }
   leaveToRoot()
   show()
-  if (c.mode === "builtin") {
+  if (hasArgs(c)) {
+    enterArgs(c, query.trim())
+  } else if (c.mode === "builtin") {
     runBuiltin(c)
   } else if (c.mode === "ai") {
     enterAi(c, query)
@@ -628,7 +650,7 @@ fn openCommand(c, query) {
   }
 }
 
-// Run a shortcut. `cli` is { token, cwd } for `nimble run`, else null. Returns "done", "pending"
+// Run a shortcut. `cli` is { token, cwd } for `moo run`, else null. Returns "done", "pending"
 // (a shell command still running answers the CLI itself) or an error message.
 fn runShortcut(s, query, cli) {
   recordUse("shortcut:" + s.keyword)
@@ -945,7 +967,7 @@ fn cliWeb(token, w, rest) {
   }
   let t = rest.trim()
   if (t === "") {
-    cliFail(token, "usage: nimble web <text> | nimble web engine [name]")
+    cliFail(token, "usage: moo web <text> | moo web engine [name]")
     return
   }
   let e = webEngine()
@@ -1019,7 +1041,7 @@ fn allowContacts() {
   }
   contactsRequest((granted) => {
     if (modeIs("contacts") || modeIs("settings")) {
-      shell.hud = granted ? "" : "Nimble can't read contacts"
+      shell.hud = granted ? "" : "Moo can't read contacts"
       shell.apps = listResults(shell.query)
       compose()
       refresh()
@@ -1063,19 +1085,19 @@ fn settingsResults(text) {
     { name: "AI Model", kind: modelName(currentModel()), icon: aiIcon, act: "ai-models", group: "AI" },
     { name: "Hypery Account", kind: hyperyLabel(), icon: HYPERY.icon, act: "hypery", group: "AI" },
     { name: "Contacts Access", kind: contactsAccessLabel(), icon: contactIcon, act: "contacts", group: "Privacy" },
-    { name: "Quit Nimble", kind: "", icon: "NSStopProgressTemplate", act: "quit", group: "Nimble" }
+    { name: "Quit Moo", kind: "", icon: "NSStopProgressTemplate", act: "quit", group: "Moo" }
   ]
   return rows.filter((r) => t === "" || r.name.toLowerCase().indexOf(t) >= 0).map((r) => ({ name: r.name, kind: r.kind, icon: r.icon, act: r.act, group: r.group, mode: "setting" }))
 }
 
 fn openSetting(r) {
   if (r.act === "launcher") {
-    enterSub({ name: "Launcher Hotkey", mode: "assign-hotkey", pluginTitle: "Nimble", icon: symbolIcon("keyboard"), row: null, launcher: true, keys: "", check: null, current: hotkey })
+    enterSub({ name: "Launcher Hotkey", mode: "assign-hotkey", pluginTitle: "Moo", icon: symbolIcon("keyboard"), row: null, launcher: true, keys: "", check: null, current: hotkey })
     recordHotkey(true)
   } else if (r.act === "shortcuts") {
-    openCommand(commandAt("nimble:shortcuts"), "")
+    openCommand(commandAt("moo:shortcuts"), "")
   } else if (r.act === "edit") {
-    runBuiltin(commandAt("nimble:edit-shortcuts"))
+    runBuiltin(commandAt("moo:edit-shortcuts"))
   } else if (r.act === "engine") {
     openCommand(WEB, "")
   } else if (r.act === "appsview") {
@@ -1140,7 +1162,7 @@ fn contactLine(c) {
 
 fn cliContacts(token, rest) {
   if (!contactsAllowed()) {
-    cliFail(token, "no access to contacts (" + contactsAccess() + "); open Search Contacts in Nimble to allow it")
+    cliFail(token, "no access to contacts (" + contactsAccess() + "); open Search Contacts in Moo to allow it")
     return
   }
   searchContacts(rest.trim(), CONTACTS_MAX, (r) => {
@@ -1156,7 +1178,7 @@ fn cliContacts(token, rest) {
 // Senses the AI's define tool returns; enough for a short answer.
 const AI_SENSES = 4
 
-// Plain text for the AI and `nimble define`: the word, pronunciation, up to `limit` senses (0: all)
+// Plain text for the AI and `moo define`: the word, pronunciation, up to `limit` senses (0: all)
 // with examples, and the origin.
 fn definitionText(word, limit) {
   let e = define(word)
@@ -1196,20 +1218,20 @@ fn openInDictionary() {
   leaveList()
 }
 
-// Anything runnable by name: a shortcut keyword, a command id or name ("nimble:clipboard",
-// "plugin:convert/units", "Clipboard History"), or nimble:show / nimble:hide / nimble:toggle.
+// Anything runnable by name: a shortcut keyword, a command id or name ("moo:clipboard",
+// "plugin:convert/units", "Clipboard History"), or moo:show / moo:hide / moo:toggle.
 // Returns "done", "pending" or an error message.
 fn runTarget(id, query, cli) {
   let k = id.trim()
-  if (k === "nimble:show" || k === "show") {
+  if (k === "moo:show" || k === "show") {
     show()
     return "done"
   }
-  if (k === "nimble:hide" || k === "hide") {
+  if (k === "moo:hide" || k === "hide") {
     hide()
     return "done"
   }
-  if (k === "nimble:toggle" || k === "toggle") {
+  if (k === "moo:toggle" || k === "toggle") {
     toggle()
     return "done"
   }
@@ -1233,7 +1255,7 @@ fn runTarget(id, query, cli) {
     recordUse(k)
     return "done"
   }
-  return "No shortcut or command called “" + id + "” (nimble list)"
+  return "No shortcut or command called “" + id + "” (moo list)"
 }
 
 // Commands scored like apps: nucleo match plus frecency boost. An empty query keeps only
@@ -1243,14 +1265,16 @@ fn commandHits(text) {
   if (text.trim() === "") {
     for (let i = 0; i < commands.length; i = i + 1) {
       let b = frecency(commands[i].path)
-      if (b > 0) {
+      if (b > 0 && pluginVisible(commands[i])) {
         hits.push({ index: i, score: b })
       }
     }
   } else {
     let raw = fuzzy(text, commandTitles, commands.length)
     for (let i = 0; i < raw.length; i = i + 1) {
-      hits.push({ index: raw[i].index, score: raw[i].score + frecency(commands[raw[i].index].path) })
+      if (pluginVisible(commands[raw[i].index])) {
+        hits.push({ index: raw[i].index, score: raw[i].score + frecency(commands[raw[i].index].path) })
+      }
     }
   }
   hits.sort((a, b) => b.score - a.score)
@@ -1272,7 +1296,7 @@ fn rootResults(text) {
   // An inline answer comes first, as in Spotlight: "2^10", "5 km in mi", "time in tokyo".
   let answer = calculate(text)
   if (answer !== null) {
-    out.push({ name: answer.display, path: "nimble:calc", icon: calcIcon, kind: answer.detail, mode: "calc", copy: answer.copy, pluginTitle: "Calculator" })
+    out.push({ name: answer.display, path: "moo:calc", icon: calcIcon, kind: answer.detail, mode: "calc", copy: answer.copy, pluginTitle: "Calculator" })
   }
   let vol = volumeRow(text)
   if (vol !== null) {
@@ -1472,7 +1496,7 @@ fn clipboardResults(text) {
   }))
 }
 
-// ── Plugin views: the plugin's VM renders with Lattish (@nimble/ui); the shell shows the
+// ── Plugin views: the plugin's VM renders with Lattish (@moo/ui); the shell shows the
 // committed tree and sends events back through the plugin's `dispatch` ──
 
 fn viewNodes(n, tag, out) {
@@ -1538,8 +1562,13 @@ fn viewResults(text) {
 }
 
 fn enterView(c) {
+  let b = pluginBlocker(c)
+  if (b !== null) {
+    perform(pluginAction(c, b.action))
+    return
+  }
   try {
-    let r = c.plugin.open(c.command)
+    let r = c.plugin.open(c.command, c.args ? c.args : {})
     shell.view = { id: r.view, tree: null, list: null }
     setViewTree(r.tree)
   } catch (e) {
@@ -1558,7 +1587,7 @@ fn closeView() {
   try {
     shell.mode.plugin.close(shell.view.id)
   } catch (e) {
-    console.log("nimble: closing view failed: " + e.message)
+    console.log("moo: closing view failed: " + e.message)
   }
   shell.view = null
 }
@@ -1589,7 +1618,7 @@ fn startWizard(edit) {
   leaveToRoot()
   show()
   wiz = { step: "kind", kind: "url", target: "", keyword: "", name: "", hotkey: "", check: null, editing: "", original: "" }
-  shell.mode = findCommand("nimble:create-shortcut")
+  shell.mode = findCommand("moo:create-shortcut")
   if (edit !== null) {
     wiz.kind = wizKindOf(edit)
     wiz.target = edit.target
@@ -1870,8 +1899,8 @@ fn openShortcutsRow(row, key) {
     if (key === "cmd+enter") {
       startWizard(row.shortcut)
     } else if (key === "alt+enter") {
-      copyText("nimble run " + row.shortcut.keyword)
-      shell.hud = "Copied “nimble run " + row.shortcut.keyword + "”"
+      copyText("moo run " + row.shortcut.keyword)
+      shell.hud = "Copied “moo run " + row.shortcut.keyword + "”"
       refresh()
     } else if (key === "cmd+delete") {
       if (pendingDelete !== row.shortcut.keyword) {
@@ -1946,6 +1975,9 @@ fn listResults(text) {
   if (m.mode === "hypery") {
     return hyperyResults(text)
   }
+  if (m.mode === "hypery-orgs") {
+    return orgResults(text)
+  }
   if (m.mode === "ai-key") {
     return keyResults(text)
   }
@@ -1983,9 +2015,16 @@ fn listResults(text) {
     }
     return viewResults(text)
   }
+  if (m.mode === "args") {
+    return argResults(text)
+  }
+  let b = pluginBlocker(m)
+  if (b !== null) {
+    return [blockerRow(m, b)]
+  }
   try {
-    let items = m.plugin.list(m.command, text)
-    return items.slice(0, ROWS).map((it) => ({ name: it.title, kind: it.subtitle, icon: m.icon, action: it.action }))
+    let items = m.plugin.list(m.command, text, m.args ? m.args : {})
+    return items.slice(0, ROWS).map((it) => ({ name: it.title, kind: it.subtitle ? it.subtitle : "", icon: pluginIcon(it.icon, m.icon), action: pluginAction(m, it.action) }))
   } catch (e) {
     shell.hud = "Plugin error: " + e.message
     return []
@@ -2370,7 +2409,7 @@ fn rowAction(id) {
   } else if (id === "copyline") {
     copied(m.query.trim() + " = " + r.copy)
   } else if (id === "copycli") {
-    copied("nimble run " + hotkeyTarget(r))
+    copied("moo run " + hotkeyTarget(r))
   } else if (id === "edit") {
     startWizard(r.shortcut)
   } else if (id === "delete") {
@@ -2425,7 +2464,7 @@ fn saveRowHotkey(r, keys, current) {
 
 fn assignHotkeyResults(text) {
   let m = shell.mode
-  let label = m.launcher ? "the Nimble launcher" : targetLabel(hotkeyTarget(m.row))
+  let label = m.launcher ? "the Moo launcher" : targetLabel(hotkeyTarget(m.row))
   if (m.keys === "") {
     let now = m.current === "" ? "" : "now " + hotkeyDisplay(m.current) + (m.launcher ? "" : " · ⌫ removes it")
     return [{ name: "Press the keys for " + label, kind: now, icon: symbolIcon("keyboard"), mode: "hotkey-prompt" }]
@@ -2450,7 +2489,7 @@ fn changeLauncherHotkey(keys) {
   statusItem(hotkeyLabel, THEME.statusIcon, (what) => onStatusMenu(what))
   let saved = setLauncherHotkey(keys)
   reloadShortcuts()
-  return saved.ok ? "" : hotkeyLabel + " works until Nimble quits; saving it failed: " + saved.error
+  return saved.ok ? "" : hotkeyLabel + " works until Moo quits; saving it failed: " + saved.error
 }
 
 // Keys pressed while Assign Hotkey records.
@@ -2481,7 +2520,7 @@ fn assignRecord(spec) {
       leaveSub()
       shell.apps = settingsResults(shell.query)
       compose()
-      shell.hud = failed !== "" ? failed : hotkeyLabel + " now opens Nimble"
+      shell.hud = failed !== "" ? failed : hotkeyLabel + " now opens Moo"
       refresh()
       return
     }
@@ -2761,6 +2800,21 @@ let ai = freshAi()
 let APPLE_MODEL = "apple"
 let HYPERY_MODEL = "hypery:~anthropic/claude-sonnet-latest"
 let HYPERY_SITE = "https://hypery.ai"
+
+// hypery.ai's own logo (its favicon, cached on disk) on the Hypery rows; the account symbol until
+// it has loaded.
+let hyperyLogo = siteIcon(HYPERY_SITE, (name) => {
+  hyperyLogo = name
+  HYPERY.icon = name
+  relist()
+})
+if (hyperyLogo !== "") {
+  HYPERY.icon = hyperyLogo
+}
+
+fn hyperyIcon(symbol) {
+  return hyperyLogo !== "" ? hyperyLogo : symbolIcon(symbol)
+}
 // Tool rounds a remote model may take before it has to answer.
 let AI_ROUNDS = 6
 let CATALOG_MS = 600000
@@ -2769,7 +2823,7 @@ let MODEL_ROWS = 120
 let OWNERS = [["anthropic", "Anthropic"], ["google", "Google"], ["openai", "OpenAI"], ["x-ai", "xAI"], ["spacexai", "xAI"], ["meta-llama", "Meta"], ["meta", "Meta"], ["mistralai", "Mistral"], ["mistral", "Mistral"], ["deepseek", "DeepSeek"], ["deepseek-ai", "DeepSeek"], ["qwen", "Qwen"], ["moonshotai", "Moonshot"], ["z-ai", "Z.ai"], ["zai", "Z.ai"], ["amazon", "Amazon"], ["nvidia", "NVIDIA"], ["minimax", "MiniMax"], ["alibaba", "Alibaba"], ["microsoft", "Microsoft"], ["cohere", "Cohere"], ["perplexity", "Perplexity"]]
 // models: [{ model, name, owner, tier, context, provider, providerTitle }] from the last aiModels.
 let aiCatalog = { models: [], errors: [], loading: false, at: 0 }
-let hyperyState = { account: null, loading: false, at: 0, signingIn: false }
+let hyperyState = { account: null, loading: false, again: false, at: 0, signingIn: false }
 let aiProvs = aiProviders()
 let turnCount = 0
 let keyEntry = ""
@@ -2867,7 +2921,8 @@ fn beginAi() {
   }
   let why = aiAvailability()
   if (why !== "available") {
-    ai.error = AI_TITLE + " is unavailable: " + why + " · ⌘K picks another model"
+    ai.error = AI_TITLE + " is unavailable: " + why
+    aiFix("Choose Another Model", "Hypery and other providers work everywhere", aiIcon, "models")
     return false
   }
   ai.session = aiSession(AI_INSTRUCTIONS, aiTools(), onAiTool)
@@ -2926,7 +2981,7 @@ fn modelPicker(fromAi) {
 
 fn modelRow(e, current, group) {
   let bits = [current === e.model ? "Current" : "", e.provider === "hypery" ? ownerLabel(e.owner) : e.providerTitle, e.tier, e.context > 0 ? shortCount(e.context) : ""]
-  return { name: e.name, kind: bits.filter((b) => b !== "").join(" · "), icon: aiIcon, mode: "ai-model", model: e.model, group: group }
+  return { name: e.name, kind: bits.filter((b) => b !== "").join(" · "), icon: e.provider === "hypery" ? hyperyIcon(THEME.icon.ai) : aiIcon, mode: "ai-model", model: e.model, group: group }
 }
 
 fn infoRow(name, group) {
@@ -3060,19 +3115,72 @@ fn callTool(onTool, name, args) {
   }
 }
 
+// What went wrong, in words; aiFix offers the way out as the selected row below it.
 fn remoteErrorText(model, raw) {
   let p = modelProvider(model)
   let who = providerTitle(p)
   if (raw.indexOf("needs an API key") >= 0) {
-    return p === "hypery" ? "Sign in to Hypery or add an API key: Settings › Hypery Account" : who + " needs an API key: nimble ai key " + p + " <key>"
+    if (p === "hypery") {
+      aiFix("Sign In to Hypery", "Or use an API key", hyperyIcon(THEME.icon.account), "hypery-signin")
+      return "Hypery models need you to sign in"
+    }
+    aiFix("Add " + who + " API Key", "Kept in the Keychain", symbolIcon(THEME.icon.apiKey), "key:" + p)
+    return who + " needs an API key"
   }
   if (raw.indexOf("HTTP 402") >= 0 || raw.indexOf("INSUFFICIENT") >= 0) {
-    return who + " is out of credit · add credits in Hypery Account"
+    aiFix("Add Credits", "Opens Hypery billing", hyperyIcon(THEME.icon.account), "hypery-credits")
+    return who + " is out of credit"
   }
   if (raw.indexOf("HTTP 401") >= 0) {
-    return who + " rejected the key or sign-in · " + (p === "hypery" ? "sign in again in Hypery Account" : "nimble ai key " + p + " <key>")
+    if (p === "hypery") {
+      aiFix("Sign In to Hypery Again", "Or use an API key", hyperyIcon(THEME.icon.account), "hypery-signin")
+      return "Hypery didn't accept the sign-in"
+    }
+    aiFix("Replace " + who + " API Key", "Kept in the Keychain", symbolIcon(THEME.icon.apiKey), "key:" + p)
+    return who + " didn't accept the API key"
   }
   return who + ": " + (raw.length > 140 ? raw.slice(0, 140) + "…" : raw)
+}
+
+// The one result row under an AI error, selected, so Return does it.
+fn aiFix(name, kind, icon, fix) {
+  ai.items = [{ name: name, kind: kind, icon: icon, item: true, path: "", action: { fix: fix } }]
+  ai.itemsTitle = "Fix"
+  ai.pick = 0
+  ai.itemOff = 0
+}
+
+// The shell's own blockers: sign in, add credits, add a key, pick a working model. From Ask AI they
+// open over it, and signing in or saving a key asks the question again.
+fn runFix(fix) {
+  if (fix === "hypery-signin") {
+    enterSub({ name: HYPERY.name, mode: "hypery", pluginTitle: "Hypery", icon: HYPERY.icon, path: HYPERY.path, resume: inAi() })
+    signInHypery()
+  } else if (fix === "hypery-credits") {
+    hyperyAct("billing")
+  } else if (fix === "models") {
+    enterSub(modelPicker(inAi()))
+  } else if (fix.indexOf("key:") === 0) {
+    keyEntry = ""
+    enterSub(keyMode(fix.slice(4), inAi()))
+  }
+}
+
+fn keyMode(provider, resume) {
+  let who = providerTitle(provider)
+  return { name: who + " API Key", mode: "ai-key", pluginTitle: who, icon: symbolIcon(THEME.icon.apiKey), provider: provider, resume: resume }
+}
+
+// Back to the question a fix interrupted, and ask it again.
+fn resumeAsk() {
+  leaveSub()
+  while (!inAi() && shell.mode !== null && shell.mode.back) {
+    leaveSub()
+  }
+  if (inAi() && ai.question !== "") {
+    shell.query = ""
+    askAi(ai.question)
+  }
 }
 
 fn remoteAsk(question) {
@@ -3116,7 +3224,9 @@ fn onTurnEvent(t, e) {
   if (e.kind === "error") {
     ai.error = remoteErrorText(t.model, e.text)
     ai.messages = ai.messages.slice(0, ai.turnStart)
-    if (shell.query === "") {
+    // With a fix offered the field stays empty, so Return does the fix; the question comes back
+    // after it.
+    if (shell.query === "" && ai.itemsTitle !== "Fix") {
       shell.query = ai.question
     }
   } else if (e.kind === "cancelled") {
@@ -3151,9 +3261,14 @@ fn loadAccount() {
   hyperyState.loading = true
   aiAccount("hypery", (a) => {
     hyperyState.loading = false
+    if (hyperyState.again) {
+      hyperyState.again = false
+      loadAccount()
+      return
+    }
     hyperyState.account = a
     hyperyState.at = Date.now()
-    if (modeIs("hypery") || modeIs("settings")) {
+    if (modeIs("hypery") || modeIs("hypery-orgs") || modeIs("settings")) {
       relist()
     }
   })
@@ -3165,6 +3280,89 @@ fn money(n) {
 
 fn hyperyRow(name, kind, symbol, act, group) {
   return { name: name, kind: kind, icon: symbolIcon(symbol), mode: "hypery-act", act: act, group: group }
+}
+
+// A row that opens hypery.ai, with its logo.
+fn hyperyLink(name, kind, symbol, act, group) {
+  return { name: name, kind: kind, icon: hyperyIcon(symbol), mode: "hypery-act", act: act, group: group }
+}
+
+// An image from the web (cached on disk), `fallback` until it has loaded. One fetch per URL per
+// run, so a missing image is not asked for on every keystroke.
+let remoteIcons = []
+
+fn remoteIcon(url, fallback) {
+  let known = remoteIcons.filter((e) => e.url === url)
+  if (known.length > 0) {
+    return known[0].name !== "" ? known[0].name : fallback
+  }
+  let entry = { url: url, name: "" }
+  remoteIcons.push(entry)
+  entry.name = imageIcon(url, (n) => {
+    entry.name = n
+    if (shell.mode !== null) {
+      relist()
+    }
+  })
+  return entry.name !== "" ? entry.name : fallback
+}
+
+// Each organization's own icon from hypery.ai, its symbol until that has loaded.
+fn orgIcon(o) {
+  let fallback = symbolIcon(o.personal ? THEME.icon.personalOrg : THEME.icon.organization)
+  return o.image === "" ? fallback : remoteIcon(o.image, fallback)
+}
+
+fn orgTitle(o) {
+  return o.name !== "" ? o.name : o.slug
+}
+
+fn activeOrg() {
+  let a = hyperyState.account
+  if (a === null) {
+    return null
+  }
+  let m = a.orgs.filter((o) => o.id === a.organization)
+  return m.length > 0 ? m[0] : null
+}
+
+fn orgResults(text) {
+  let t = text.trim().toLowerCase()
+  let a = hyperyState.account
+  if (a === null || a.orgs.length === 0) {
+    return [infoRow(hyperyState.loading ? "Loading organizations…" : "No organizations", "Organizations")]
+  }
+  return a.orgs
+    .filter((o) => t === "" || orgTitle(o).toLowerCase().indexOf(t) >= 0 || o.slug.toLowerCase().indexOf(t) >= 0)
+    .map((o) => {
+      let role = o.role === "" ? "" : o.role[0].toUpperCase() + o.role.slice(1)
+      let bits = [o.id === a.organization ? "Current" : "", o.personal ? "Personal" : "", role]
+      return { name: orgTitle(o), kind: bits.filter((b) => b !== "").join(" · "), icon: orgIcon(o), mode: "hypery-org", org: o, group: "Organizations" }
+    })
+}
+
+// Chats, the balance and the billing links all follow the chosen organization.
+fn chooseOrg(o) {
+  let r = aiSetOrganization("hypery", o.personal ? "" : o.id)
+  if (!r.ok) {
+    shell.hud = "Could not switch organization: " + r.error
+    refresh()
+    return
+  }
+  let a = hyperyState.account
+  if (a !== null) {
+    a.organization = o.id
+    a.balance = -1
+    a.error = ""
+  }
+  hyperyState.at = 0
+  if (hyperyState.loading) {
+    hyperyState.again = true
+  }
+  leaveSub()
+  loadAccount()
+  shell.hud = "Using " + orgTitle(o)
+  relist()
 }
 
 fn hyperyResults(text) {
@@ -3180,12 +3378,19 @@ fn hyperyResults(text) {
   if (hyperyState.signingIn) {
     rows.push(hyperyRow("Waiting for the browser…", "esc cancels", I.waiting, "cancel-signin", "Account"))
   } else if (c === "") {
-    rows.push(hyperyRow("Sign In with Hypery", p !== null && p.signIn ? "Opens your browser" : "Not set up in this build", I.account, "signin", "Account"))
+    if (p !== null && p.signIn) {
+      rows.push(hyperyLink("Sign In with Hypery", "Opens your browser", I.account, "signin", "Account"))
+    }
     rows.push(hyperyRow("Use an API Key…", "hypery.ai › Settings › API Keys", I.apiKey, "key", "Account"))
-    rows.push(hyperyRow("Create a Hypery Account", "hypery.ai", I.signUp, "signup", "Account"))
+    rows.push(hyperyLink("Create a Hypery Account", "hypery.ai", I.signUp, "signup", "Account"))
   } else {
     rows.push(hyperyRow(hyperyLabel(), c === "signed in" ? "Signed in" : (c === "key" ? "Saved in the Keychain" : "From the environment"), I.signedIn, "none", "Account"))
-    rows.push(hyperyRow("Manage API Keys", "hypery.ai", I.apiKey, "keys", "Account"))
+    let org = activeOrg()
+    if (org !== null) {
+      rows.push({ name: orgTitle(org), kind: a.orgs.length > 1 ? "Organization · ↵ to switch" : "Organization", icon: orgIcon(org), mode: "hypery-act", act: "orgs", group: "Account" })
+    }
+    rows.push(hyperyLink("Manage Account", "hypery.ai", I.account, "manage", "Account"))
+    rows.push(hyperyLink("Manage API Keys", "hypery.ai", I.apiKey, "keys", "Account"))
     if (c !== "environment") {
       rows.push(hyperyRow(c === "key" ? "Remove API Key" : "Sign Out", "", I.signOut, "signout", "Account"))
     }
@@ -3197,7 +3402,7 @@ fn hyperyResults(text) {
     } else {
       rows.push(hyperyRow("Loading usage…", "", I.balance, "none", "Usage"))
     }
-    rows.push(hyperyRow("Add Credits", "Billing on hypery.ai", I.addCredits, "billing", "Usage"))
+    rows.push(hyperyLink("Add Credits", "Billing on hypery.ai", I.addCredits, "billing", "Usage"))
   }
   rows.push(hyperyRow("AI Model", modelName(currentModel()), THEME.icon.ai, "models", "Ask AI"))
   return rows.filter((r) => t === "" || r.name.toLowerCase().indexOf(t) >= 0)
@@ -3211,6 +3416,9 @@ fn hyperyPage(which) {
   if (a !== null && a.error === "" && which === "billing") {
     return a.billing
   }
+  if (a !== null && a.manage !== "" && which === "manage") {
+    return a.manage
+  }
   return HYPERY_SITE + "/dashboard"
 }
 
@@ -3221,13 +3429,17 @@ fn hyperyAct(act) {
     aiCancelLogin()
   } else if (act === "key") {
     keyEntry = ""
-    enterSub({ name: "Hypery API Key", mode: "ai-key", pluginTitle: "Hypery", icon: symbolIcon(THEME.icon.apiKey), provider: "hypery" })
+    enterSub(keyMode("hypery", shell.mode !== null && shell.mode.resume === true))
   } else if (act === "signup") {
     launch(HYPERY_SITE)
     hide()
-  } else if (act === "billing" || act === "keys") {
+  } else if (act === "billing" || act === "keys" || act === "manage") {
     launch(hyperyPage(act))
     hide()
+  } else if (act === "keys-open") {
+    launch(hyperyPage("keys"))
+    shell.hud = "Copy a key there, then paste it here"
+    refresh()
   } else if (act === "signout") {
     let wasKey = hyperyCredential() === "key"
     aiLogout("hypery")
@@ -3238,6 +3450,9 @@ fn hyperyAct(act) {
   } else if (act === "account") {
     hyperyState.at = 0
     loadAccount()
+  } else if (act === "orgs") {
+    let org = activeOrg()
+    enterSub({ name: "Organizations", mode: "hypery-orgs", pluginTitle: "Hypery", icon: org !== null ? orgIcon(org) : symbolIcon(THEME.icon.organization) })
   } else if (act === "models") {
     enterSub(modelPicker(false))
   }
@@ -3246,7 +3461,8 @@ fn hyperyAct(act) {
 fn signInHypery() {
   let p = providerInfo("hypery")
   if (p === null || !p.signIn) {
-    shell.hud = "Browser sign-in needs Nimble's Hypery app id (ai.providers.hypery.clientId); use an API key meanwhile"
+    hyperyAct("key")
+    shell.hud = "Browser sign-in isn't set up in this build: use a Hypery API key"
     refresh()
     return
   }
@@ -3261,7 +3477,9 @@ fn signInHypery() {
       hyperyState.at = 0
       loadAccount()
     }
-    if (modeIs("hypery")) {
+    if (r.ok && modeIs("hypery") && shell.mode.resume) {
+      resumeAsk()
+    } else if (modeIs("hypery")) {
       relist()
     } else {
       refresh()
@@ -3275,10 +3493,15 @@ fn maskKey(k) {
 
 fn keyResults(text) {
   let k = keyEntry
+  let p = shell.mode.provider
+  let who = providerTitle(p)
   if (k === "") {
-    return [{ name: "Paste your Hypery API key", kind: "hypery.ai › Settings › API Keys", icon: symbolIcon(THEME.icon.apiKey), mode: "ai-info", group: "Hypery" }]
+    if (p === "hypery") {
+      return [{ name: "Get an API Key", kind: "Opens hypery.ai › API Keys, then paste it here", icon: hyperyIcon(THEME.icon.apiKey), mode: "hypery-act", act: "keys-open", group: who }]
+    }
+    return [{ name: "Paste your " + who + " API key", kind: "From your " + who + " account", icon: symbolIcon(THEME.icon.apiKey), mode: "ai-info", group: who }]
   }
-  return [{ name: "Save API Key " + maskKey(k), kind: "Kept in the Keychain", icon: symbolIcon(THEME.icon.apiKey), mode: "ai-key-save", group: "Hypery" }]
+  return [{ name: "Save API Key " + maskKey(k), kind: "Kept in the Keychain", icon: symbolIcon(THEME.icon.apiKey), mode: "ai-key-save", group: who }]
 }
 
 fn saveKey() {
@@ -3293,11 +3516,19 @@ fn saveKey() {
     refresh()
     return
   }
+  let p = shell.mode.provider
+  let resume = shell.mode.resume === true
   refreshProviders()
+  if (p === "hypery") {
+    hyperyState.account = null
+    hyperyState.at = 0
+  }
+  if (resume) {
+    resumeAsk()
+    return
+  }
   leaveSub()
-  hyperyState.account = null
-  hyperyState.at = 0
-  shell.hud = "Saved the Hypery API key"
+  shell.hud = "Saved the " + providerTitle(p) + " API key"
   relist()
 }
 
@@ -3720,7 +3951,7 @@ fn aiControlMac(ta) {
   let action = argText(ta, "action")
   let refused = AI_SYSTEM_REFUSED[action]
   if (refused !== null) {
-    return toolReply("Nothing was done: only the user can do this. Tell them to type " + refused + " in Nimble and press Return twice.", "", [])
+    return toolReply("Nothing was done: only the user can do this. Tell them to type " + refused + " in Moo and press Return twice.", "", [])
   }
   let m = AI_SYSTEM[action]
   if (m === null) {
@@ -3780,7 +4011,7 @@ fn aiRunShortcut(ta) {
     return toolReply("Shortcut " + s.keyword + " needs input; ask the user what to use.", "", [])
   }
   if (s.kind === "command") {
-    return toolReply("Shortcut " + s.keyword + " opens a Nimble command; tell the user to type " + s.keyword + " to use it.", "", [])
+    return toolReply("Shortcut " + s.keyword + " opens a Moo command; tell the user to type " + s.keyword + " to use it.", "", [])
   }
   recordUse("shortcut:" + s.keyword)
   let text = expandTemplate(s.target, input, s.kind)
@@ -4086,6 +4317,16 @@ fn onFieldChange(text) {
   if (modeIs("ai-key")) {
     keyEntry = text.trim()
   }
+  if (modeIs("args")) {
+    argEdit(text)
+  }
+  if (shell.mode === null && text.length > 1 && text.slice(text.length - 1) === " ") {
+    let c = keywordCommand(text)
+    if (c !== null) {
+      enterArgs(c, "")
+      return
+    }
+  }
   setQuery(text)
 }
 
@@ -4137,7 +4378,10 @@ fn enterAi(c, question) {
   shell.mode = c
   setQuery("")
   if (!beginAi()) {
-    refresh()
+    if (question.trim() !== "") {
+      ai.question = question.trim()
+    }
+    showAi()
     return
   }
   if (question.trim() !== "") {
@@ -4149,10 +4393,31 @@ fn enterAi(c, question) {
   }
 }
 
-// Actions: { copy } puts text on the clipboard, { open } opens a URL or path, { hud } is a message,
-// { close } hides Nimble afterwards.
+// Actions: { copy } puts text on the clipboard, { open } opens a URL or path (and goes back to root
+// unless { stay }), { hud } is a message, { close } hides Moo afterwards, { run } opens a command
+// (a plugin's own by name), { fix } is the
+// shell's way out of a blocker (sign in, add a key).
 fn perform(action) {
   if (action === null) {
+    return
+  }
+  if (action.fix) {
+    runFix(action.fix)
+    return
+  }
+  if (action.run) {
+    let target = findCommand(action.run)
+    if (target === null) {
+      shell.hud = "No command " + action.run
+      refresh()
+      return
+    }
+    openCommand(target, "")
+    if (action.hud) {
+      shell.hud = action.hud
+      hudSetAt = Date.now()
+      refresh()
+    }
     return
   }
   if (action.copy) {
@@ -4162,8 +4427,16 @@ fn perform(action) {
     shell.hud = action.hud
   }
   if (action.open) {
-    launch(action.open)
-    leaveList()
+    if (!launch(action.open)) {
+      shell.hud = "Could not open " + action.open
+      refresh()
+      return
+    }
+    if (action.stay) {
+      refresh()
+    } else {
+      leaveList()
+    }
     return
   }
   if (action.close) {
@@ -4175,13 +4448,13 @@ fn perform(action) {
 }
 
 fn runBuiltin(c) {
-  if (c.path === "nimble:quit") {
+  if (c.path === "moo:quit") {
     quit()
-  } else if (c.path === "nimble:clipboard-clear") {
+  } else if (c.path === "moo:clipboard-clear") {
     clearClipboardHistory()
     shell.hud = "Clipboard history cleared"
     refresh()
-  } else if (c.path === "nimble:edit-shortcuts") {
+  } else if (c.path === "moo:edit-shortcuts") {
     let path = ensureShortcutsFile()
     if (!launch(path)) {
       shell.hud = "Could not open " + path
@@ -4255,16 +4528,306 @@ fn volumeRow(text) {
       return null
     }
   }
-  return { name: "Set Volume to " + n + "%", path: "nimble:system:volume", icon: symbolIcon("speaker.wave.2.fill"), kind: "System", mode: "system", system: "volume", arg: n, hides: false, confirm: false, pluginTitle: "System" }
+  return { name: "Set Volume to " + n + "%", path: "moo:system:volume", icon: symbolIcon("speaker.wave.2.fill"), kind: "System", mode: "system", system: "volume", arg: n, hides: false, confirm: false, pluginTitle: "System" }
 }
 
 fn runCommand(c) {
+  let b = pluginBlocker(c)
+  if (b !== null) {
+    perform(pluginAction(c, b.action))
+    return
+  }
   try {
-    perform(c.plugin.run(c.command))
+    perform(pluginAction(c, c.plugin.run(c.command, c.args ? c.args : {})))
   } catch (e) {
     shell.hud = "Plugin error: " + e.message
     refresh()
   }
+}
+
+// ── Blockers: what a plugin command needs first (signing in, say), offered as the thing to do ──
+// `blocker(command)` returns null or { title, subtitle, icon, action }. Inside the command (its
+// list or its arguments) the blocker is the one row, so Return does it; a no-view command does it
+// straight away. `visible(command)` false leaves a command out of search (Sign Out when signed out).
+
+fn pluginBlocker(c) {
+  if (!c.plugin || !c.plugin.blocker) {
+    return null
+  }
+  try {
+    let b = c.plugin.blocker(c.command)
+    return b ? b : null
+  } catch (e) {
+    return null
+  }
+}
+
+fn blockerRow(c, b) {
+  return { name: b.title, kind: b.subtitle ? b.subtitle : "", icon: pluginIcon(b.icon, c.icon), mode: "blocker", action: pluginAction(c, b.action), group: "First" }
+}
+
+fn pluginVisible(c) {
+  if (!c.plugin || !c.plugin.visible) {
+    return true
+  }
+  try {
+    return c.plugin.visible(c.command) !== false
+  } catch (e) {
+    return true
+  }
+}
+
+// A plugin's { run: "signin" } names one of its own commands.
+fn pluginAction(c, action) {
+  if (action && action.run && action.run.indexOf(":") < 0) {
+    action.run = c.path.slice(0, c.path.length - c.command.length) + action.run
+  }
+  return action ? action : null
+}
+
+// ── Command arguments (Raycast's): a command's fields, filled in the search field ──
+// Tab or Return on a command that takes arguments, or its keyword and a space, opens them. The
+// field edits one argument at a time: Tab and ⇧Tab move between them, ⌫ in an empty field goes
+// back, Return on a suggestion picks it and Return on the command runs it. A "dropdown" argument
+// lists the plugin's suggestions, `suggest(command, argument, text, values)` -> [{ title, subtitle,
+// value, icon }]; run, list and open get the values as their last parameter, `{ name: value }`.
+
+fn hasArgs(c) {
+  return c !== null && c.plugin && c.arguments && c.arguments.length > 0
+}
+
+// The plugin command whose keyword is `text` ("slack"), if it takes arguments.
+fn keywordCommand(text) {
+  let k = text.trim().toLowerCase()
+  if (k === "" || findShortcut(k) !== null) {
+    return null
+  }
+  for (let i = BUILTIN_COUNT; i < commands.length; i = i + 1) {
+    if (commands[i].keyword === k && hasArgs(commands[i])) {
+      return commands[i]
+    }
+  }
+  return null
+}
+
+fn enterArgs(c, first) {
+  recordUse(c.path)
+  let none = c.arguments.map(() => "")
+  enterSub({ name: c.name, mode: "args", pluginTitle: c.pluginTitle, icon: c.icon, cmd: c, values: none, picked: c.arguments.map(() => ""), index: 0 })
+  if (first !== "") {
+    argEdit(first)
+    setQuery(first)
+  }
+}
+
+fn argAt(i) {
+  return shell.mode.cmd.arguments[i]
+}
+
+fn argTitle(a) {
+  return a.placeholder ? a.placeholder : a.name
+}
+
+fn isDropdown(a) {
+  return a.type === "dropdown"
+}
+
+fn argEdit(text) {
+  let m = shell.mode
+  m.values[m.index] = text
+  m.picked[m.index] = ""
+}
+
+fn argGo(i) {
+  let m = shell.mode
+  m.index = i
+  setQuery(m.values[i])
+}
+
+// A picked suggestion's value, else the typed text.
+fn argValues(m) {
+  let out = {}
+  for (let i = 0; i < m.cmd.arguments.length; i = i + 1) {
+    out[m.cmd.arguments[i].name] = m.picked[i] !== "" ? m.picked[i] : m.values[i].trim()
+  }
+  return out
+}
+
+// The first required argument still empty (a required dropdown needs a pick), or -1.
+fn argMissing(m) {
+  for (let i = 0; i < m.cmd.arguments.length; i = i + 1) {
+    let a = m.cmd.arguments[i]
+    if (a.required === true && (isDropdown(a) ? m.picked[i] === "" : m.values[i].trim() === "")) {
+      return i
+    }
+  }
+  return -1
+}
+
+fn argSummary(m) {
+  let miss = argMissing(m)
+  if (miss >= 0) {
+    return "Fill in " + argTitle(argAt(miss))
+  }
+  return m.values.map((v) => v.trim()).filter((v) => v !== "").join(" · ")
+}
+
+const ARG_CHIP_MAX = 300
+
+// "Send Message › #general": the command and the values of the arguments not being edited.
+fn argChip() {
+  if (!modeIs("args")) {
+    return ""
+  }
+  let m = shell.mode
+  let parts = [m.cmd.name]
+  for (let i = 0; i < m.values.length; i = i + 1) {
+    let v = m.values[i].trim()
+    if (i !== m.index && v !== "") {
+      parts.push(v.length > 24 ? v.slice(0, 23) + "…" : v)
+    }
+  }
+  return parts.join(" › ")
+}
+
+fn suggestionRow(m, a, s) {
+  let row = { name: s.title, kind: s.subtitle ? s.subtitle : "", icon: pluginIcon(s.icon, m.icon), group: argTitle(a) }
+  if (s.action) {
+    row.mode = "arg-action"
+    row.action = pluginAction(m.cmd, s.action)
+  } else {
+    row.mode = "arg-pick"
+    row.label = s.title
+    row.value = s.value ? String(s.value) : s.title
+  }
+  return row
+}
+
+// A dropdown lists its choices while nothing is picked; a text argument lists the plugin's help
+// rows (an action each, "Create the app…") only while its field is empty, so Return on typed text
+// still runs the command.
+fn argResults(text) {
+  let m = shell.mode
+  let b = pluginBlocker(m.cmd)
+  if (b !== null) {
+    return [blockerRow(m.cmd, b)]
+  }
+  let a = argAt(m.index)
+  let rows = []
+  if (isDropdown(a) ? m.picked[m.index] === "" : text.trim() === "") {
+    let found = []
+    try {
+      found = m.cmd.plugin.suggest ? m.cmd.plugin.suggest(m.cmd.command, a.name, text, argValues(m)) : []
+    } catch (e) {
+      shell.hud = "Plugin error: " + e.message
+    }
+    rows = found.slice(0, ROWS - 1).map((s) => suggestionRow(m, a, s))
+  }
+  // The command row only once it can run, or when nothing else is offered: a row that can only
+  // say "fill this in" looks like the way to get it.
+  if (argMissing(m) < 0 || rows.length === 0) {
+    rows.push({ name: m.cmd.name, kind: argSummary(m), icon: m.icon, mode: "arg-run", group: m.pluginTitle })
+  }
+  return rows
+}
+
+fn argPick(row) {
+  let m = shell.mode
+  m.picked[m.index] = row.value
+  m.values[m.index] = row.label
+}
+
+// Leaving a dropdown with a suggestion selected picks it.
+fn argCommit() {
+  let m = shell.mode
+  let row = shell.selected < shell.results.length ? shell.results[shell.selected] : null
+  if (row !== null && row.mode === "arg-pick" && isDropdown(argAt(m.index)) && m.picked[m.index] === "") {
+    argPick(row)
+  }
+}
+
+fn argRun() {
+  let m = shell.mode
+  let b = pluginBlocker(m.cmd)
+  if (b !== null) {
+    perform(pluginAction(m.cmd, b.action))
+    return
+  }
+  let miss = argMissing(m)
+  if (miss >= 0) {
+    if (miss !== m.index) {
+      argGo(miss)
+    }
+    shell.hud = "Fill in " + argTitle(argAt(miss))
+    refresh()
+    return
+  }
+  let c = m.cmd
+  c.args = argValues(m)
+  leaveSub()
+  if (shell.mode === null) {
+    setQuery("")
+  }
+  if (c.mode === "no-view") {
+    runCommand(c)
+  } else if (c.mode === "view") {
+    enterView(c)
+  } else {
+    enterList(c)
+  }
+}
+
+// Keys while filling in arguments; false for the ones the list handles as usual (↑↓, esc).
+fn argKey(name) {
+  let m = shell.mode
+  let row = shell.selected < shell.results.length ? shell.results[shell.selected] : null
+  if (name === "tab") {
+    argCommit()
+    if (m.index < m.cmd.arguments.length - 1) {
+      argGo(m.index + 1)
+    } else {
+      relist()
+    }
+    return true
+  }
+  if (name === "shift+tab" || (name === "delete-empty" && m.index > 0)) {
+    if (m.index > 0) {
+      argGo(m.index - 1)
+    }
+    return true
+  }
+  if (name === "enter") {
+    if (row !== null && (row.mode === "blocker" || row.mode === "arg-action")) {
+      perform(row.action)
+      return true
+    }
+    if (row !== null && row.mode === "arg-pick") {
+      argPick(row)
+      let next = argMissing(m)
+      if (next >= 0) {
+        argGo(next)
+        return true
+      }
+    }
+    argRun()
+    return true
+  }
+  return false
+}
+
+// A plugin row's icon: an https image (fetched and cached), "symbol:<SF Symbol>", an image name,
+// else the command's.
+fn pluginIcon(icon, fallback) {
+  if (!icon) {
+    return fallback
+  }
+  if (icon.indexOf("https://") === 0) {
+    return remoteIcon(icon, fallback)
+  }
+  if (icon.indexOf("symbol:") === 0) {
+    return symbolIcon(icon.slice(7))
+  }
+  return icon
 }
 
 fn open(i) {
@@ -4330,6 +4893,10 @@ fn open(i) {
     hyperyAct(target.act)
     return
   }
+  if (target.mode === "hypery-org") {
+    chooseOrg(target.org)
+    return
+  }
   if (target.mode === "ai-key-save") {
     saveKey()
     return
@@ -4380,6 +4947,11 @@ fn open(i) {
     openShortcutsRow(target, "enter")
     return
   }
+  if (modeIs("args")) {
+    shell.selected = i
+    argKey("enter")
+    return
+  }
   if (shell.mode !== null && !modeIs("apps") && !modeIs("actions")) {
     perform(target.action)
     return
@@ -4393,7 +4965,9 @@ fn open(i) {
     return
   }
   recordUse(target.path)
-  if (target.mode === "builtin") {
+  if (hasArgs(target)) {
+    enterArgs(target, "")
+  } else if (target.mode === "builtin") {
     runBuiltin(target)
   } else if (target.mode === "system") {
     runSystem(target, target.arg, true)
@@ -4512,6 +5086,9 @@ fn onKey(name) {
     lookingAt = ""
     return
   }
+  if (modeIs("args") && argKey(name)) {
+    return
+  }
   if ((name === "escape" || name === "delete-empty") && shell.mode !== null && shell.mode.back) {
     leaveSub()
     return
@@ -4567,7 +5144,7 @@ fn onKey(name) {
   if (name === "cmd+k") {
     if (modeIs("rowactions")) {
       leaveSub()
-    } else if (row !== null && !modeIs("create") && !modeIs("view") && !modeIs("assign-hotkey") && row.mode !== "contacts-allow" && row.mode !== "setting" && row.mode !== "hotkey-prompt" && row.mode !== "ai-model" && row.mode !== "ai-info" && row.mode !== "hypery-act" && row.mode !== "ai-key-save") {
+    } else if (row !== null && !modeIs("create") && !modeIs("view") && !modeIs("assign-hotkey") && !modeIs("args") && row.mode !== "contacts-allow" && row.mode !== "setting" && row.mode !== "hotkey-prompt" && row.mode !== "ai-model" && row.mode !== "ai-info" && row.mode !== "hypery-act" && row.mode !== "hypery-org" && row.mode !== "ai-key-save") {
       openRowActions(row)
     }
     return
@@ -4618,7 +5195,9 @@ fn onKey(name) {
   }
   let n = shell.results.length
   if (name === "tab") {
-    if (shell.mode === null && shell.query.trim() !== "") {
+    if (shell.mode === null && hasArgs(row)) {
+      enterArgs(row, "")
+    } else if (shell.mode === null && shell.query.trim() !== "") {
       recordUse(ASK_AI.path)
       enterAi(ASK_AI, shell.query)
     }
@@ -4675,10 +5254,18 @@ fn moveInGrid(name) {
   return true
 }
 
-// Recompute on show: frecency and clipboard history may have changed while hidden.
+// Recompute on show: frecency and clipboard history may have changed while hidden. A message set as
+// the panel opened (a command that redirected to its blocker, say) stays.
+let hudSetAt = 0
+
 fn onShow(_) {
   shell.bubble = -1
+  let keep = Date.now() - hudSetAt < 1000 ? shell.hud : ""
   setQuery(shell.query)
+  if (keep !== "") {
+    shell.hud = keep
+    refresh()
+  }
 }
 
 // ── View ──
@@ -4853,6 +5440,9 @@ fn footerHints() {
     }
     let picked = aiPicked()
     if (picked !== null && shell.query === "") {
+      if (picked.action && picked.action.fix) {
+        return [[picked.name.length <= 24 ? picked.name : "Fix", "↵"], ["Back", "esc"]]
+      }
       if (picked.path === "") {
         return [["Copy", "↵"], ["Deselect", "esc"]]
       }
@@ -4869,8 +5459,21 @@ fn footerHints() {
   if (modeIs("hypery")) {
     return hyperyState.signingIn ? [["Cancel Sign-In", "esc"]] : [["Open", "↵"], ["Back", "esc"]]
   }
+  if (modeIs("hypery-orgs")) {
+    return [["Use Organization", "↵"], ["Back", "esc"]]
+  }
   if (modeIs("ai-key")) {
     return [["Save", "↵"], ["Back", "esc"]]
+  }
+  if (r !== null && r.mode === "blocker" && !modeIs("args")) {
+    return [[r.name.length <= 24 ? r.name : "Open", "↵"], ["Back", "esc"]]
+  }
+  if (modeIs("args")) {
+    let last = shell.mode.index === shell.mode.cmd.arguments.length - 1
+    if (r !== null && (r.mode === "blocker" || r.mode === "arg-action")) {
+      return [[r.name.length <= 24 ? r.name : "Open", "↵"], ["Back", "esc"]]
+    }
+    return [[r !== null && r.mode === "arg-pick" ? "Choose" : "Run", "↵"], [last ? "Previous" : "Next", last ? "⇧⇥" : "⇥"], ["Back", "esc"]]
   }
   if (modeIs("fileactions") || modeIs("rowactions")) {
     return [["Run", "↵"], ["Back", "esc"]]
@@ -4920,6 +5523,9 @@ fn footerHints() {
   if (r !== null && r.mode === "filter") {
     return [["Filter", "↵"], ["Clear", "esc"]]
   }
+  if (shell.mode === null && hasArgs(r)) {
+    return [[primaryAction(r), "↵"], ["Actions", "⌘K"], ["Fill In", "⇥"]]
+  }
   if (shell.mode === null && shell.query.trim() !== "") {
     return [[primaryAction(r), "↵"], ["Actions", "⌘K"], ["Ask AI", "⇥"]]
   }
@@ -4949,6 +5555,10 @@ fn placeholder() {
   if (inAi()) {
     return ai.answer !== "" ? "Ask a follow-up…" : "Ask anything…"
   }
+  if (modeIs("args")) {
+    let a = argAt(shell.mode.index)
+    return argTitle(a) + (a.required === true ? "" : " (optional)")
+  }
   let cat = categoryIndex()
   if (cat >= 0) {
     return "Search " + CATEGORIES[cat].title
@@ -4972,7 +5582,7 @@ fn placeholder() {
     return "Search models: Claude, Grok, Gemini, GPT…"
   }
   if (modeIs("ai-key")) {
-    return "Paste your Hypery API key…"
+    return "Paste your " + providerTitle(shell.mode.provider) + " API key…"
   }
   if (shell.view !== null && shell.view.list !== null && propText(shell.view.list, "searchBarPlaceholder") !== "") {
     return propText(shell.view.list, "searchBarPlaceholder")
@@ -4980,7 +5590,7 @@ fn placeholder() {
   if (shell.mode !== null) {
     return "Search " + shell.mode.name + "…"
   }
-  return "Nimble Search"
+  return "Moo Search"
 }
 
 fn aiStatusText() {
@@ -5044,7 +5654,7 @@ fn statusText() {
   if (inAi()) {
     return aiStatusText()
   }
-  let where = shell.mode !== null ? shell.mode.pluginTitle + " › " + shell.mode.name : "Nimble"
+  let where = shell.mode !== null ? shell.mode.pluginTitle + " › " + shell.mode.name : "Moo"
   if (shell.view !== null && shell.view.list !== null && propText(shell.view.list, "navigationTitle") !== "") {
     where = shell.mode.pluginTitle + " › " + propText(shell.view.list, "navigationTitle")
   }
@@ -5151,9 +5761,12 @@ fn App() {
   let spin = busy()
   let iconW = spin ? 1 : 52
   let spinW = spin ? 52 : 1
+  // The command whose arguments are being filled in, and the others' values, before the field.
+  let chip = argChip()
+  let chipW = chip === "" ? 1 : Math.min(ARG_CHIP_MAX, Math.round(chip.length * 7.5) + 18)
   let headerWidths = compact
-    ? [iconW, spinW, FIELD_W - 53 - inset, inset + CAT_GAP, CAT_W, CAT_GAP, CAT_W, CAT_GAP, CAT_W, CAT_GAP, CAT_W]
-    : [iconW, spinW, "flex", inset, 1, 1, 1, 1, 1, 1, 1]
+    ? [iconW, spinW, chipW, FIELD_W - 53 - chipW - inset, inset + CAT_GAP, CAT_W, CAT_GAP, CAT_W, CAT_GAP, CAT_W, CAT_GAP, CAT_W]
+    : [iconW, spinW, chipW, "flex", inset, 1, 1, 1, 1, 1, 1, 1]
   let buttons = []
   for (let i = 0; i < 4; i = i + 1) {
     buttons.push(<space />)
@@ -5161,7 +5774,7 @@ fn App() {
   }
   let header = (
     <row columnWidths={headerWidths} alignItems="center" height={HEADER_H} backgroundColor={CLEAR}
-    ><image src={cat >= 0 ? CATEGORIES[cat].symbol : THEME.icon.search} symbol={true} symbolScale={THEME.icon.symbolScale} tint={cat >= 0 ? C.accent : C.secondaryText} height={spin ? 1 : THEME.icon.field} /><progress_bar indeterminate={true} /><textinput value={shell.query} onChange={onFieldChange} bezeled={false} fontSize={T.field} placeholder={placeholder()} />{buttons}</row>
+    ><image src={cat >= 0 ? CATEGORIES[cat].symbol : THEME.icon.search} symbol={true} symbolScale={THEME.icon.symbolScale} tint={cat >= 0 ? C.accent : C.secondaryText} height={spin ? 1 : THEME.icon.field} /><progress_bar indeterminate={true} /><text fontSize={T.row} fontWeight={THEME.weight.section} color={C.accent}>{chip}</text><textinput value={shell.query} onChange={onFieldChange} bezeled={false} fontSize={T.field} placeholder={placeholder()} />{buttons}</row>
   )
   let footer = (
     <row columnWidths={widths} alignItems="center" height={FOOTER_H} paddingLeft={18} paddingRight={12} backgroundColor={CLEAR}
@@ -5176,14 +5789,14 @@ fn App() {
   )
 }
 
-// ── Command line: `nimble <command>` from a terminal, script or hotkey daemon ──
+// ── Command line: `moo <command>` from a terminal, script or hotkey daemon ──
 
 fn cliOut(token, text) {
   cliWrite(token, text, "out")
 }
 
 fn cliFail(token, message) {
-  cliWrite(token, "nimble: " + message + "\n", "err")
+  cliWrite(token, "moo: " + message + "\n", "err")
   cliEnd(token, 1)
 }
 
@@ -5249,7 +5862,7 @@ fn printFiles(token, results, json) {
 
 fn cliFiles(token, query, flags) {
   if (query.trim() === "") {
-    cliFail(token, "usage: nimble files <query>")
+    cliFail(token, "usage: moo files <query>")
     return
   }
   let limit = cliLimit(flags, 20)
@@ -5267,7 +5880,7 @@ fn cliFiles(token, query, flags) {
 
 fn cliTrash(token, target, cwd) {
   if (target === "") {
-    cliFail(token, "usage: nimble trash <path>")
+    cliFail(token, "usage: moo trash <path>")
     return
   }
   let r = trashFile(cliPath(target, cwd))
@@ -5279,11 +5892,11 @@ fn cliTrash(token, target, cwd) {
   cliEnd(token, 0)
 }
 
-// `nimble open-with <path>` lists the apps that open it (the default marked *); with an app name
+// `moo open-with <path>` lists the apps that open it (the default marked *); with an app name
 // or path it opens the file in that app.
 fn cliOpenWith(token, w, cwd) {
   if (w.length < 2) {
-    cliFail(token, "usage: nimble open-with <path> [app]")
+    cliFail(token, "usage: moo open-with <path> [app]")
     return
   }
   let path = cliPath(w[1], cwd)
@@ -5301,7 +5914,7 @@ fn cliOpenWith(token, w, cwd) {
     }
   }
   if (app === "") {
-    cliFail(token, "no app called “" + want + "” opens " + path + " (nimble open-with " + w[1] + ")")
+    cliFail(token, "no app called “" + want + "” opens " + path + " (moo open-with " + w[1] + ")")
     return
   }
   let r = openWith(path, app)
@@ -5314,7 +5927,7 @@ fn cliOpenWith(token, w, cwd) {
 
 fn cliAsk(token, question, model) {
   if (question.trim() === "") {
-    cliFail(token, "usage: nimble ask [--model provider:model] <question>")
+    cliFail(token, "usage: moo ask [--model provider:model] <question>")
     return
   }
   let m = model !== "" ? model : currentModel()
@@ -5395,7 +6008,7 @@ fn credentialLabel(p) {
   return p.local ? "local" : "not signed in"
 }
 
-// `nimble ai`: the model Ask AI uses and each provider's state.
+// `moo ai`: the model Ask AI uses and each provider's state.
 fn cliAiStatus(token) {
   let m = currentModel()
   let lines = ["model\t" + m + (config.aiModel ? "" : " (default)")]
@@ -5454,7 +6067,7 @@ fn cliAi(token, w, flags) {
   } else if (sub === "use") {
     let m = args.join(" ").trim()
     if (m === "" || (m !== APPLE_MODEL && m !== "default" && m.indexOf(":") <= 0)) {
-      cliFail(token, "usage: nimble ai use apple|default|<provider:model> (nimble ai models)")
+      cliFail(token, "usage: moo ai use apple|default|<provider:model> (moo ai models)")
       return
     }
     let r = aiSetModel(m === "default" ? "" : m)
@@ -5470,7 +6083,7 @@ fn cliAi(token, w, flags) {
     let provider = args.length > 1 ? args[0] : "hypery"
     let key = args.length > 1 ? args[1] : (args.length > 0 ? args[0] : "")
     if (key === "") {
-      cliFail(token, "usage: nimble ai key [provider] <key>  (hypery by default; nimble ai logout removes it)")
+      cliFail(token, "usage: moo ai key [provider] <key>  (hypery by default; moo ai logout removes it)")
       return
     }
     let r = aiSetKey(provider, key)
@@ -5503,7 +6116,7 @@ fn cliAi(token, w, flags) {
     cliAiUsage(token, args.length > 0 ? args[0] : "hypery")
   } else if (sub === "client-id") {
     if (args.length === 0) {
-      cliFail(token, "usage: nimble ai client-id <id> [provider]")
+      cliFail(token, "usage: moo ai client-id <id> [provider]")
       return
     }
     let r = aiSetClientId(args.length > 1 ? args[1] : "hypery", args[0])
@@ -5514,7 +6127,7 @@ fn cliAi(token, w, flags) {
     refreshProviders()
     cliEnd(token, 0)
   } else {
-    cliFail(token, "usage: nimble ai [status|models [text]|use <model>|key [provider] <key>|login|logout|usage|client-id <id>]")
+    cliFail(token, "usage: moo ai [status|models [text]|use <model>|key [provider] <key>|login|logout|usage|client-id <id>]")
   }
 }
 
@@ -5535,7 +6148,7 @@ fn cliList(token, what, json) {
     }
   }
   if (what === "" || what === "hotkeys") {
-    out.push(json ? { type: "hotkey", keys: hotkey, run: "nimble:toggle", display: hotkeyLabel, error: "" } : hotkey + "\tnimble:toggle\t" + hotkeyLabel)
+    out.push(json ? { type: "hotkey", keys: hotkey, run: "moo:toggle", display: hotkeyLabel, error: "" } : hotkey + "\tmoo:toggle\t" + hotkeyLabel)
     for (let i = 0; i < hotkeyStatus.length; i = i + 1) {
       let h = hotkeyStatus[i]
       out.push(json ? { type: "hotkey", keys: h.keys, run: h.run, display: h.display, error: h.error } : h.keys + "\t" + h.run + "\t" + (h.error !== "" ? "not active: " + h.error : h.display))
@@ -5585,7 +6198,7 @@ fn cliShortcut(token, words, flags, cwd) {
     }
     cliOut(token, "Added “" + saved.name + "”: type " + saved.keyword + (saved.expand ? " in any app to expand it" : (saved.needsQuery ? " and some text" : "")) + "\n")
     if (hk !== null && hk.error !== "") {
-      cliWrite(token, "nimble: hotkey not active: " + hk.error + "\n", "err")
+      cliWrite(token, "moo: hotkey not active: " + hk.error + "\n", "err")
     }
     cliEnd(token, 0)
   } else if (sub === "rm" && words.length === 3) {
@@ -5597,7 +6210,7 @@ fn cliShortcut(token, words, flags, cwd) {
     reloadShortcuts()
     cliEnd(token, 0)
   } else {
-    cliFail(token, "usage: nimble shortcut add <keyword> <kind> <target> [--name N] [--hotkey K] [--expand] | shortcut rm <keyword>")
+    cliFail(token, "usage: moo shortcut add <keyword> <kind> <target> [--name N] [--hotkey K] [--expand] | shortcut rm <keyword>")
   }
 }
 
@@ -5606,9 +6219,9 @@ fn cliHotkey(token, words) {
   if (sub === "add" && words.length >= 4) {
     let target = words[3]
     let t = target.indexOf("shortcut:") === 0 ? target.slice(9) : target
-    let builtin = ["show", "hide", "toggle", "nimble:show", "nimble:hide", "nimble:toggle"].indexOf(t) >= 0
+    let builtin = ["show", "hide", "toggle", "moo:show", "moo:hide", "moo:toggle"].indexOf(t) >= 0
     if (!builtin && t.indexOf("/") !== 0 && findShortcut(t) === null && findCommand(t) === null) {
-      cliFail(token, "No shortcut or command called “" + target + "” (nimble list)")
+      cliFail(token, "No shortcut or command called “" + target + "” (moo list)")
       return
     }
     let conflict = hotkeyConflict(words[2], words[2])
@@ -5639,7 +6252,7 @@ fn cliHotkey(token, words) {
     reloadShortcuts()
     cliEnd(token, 0)
   } else {
-    cliFail(token, "usage: nimble hotkey add <keys> <keyword|id> [text] | hotkey rm <keys>")
+    cliFail(token, "usage: moo hotkey add <keys> <keyword|id> [text] | hotkey rm <keys>")
   }
 }
 
@@ -5660,7 +6273,7 @@ fn cliStatus(token, json) {
   cliEnd(token, 0)
 }
 
-// `nimble window` lists the layouts; `nimble window <layout>` arranges the frontmost window.
+// `moo window` lists the layouts; `moo window <layout>` arranges the frontmost window.
 fn cliWindow(token, layout) {
   if (layout === "") {
     let lines = []
@@ -5684,7 +6297,7 @@ fn cliWindow(token, layout) {
 
 let APP_ACTIONS = ["switch", "hide", "unhide", "quit", "force-quit"]
 
-// `nimble running` lists apps; `nimble running <action> <name|pid>` acts on one. A name must
+// `moo running` lists apps; `moo running <action> <name|pid>` acts on one. A name must
 // match one app exactly (case aside) or be the start of only one app's name.
 fn cliRunning(token, w, json) {
   let apps = runningApps()
@@ -5704,7 +6317,7 @@ fn cliRunning(token, w, json) {
   }
   let action = w[1]
   if (APP_ACTIONS.indexOf(action) < 0 || w.length < 3) {
-    cliFail(token, "usage: nimble running [" + APP_ACTIONS.join("|") + " <name|pid>]")
+    cliFail(token, "usage: moo running [" + APP_ACTIONS.join("|") + " <name|pid>]")
     return
   }
   let want = w.slice(2).join(" ").toLowerCase()
@@ -5732,7 +6345,7 @@ fn cliRunning(token, w, json) {
   cliEnd(token, 0)
 }
 
-// `nimble system` lists the commands; `nimble system <id> [arg]` runs one without asking.
+// `moo system` lists the commands; `moo system <id> [arg]` runs one without asking.
 fn cliSystem(token, id, arg) {
   if (id === "") {
     let lines = []
@@ -5788,7 +6401,7 @@ fn handleCli(argv, cwd, token) {
       }
     }
     if (found === null && name !== "recent") {
-      cliFail(token, "usage: nimble category applications|files|actions|clipboard|recent [text]")
+      cliFail(token, "usage: moo category applications|files|actions|clipboard|recent [text]")
       return
     }
     leaveToRoot()
@@ -5802,7 +6415,7 @@ fn handleCli(argv, cwd, token) {
     cliEnd(token, 0)
   } else if (cmd === "key") {
     if (w.length < 2) {
-      cliFail(token, "usage: nimble key <tab|shift+tab|enter|escape|down|up|…>")
+      cliFail(token, "usage: moo key <tab|shift+tab|enter|escape|down|up|…>")
       return
     }
     onKey(w[1])
@@ -5820,7 +6433,7 @@ fn handleCli(argv, cwd, token) {
     cliEnd(token, 0)
   } else if (cmd === "run") {
     if (w.length < 2) {
-      cliFail(token, "usage: nimble run <keyword|id> [text]")
+      cliFail(token, "usage: moo run <keyword|id> [text]")
       return
     }
     let r = runTarget(w[1], w.slice(2).join(" "), { token: token, cwd: cwd })
@@ -5832,7 +6445,7 @@ fn handleCli(argv, cwd, token) {
   } else if (cmd === "open") {
     let target = cliPath(rest, cwd)
     if (rest === "" || !launch(target)) {
-      cliFail(token, rest === "" ? "usage: nimble open <path|url>" : "cannot open " + target)
+      cliFail(token, rest === "" ? "usage: moo open <path|url>" : "cannot open " + target)
       return
     }
     cliEnd(token, 0)
@@ -5855,7 +6468,7 @@ fn handleCli(argv, cwd, token) {
   } else if (cmd === "selection") {
     let t = selectedText()
     if (t === null) {
-      cliFail(token, accessibilityTrusted(false) ? "no selected text in the focused app" : "Nimble needs Accessibility: System Settings › Privacy & Security › Accessibility")
+      cliFail(token, accessibilityTrusted(false) ? "no selected text in the focused app" : "Moo needs Accessibility: System Settings › Privacy & Security › Accessibility")
     } else {
       cliOut(token, t + "\n")
       cliEnd(token, 0)
@@ -5881,7 +6494,7 @@ fn handleCli(argv, cwd, token) {
   } else if (cmd === "define") {
     let e = rest.trim() !== "" ? define(rest) : null
     if (e === null) {
-      cliFail(token, rest.trim() === "" ? "usage: nimble define <word>" : "no dictionary entry for " + rest.trim())
+      cliFail(token, rest.trim() === "" ? "usage: moo define <word>" : "no dictionary entry for " + rest.trim())
     } else {
       cliOut(token, p.flags.json ? JSON.stringify(e) + "\n" : definitionText(rest, 0))
       cliEnd(token, 0)
@@ -5905,7 +6518,7 @@ fn handleCli(argv, cwd, token) {
     cliOut(token, cliUsage())
     cliEnd(token, 0)
   } else {
-    cliFail(token, "unknown command “" + cmd + "” (nimble help)")
+    cliFail(token, "unknown command “" + cmd + "” (moo help)")
   }
 }
 
@@ -5933,19 +6546,19 @@ fn onShortcutsChanged() {
 syncShortcutCommands()
 bindHotkeys()
 for (let i = 0; i < config.warnings.length; i = i + 1) {
-  console.log("nimble: shortcuts: " + config.warnings[i])
+  console.log("moo: shortcuts: " + config.warnings[i])
 }
 watchShortcuts(onShortcutsChanged)
 let served = cliServe(onCli)
-console.log("nimble: " + config.shortcuts.length + " shortcuts, " + hotkeyStatus.length + " hotkeys; cli " + (served.ok ? served.path : served.error))
+console.log("moo: " + config.shortcuts.length + " shortcuts, " + hotkeyStatus.length + " hotkeys; cli " + (served.ok ? served.path : served.error))
 
 refreshProviders()
 shell.apps = rootResults("")
 compose()
 syncShape()
 setTheme(THEME)
-setup({ width: PANEL_W, height: PANEL_H, onKey: onKey, onShow: onShow, onHotkey: onHotkey, hidden: env.NIMBLE_START_HIDDEN === "1" })
+setup({ width: PANEL_W, height: PANEL_H, onKey: onKey, onShow: onShow, onHotkey: onHotkey, hidden: env.MOO_START_HIDDEN === "1" })
 syncSnippets()
-// The host window is never shown: setup moves its content into the launcher panel, and Nimble is
+// The host window is never shown: setup moves its content into the launcher panel, and Moo is
 // a menu bar app (no Dock icon), so the window and the Regular activation policy would only flash.
 macos.run(App, { autoShow: false, skipActivationPolicy: true })

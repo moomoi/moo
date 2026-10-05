@@ -1,11 +1,11 @@
 {
-  "name": "tish-nimble",
+  "name": "tish-moo",
   "version": "0.1.0",
   "private": true,
-  "description": "Nimble launcher natives for macOS (tish module): app index, fuzzy search, launch, global hotkey, panel chrome, key routing",
+  "description": "Moo launcher natives for macOS (tish module): app index, fuzzy search, launch, global hotkey, panel chrome, key routing",
   "tish": {
     "module": true,
-    "crate": "nimble_macos",
-    "export": "nimble_object"
+    "crate": "moo_macos",
+    "export": "moo_object"
   }
 }

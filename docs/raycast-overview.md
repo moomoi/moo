@@ -1,7 +1,7 @@
-# Raycast, and what Nimble takes from it
+# Raycast, and what Moo takes from it
 
-Nimble is a Raycast-class launcher for macOS written entirely in Tish. This page summarizes how
-Raycast is built, so the rest of the docs can say what Nimble keeps, changes or drops.
+Moo is a Raycast-class launcher for macOS written entirely in Tish. This page summarizes how
+Raycast is built, so the rest of the docs can say what Moo keeps, changes or drops.
 
 ## How Raycast is built
 
@@ -40,35 +40,35 @@ expansion), window management, calculator, emoji, system commands and script com
 
 **Store.** A reviewed monorepo; extensions are built from source by Raycast.
 
-## What Nimble keeps, changes and drops
+## What Moo keeps, changes and drops
 
-| Raycast | Nimble |
+| Raycast | Moo |
 | --- | --- |
-| Native AppKit shell | Native AppKit shell, written in Tish (`tish:macos` + `tish:nimble`) |
+| Native AppKit shell | Native AppKit shell, written in Tish (`tish:macos` + `tish:moo`) |
 | Extensions in a Node process | No Node, no JavaScript engine, no webview. Plugins are Tish: bytecode in a capability-free VM (Tier A) or Tish-compiled native modules (Tier B) |
 | React reconciler sends UI over IPC | Plugins return plain data (today: list rows and actions); Lattish-style JSX for richer views is planned |
-| `package.json` manifest | `nimble.json` (id, tier, entry) plus a `manifest()` the plugin returns at load |
+| `package.json` manifest | `moo.json` (id, tier, entry) plus a `manifest()` the plugin returns at load |
 | Frecency ranking | Done: decayed use counts added to the fuzzy score |
 | File search | Done: own live name index, 0.7–3.6 ms over ~600K entries, 18 MB, idle CPU 0; Spotlight while it builds. "Search Files" with reveal (⌘↵) and copy path (⌥↵) |
-| File contents | Done: in Search Files, a "Contents" section under the name matches lists files whose text has every typed word (Spotlight, 3+ characters, on a worker thread). Also `nimble files <words> --contents` and `contains` in the AI's `findFiles` |
-| File actions (⌘K), Quick Look, Open With, Trash | Done for file rows anywhere: ⌘K lists Open, Show in Finder, Quick Look, Open With…, Copy Path, Copy Name and Move to Trash. ⌘Y opens Quick Look beside the panel and the preview follows the selection (Escape closes it); ⌘O lists the apps that open the file, default first; ⌘⌫ twice moves it to the Trash. Also `nimble open-with <path> [app]` and `nimble trash <path>` |
+| File contents | Done: in Search Files, a "Contents" section under the name matches lists files whose text has every typed word (Spotlight, 3+ characters, on a worker thread). Also `moo files <words> --contents` and `contains` in the AI's `findFiles` |
+| File actions (⌘K), Quick Look, Open With, Trash | Done for file rows anywhere: ⌘K lists Open, Show in Finder, Quick Look, Open With…, Copy Path, Copy Name and Move to Trash. ⌘Y opens Quick Look beside the panel and the preview follows the selection (Escape closes it); ⌘O lists the apps that open the file, default first; ⌘⌫ twice moves it to the Trash. Also `moo open-with <path> [app]` and `moo trash <path>` |
 | Clipboard history | Done: in memory, skips concealed items |
-| System commands | Done: Lock Screen, Sleep, Sleep Displays, Screen Saver, Toggle Dark Mode, Toggle Mute, Volume Up / Down ("volume 30" sets it), Eject All Disks, Hide / Quit All Apps, Empty Trash, Restart, Shut Down, Log Out. Destructive ones need a second Return on the same row and query; hotkeys and shortcuts run them at once. Also `nimble system`, `nimble volume`, `nimble mute`, `nimble dark-mode` and the AI's `controlMac` |
-| Window management | Done: 21 commands (halves, quarters, thirds, two thirds, Maximize Window, Almost Maximize, Maximize Height, Center Window, Reasonable Size, Next / Previous Display, Restore Window) on the window behind the panel, through Accessibility. Bind any to a hotkey. Also `nimble window <layout>` and the AI's `arrangeWindow` |
-| Selected text | Done: `{selection}` in shortcut templates and `nimble selection` read it through Accessibility |
-| Quit Applications / switcher | Done: "Running Apps" lists Dock apps by memory use; ↵ switches, ⌘H hides or shows, ⌘⌫ quits, ⌥↵ twice force quits. Also `nimble running [action name]` |
-| Calculator | Done: an answer row above the results for arithmetic ("2^10", "15% of 80"), units ("5 km in mi"), currency ("100 usd to eur", ECB rates cached 12 h), number bases ("255 in hex") and time zones ("time in tokyo", "3pm pst to cet"). Return copies the plain answer. Also `nimble calc` and the AI's `calculate` tool |
-| Define Word | Done, from the dictionaries macOS ships (Dictionary Services, in-process, 1–10 ms): "Define Word" lists every homograph's senses by part of speech with examples and the origin; Return copies a sense, ⌘↵ opens Dictionary.app. A one-word search adds a Definition row after the best matches, and "define <word>" puts it first. Also `nimble define <word>` and the AI's `define` tool |
-| Search the web | Done: "Search the Web" shows the engine's live suggestions while typing (OpenSearch over URLSession on a worker thread, 120 ms after typing pauses) and opens the search in the browser; with an empty field it lists Google, DuckDuckGo, Bing and Brave Search, and Return makes one the default. Every root search ends with an offline "Search Google for …" row. Also `nimble web <text>` (suggestions) and `nimble web engine [name]` |
-| Contacts | Done: "Search Contacts" lists the address book (Contacts framework, on a worker thread), filtered by name; Return shows a contact's emails and phone numbers (Return writes or calls, ⌥↵ copies) and "Open in Contacts". macOS asks for access only from the "Allow Access to Contacts" row. Also `nimble contacts [name]` |
+| System commands | Done: Lock Screen, Sleep, Sleep Displays, Screen Saver, Toggle Dark Mode, Toggle Mute, Volume Up / Down ("volume 30" sets it), Eject All Disks, Hide / Quit All Apps, Empty Trash, Restart, Shut Down, Log Out. Destructive ones need a second Return on the same row and query; hotkeys and shortcuts run them at once. Also `moo system`, `moo volume`, `moo mute`, `moo dark-mode` and the AI's `controlMac` |
+| Window management | Done: 21 commands (halves, quarters, thirds, two thirds, Maximize Window, Almost Maximize, Maximize Height, Center Window, Reasonable Size, Next / Previous Display, Restore Window) on the window behind the panel, through Accessibility. Bind any to a hotkey. Also `moo window <layout>` and the AI's `arrangeWindow` |
+| Selected text | Done: `{selection}` in shortcut templates and `moo selection` read it through Accessibility |
+| Quit Applications / switcher | Done: "Running Apps" lists Dock apps by memory use; ↵ switches, ⌘H hides or shows, ⌘⌫ quits, ⌥↵ twice force quits. Also `moo running [action name]` |
+| Calculator | Done: an answer row above the results for arithmetic ("2^10", "15% of 80"), units ("5 km in mi"), currency ("100 usd to eur", ECB rates cached 12 h), number bases ("255 in hex") and time zones ("time in tokyo", "3pm pst to cet"). Return copies the plain answer. Also `moo calc` and the AI's `calculate` tool |
+| Define Word | Done, from the dictionaries macOS ships (Dictionary Services, in-process, 1–10 ms): "Define Word" lists every homograph's senses by part of speech with examples and the origin; Return copies a sense, ⌘↵ opens Dictionary.app. A one-word search adds a Definition row after the best matches, and "define <word>" puts it first. Also `moo define <word>` and the AI's `define` tool |
+| Search the web | Done: "Search the Web" shows the engine's live suggestions while typing (OpenSearch over URLSession on a worker thread, 120 ms after typing pauses) and opens the search in the browser; with an empty field it lists Google, DuckDuckGo, Bing and Brave Search, and Return makes one the default. Every root search ends with an offline "Search Google for …" row. Also `moo web <text>` (suggestions) and `moo web engine [name]` |
+| Contacts | Done: "Search Contacts" lists the address book (Contacts framework, on a worker thread), filtered by name; Return shows a contact's emails and phone numbers (Return writes or calls, ⌥↵ copies) and "Open in Contacts". macOS asks for access only from the "Allow Access to Contacts" row. Also `moo contacts [name]` |
 | Preferences window | Settings is a list in the panel (the menu bar icon's right-click menu, or the "Settings" command): launcher hotkey, shortcuts, search engine, Applications view, contacts access. A click on the menu bar icon shows the panel |
 | Quicklinks, snippets, script commands | Done, in Universal Launcher's simpler form: a keyword bound to a `url`, `open`, `command`, `shell` or `text` target with a `{query}` template, in one hand-editable `shortcuts.json`. "Create Shortcut" builds one in a few keystrokes |
-| Snippet expansion | Done: a `text` shortcut with `"expand": true` ("Expand a snippet as you type" in Create Shortcut, or `nimble shortcut add ';sig' text '…' --expand`) replaces its keyword wherever it is typed. Nimble watches typed characters with an AppKit global monitor (no events from password fields) and swaps the keyword through Accessibility after checking it is really before the cursor; no keystrokes are simulated, so apps that do not expose their text fields to Accessibility are left alone |
-| Action Panel (⌘K) | Done: ⌘K on any row lists what it can do. Apps: Open, Show in Finder, Copy Path / Name, Assign or Change Hotkey, Remove Hotkey, Quit when running. Commands and shortcuts: Run, Assign Hotkey, Copy CLI Command (`nimble run …`), and Edit / Delete for shortcuts (Delete asks for a second Return). Also calculator, definition, web, running-app and contact rows; files keep their own list. Assign Hotkey records the keys in the panel and checks them against other bindings and macOS shortcuts before saving |
+| Snippet expansion | Done: a `text` shortcut with `"expand": true` ("Expand a snippet as you type" in Create Shortcut, or `moo shortcut add ';sig' text '…' --expand`) replaces its keyword wherever it is typed. Moo watches typed characters with an AppKit global monitor (no events from password fields) and swaps the keyword through Accessibility after checking it is really before the cursor; no keystrokes are simulated, so apps that do not expose their text fields to Accessibility are left alone |
+| Action Panel (⌘K) | Done: ⌘K on any row lists what it can do. Apps: Open, Show in Finder, Copy Path / Name, Assign or Change Hotkey, Remove Hotkey, Quit when running. Commands and shortcuts: Run, Assign Hotkey, Copy CLI Command (`moo run …`), and Edit / Delete for shortcuts (Delete asks for a second Return). Also calculator, definition, web, running-app and contact rows; files keep their own list. Assign Hotkey records the keys in the panel and checks them against other bindings and macOS shortcuts before saving |
 | Hotkeys for any command | Done: any number of global hotkeys, each bound to a shortcut, command or app (with optional text), every ANSI key and F1–F20, conflict detection against other bindings and macOS shortcuts, recorder in the panel |
-| Deeplinks (`raycast://`) | A CLI instead: the `nimble` binary talks to the running app over a Unix socket in about 5 ms, so skhd, Karabiner, BetterTouchTool or any script can run shortcuts, search files, ask the AI and manage shortcuts |
+| Deeplinks (`raycast://`) | A CLI instead: the `moo` binary talks to the running app over a Unix socket in about 5 ms, so skhd, Karabiner, BetterTouchTool or any script can run shortcuts, search files, ask the AI and manage shortcuts |
 | AI with BYOK and Ollama | Planned: Hypery remote, local Uzu, any OpenAI-compatible local server |
-| Reviewed source store | Planned: signed `.nimbleplugin` packages; third-party code runs as Tier A or in a sandboxed helper |
+| Reviewed source store | Planned: signed `.mooplugin` packages; third-party code runs as Tier A or in a sandboxed helper |
 
 ## Spotlight patterns
 
@@ -76,7 +76,7 @@ The panel follows the macOS 26 (Tahoe) Spotlight wherever it fits a launcher (re
 [PCMag, "Apple's improved Spotlight feature in macOS is a real game changer"](https://www.pcmag.com/how-to/apples-improved-spotlight-feature-in-macos-is-a-real-game-changer)).
 Apps and files are already indexed when the panel first opens, so there is no onboarding screen.
 
-| Spotlight | Nimble |
+| Spotlight | Moo |
 | --- | --- |
 | Opens as a compact search pill with Applications, Files, Actions and Clipboard buttons beside it | Done: a 52 pt bar, field capsule plus four Liquid Glass circles that spring out of the field when it opens |
 | Typing expands into results grouped by category, best match first | Done: Calculator (when the text is a sum, conversion or time), Top Hit, then Applications, Definition, Files, Actions and Ask AI headings |
@@ -94,8 +94,8 @@ Apps and files are already indexed when the panel first opens, so there is no on
 | ⌥⌘Space opens a Finder search window | Not planned |
 | Calendar, Mail, Messages, Contacts, Music, web results | Definitions, web suggestions and contacts done as their own commands (see above); contacts in root results, mail, calendar and music planned |
 
-The CLI drives the same states for scripts and tests: `nimble search <text>`,
-`nimble category applications|files|actions|clipboard|recent [text]` and `nimble history [--clear]`.
+The CLI drives the same states for scripts and tests: `moo search <text>`,
+`moo category applications|files|actions|clipboard|recent [text]` and `moo history [--clear]`.
 
 The main bet is that the expensive part of Raycast, a JavaScript runtime per extension, can be
 replaced by small Tish VMs and compiled modules while keeping native rendering. The measured cost
