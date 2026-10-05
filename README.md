@@ -58,7 +58,7 @@ open it and drag Moo to Applications.
 **Or with Homebrew:**
 
 ```sh
-brew install --cask moomoi/moo/moo
+brew install moomoi/moo/moo
 ```
 
 Requires macOS 14 or later, on Apple silicon or Intel. Ask AI on Apple's on-device model needs
@@ -91,7 +91,7 @@ currency rates, web suggestions and plugins you use. Details are at
 
 ## Updating
 
-Homebrew: `brew upgrade --cask moo`. Otherwise download the latest release over the old app.
+Homebrew: `brew upgrade moomoi/moo/moo`. Otherwise download the latest release over the old app.
 
 ## Feedback
 
