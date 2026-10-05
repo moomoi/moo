@@ -1,0 +1,272 @@
+// The search field's placeholder: a different cow pun each time the launcher opens, picked for
+// the time of day, the day of the week and the date. Pure Tish with no natives: main.tish passes
+// in the local date and time (from expandTemplate's {date} and {time}, since Tish's Date is UTC)
+// and a random number, and gets back the text.
+
+// By hour, local time. Each entry is [first hour, last hour, lines].
+const TIME_OF_DAY = [
+  [0, 3, [
+    "Moo-dnight snack?",
+    "Burning the moo-dnight oil",
+    "Up past moo-dnight again",
+    "The moo-n is out. So are you.",
+    "Insomoonia?",
+    "Counting cows instead of sheep",
+    "Moo-nlight serenade",
+    "Night owl? Night cow.",
+    "Shh, the herd is sleeping",
+    "Midnight moo-vie marathon?"
+  ]],
+  [4, 6, [
+    "Up before the rooster",
+    "Early bird gets the moo",
+    "Dawn of the udders",
+    "Rise and shine, it's milking time",
+    "Moo-nrise. Wait, sunrise.",
+    "Dew on the grass, moo on the mind",
+    "First light, first moo",
+    "Cock-a-doodle-moo"
+  ]],
+  [7, 11, [
+    "Good Moorning",
+    "Moorning, sunshine",
+    "Top of the moorning to you",
+    "Coffee first, then moo",
+    "Rise and graze",
+    "Moorning has broken",
+    "Fresh milk, fresh moorning",
+    "Moorning glory",
+    "Moorning, moo-ster",
+    "Cereal needs milk. You're welcome.",
+    "Mooood booster: it's morning",
+    "Latte? Thank a cow."
+  ]],
+  [12, 13, [
+    "Moo-nch time",
+    "Lunch is udderly deserved",
+    "Graze o'clock",
+    "Time to chew the cud",
+    "High moon. I mean noon.",
+    "Grilled cheese o'clock",
+    "Milkshake break?",
+    "Lunch moo-ting in 5"
+  ]],
+  [14, 17, [
+    "Good Aftermoon",
+    "Aftermoon slump? Moo through it",
+    "Aftermoon tea, with milk",
+    "Mid-aftermoon moo-tivation",
+    "Still mooving along",
+    "Aftermoon delight",
+    "Siesta in the shade?",
+    "Afternoon, cud-dle up to your work",
+    "Almost home time, moo-ster"
+  ]],
+  [18, 21, [
+    "Good Evening, moo-ster",
+    "Moo-n's coming up",
+    "Evening grazing hours",
+    "Home on the range",
+    "The cows are coming home",
+    "Moo-n-lit evening",
+    "Dinner's on the hoof",
+    "Golden hour in the pasture",
+    "Cheese plate o'clock",
+    "Evening, partner. Moo."
+  ]],
+  [22, 23, [
+    "Moo-n's out",
+    "Nighty-night, moo-ster",
+    "Last moo before bed",
+    "Pasture bedtime",
+    "Sweet dreams of clover",
+    "Warm milk and bed?",
+    "Time to hit the hay",
+    "Over the moo-n and into bed",
+    "Lights out in the barn"
+  ]]
+]
+
+// By weekday, 0 = Sunday.
+const WEEKDAYS = [
+  ["Happy Sundae", "Lazy Moo-day Sunday", "Sundae, with extra cream", "Sunday graze day", "Sunday roast? Not today, thanks", "Sunday funday, moo-day"],
+  ["Happy Moonday", "Moonday again?", "Case of the Moondays", "Mooving into Moonday", "Moonday, fresh pasture", "I don't like Moondays either"],
+  ["Happy Tuesmoo", "Taco Tuesday, hold the beef", "Tuesday: Moonday's sequel", "Tuesmoo, two days in", "Tuesday, chew-sday"],
+  ["Happy Wednesmoo", "Hump day? Cows don't have humps", "Midweek moo-tivation", "Halfway to the pasture", "Woo-hoo, Wednesmoo", "Wednesday, over the hump-less hill"],
+  ["Happy Thursmoo", "Almost Fri-moo", "Thursday, udderly nearly Friday", "Thirsty Thursmoo: milk?", "Thursday, one more moo-ning"],
+  ["Happy Fri-moo", "TGIF: Thank Grass It's Friday", "Friday, the weekend's on the moo-ve", "Moo-ve it, it's Friday", "Fri-yay, moo-ray", "Friday feeling: udderly free"],
+  ["Happy Saturmoo", "Saturday, pasture time", "Weekend grazing mode", "Saturday moo-ning, no alarm", "Saturday, sleep in the hay", "Weekend: let the cows out"]
+]
+
+// Fixed dates, "MM-DD".
+const DATES = {
+  "01-01": ["Happy Moo Year", "New year, new moo", "Moo year's resolution: type less"],
+  "02-02": ["Groundhog Day. Again. Moo."],
+  "02-14": ["Happy Valentine's, moo cutie", "Will you be my valen-swine? No wait, wrong animal", "Moo-ve me tender", "You're udderly lovable"],
+  "03-14": ["Happy Pi Day. Cow pie, that is."],
+  "03-17": ["Top o' the moorning, it's St. Patrick's", "Lucky as a four-leaf clover cow"],
+  "04-01": ["Moo. (That's the joke.)", "This placeholder is now a horse. Neigh.", "April Moo's"],
+  "04-22": ["Happy Earth Day. Eat your greens.", "Grass roots, Earth Day"],
+  "05-04": ["May the moo be with you", "Moo-da: search you must"],
+  "06-01": ["Happy World Milk Day", "Got milk? It's World Milk Day"],
+  "07-04": ["Happy Moo-dependence Day", "Red, white and moo"],
+  "07-14": ["Joyeux Bastille Day, meuh"],
+  "09-19": ["Arr, talk like a pi-rat-cow day. Moo-ty!"],
+  "10-31": ["Happy Hallo-moo-een", "Boo. I mean moo.", "Trick or treat? Treat. Moo.", "The cow is in costume. As a cow.", "Spooky moo-sic", "The cow jumped over the haunted moon"],
+  "11-11": ["11:11, make a moo-wish"],
+  "12-24": ["Moo-ry Christmas Eve", "Leaving milk out for Santa"],
+  "12-25": ["Moo-ry Christmas", "Holy cow, it's Christmas", "Deck the stalls", "All I want for Christmas is moo", "Jingle bells, cowbells"],
+  "01-24": ["Happy National Compliment Day: nice horns"],
+  "03-20": ["First day of spring. Fresh grass!"],
+  "06-21": ["Longest day of the year, more grazing time"],
+  "08-08": ["Happy International Cat Day. Moo? Meow."],
+  "09-22": ["First day of fall, leaf-pile season"],
+  "10-01": ["Happy World Vegetarian Day, from a cow"],
+  "11-03": ["Happy Sandwich Day: extra cheese"],
+  "12-21": ["Shortest day, longest moo"],
+  "12-31": ["Last moo of the year", "Moo Year's Eve", "Countdown to moo-dnight"]
+}
+
+// By month, 1 = January.
+const MONTHS = {
+  "1": ["Brr-moo, it's cold", "Winter coat on, moo", "New year, same cow"],
+  "2": ["Still winter. Still moo."],
+  "3": ["Spring has sprung, so has the grass"],
+  "4": ["April showers bring May pastures"],
+  "5": ["The pasture's in bloom"],
+  "6": ["Summer grazing season"],
+  "7": ["Too hot to moo-ve", "Ice cream weather, made with milk"],
+  "8": ["Lazy summer moo-ments"],
+  "9": ["Back to school, back to moo"],
+  "10": ["Pumpkin spice latte, extra milk", "Sweater weather, moo", "Hay bales and hayrides"],
+  "11": ["Leaf piles and moo-ments"],
+  "12": ["Tis the season to be moo-ry", "Let it moo, let it moo, let it moo", "Eggnog, extra milk"]
+}
+
+// Any time.
+const ANYTIME = [
+  "What's moo?",
+  "Search the herd",
+  "Udderly fast search",
+  "Holy cow, what are we looking for?",
+  "Moo-ve along, type something",
+  "Type to graze",
+  "Cowabunga",
+  "What's the moo-ve?",
+  "Moo-ving at the speed of thought",
+  "I'm all ears. And horns.",
+  "Ask the cow anything",
+  "Search, don't stampede",
+  "Steer me somewhere",
+  "Let's mooo-ve",
+  "Moo-ltitasking welcome",
+  "Pasture-ize your workflow",
+  "No bull, just results",
+  "Legen-dairy search",
+  "The cream of the search",
+  "Milking every keystroke",
+  "Herd it here first",
+  "Cud you type something?",
+  "Mooo-tivated to help",
+  "Not a bull-et point in sight",
+  "Grass-fed, free-range search",
+  "Moo-sic to my ears",
+  "Moo-nificent",
+  "Dairy-ing you to search",
+  "Hay there",
+  "Hay, what's up?",
+  "Barn to search",
+  "Search like nobody's watching (the cows are)",
+  "Moo-ve fast and find things",
+  "Out standing in my field",
+  "The grass is greener here",
+  "Bovine intervention",
+  "Cow can I help?",
+  "Moo know what you want",
+  "Spill the milk",
+  "Don't cry over spilled searches",
+  "Till the cows come home",
+  "Cream of the crop",
+  "Ruminating…",
+  "Type it, I'll chew on it",
+  "Udder nonsense, or a real search?",
+  "MOO",
+  "moo?",
+  "mooooooooo",
+  "Moo-tual understanding",
+  "Holy cow",
+  "Moo-ving right along",
+  "What can I milk for you?",
+  "Have you herd?",
+  "Just a cow and a cursor",
+  "Leave no stone un-moo-ved",
+  "It's not much, but it's honest work",
+  "Herding cats is harder",
+  "Moo-tiny on the bounty",
+  "Moo-ving pictures",
+  "Moo-niverse of possibilities",
+  "Bell's on. Type away.",
+  "More cowbell",
+  "Cow-culating…",
+  "Moo-sing on it",
+  "Ah, a moo-ment of peace",
+  "Hoof it",
+  "Not a cow-ard",
+  "Make it snappy, I've got grazing to do",
+  "The udder way to search",
+  "Moo-vellous",
+  "Steer clear of clutter",
+  "From farm to finder",
+  "This search is dairy-free. Just kidding.",
+  "Mmm, clover",
+  "Raised on grass, built on Tish",
+  "Moo-tivation loading…",
+  "Search first, graze later",
+  "Ready, set, moo",
+  "One small step for cow",
+  "Seize the hay",
+  "Cud be anything",
+  "Cream rises to the top",
+  "A moo-ment, please"
+]
+
+fn pick(list, roll) {
+  return list[Math.floor(roll * list.length) % list.length]
+}
+
+// A fresh roll from an old one, so one random number can make several independent choices.
+fn reroll(roll) {
+  let r = (roll * 9301 + 0.49297) * 233.280
+  return r - Math.floor(r)
+}
+
+// `date` is the local "YYYY-MM-DD", `time` the local "HH:MM", `roll` a number in [0, 1).
+export fn greeting(date, time, roll) {
+  let hour = parseInt(time.slice(0, 2))
+  let monthDay = date.slice(5, 10)
+  let month = "" + parseInt(date.slice(5, 7))
+  let weekday = new Date(date + "T12:00:00Z").getUTCDay()
+  let r = reroll(roll)
+  // A holiday wins most of the time; otherwise mix time of day, weekday, season and evergreens.
+  if (monthDay in DATES && roll < 0.7) {
+    return pick(DATES[monthDay], r)
+  }
+  if (time === "11:11") {
+    return "11:11, make a moo-wish"
+  }
+  if (roll < 0.3 && !isNaN(hour)) {
+    for (let i = 0; i < TIME_OF_DAY.length; i = i + 1) {
+      let slot = TIME_OF_DAY[i]
+      if (hour >= slot[0] && hour <= slot[1]) {
+        return pick(slot[2], r)
+      }
+    }
+  }
+  if (roll < 0.5 && !isNaN(weekday)) {
+    return pick(WEEKDAYS[weekday], r)
+  }
+  if (roll < 0.58 && month in MONTHS) {
+    return pick(MONTHS[month], r)
+  }
+  return pick(ANYTIME, r)
+}

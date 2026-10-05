@@ -11,6 +11,7 @@ import { macos, useState } from "tish:macos"
 import { reindex, search, launch, setup, setPanelShape, setArrowKeys, setTheme, typeText, getPref, setPref, searchHistory, addSearchHistory, clearSearchHistory, registerHotkey, quit, hide, appCount, searchFiles, watchApps, fuzzy, pluginPaths, copyText, loadBytecodePlugin, bundleResources, exeDir, recordUse, frecency, statusItem, watchClipboard, onOpenUrl, clipboardHistory, clearClipboardHistory, aiAvailability, aiSession, aiEndSession, aiPrewarm, aiAsk, aiCancel, aiProviders, aiModels, aiChat, aiChatCancel, aiSetKey, aiLogin, aiCancelLogin, aiLogout, aiAccount, aiSetModel, aiSetClientId, aiSetOrganization, imageIcon, imageFile, setAlias, checkAlias, setDisabled, setPanelKey, setPanelKeys, onPluginRefresh, siteIcon, symbolIcon, fileIndexStart, findFiles, recentFiles, queryFiles, runningApps, systemInfo, calculate, define, dictionaryWarm, webSuggest, contactsAccess, contactsRequest, searchContacts, systemCommand, appAction, arrangeWindow, selectedText, watchSnippets, replaceTyped, trashFile, appsFor, openWith, quickLook, quickLookVisible, searchContents, accessibilityTrusted, fileIcon, revealFile, fileIndexStatus, show, toggle, unregisterHotkey, checkHotkey, hotkeyDisplay, recordHotkey, loadShortcuts, saveShortcut, checkKeyword, ensureShortcutsFile, removeShortcut, bindHotkey, unbindHotkey, setLauncherHotkey, expandTemplate, watchShortcuts, runShell, cliMain, cliServe, cliWrite, cliEnd, cliUsage } from "tish:moo"
 import { env } from "tish:process"
 import { THEME } from "./theme.tish"
+import { greeting } from "./greetings.tish"
 
 // `moo <command>` (or launching while Moo already runs) makes this process a client of the
 // running app: it sends the arguments over the socket, prints the reply and exits here.
@@ -5692,6 +5693,7 @@ let hudSetAt = 0
 
 fn onShow(_) {
   shell.bubble = -1
+  fieldGreeting = freshGreeting()
   let keep = Date.now() - hudSetAt < 1000 ? shell.hud : ""
   setQuery(shell.query)
   if (keep !== "") {
@@ -6008,6 +6010,13 @@ fn sectionTitle() {
   return shell.query.trim() === "" ? "Suggestions" : "Results"
 }
 
+// The root placeholder, a new cow pun each time the panel opens (greetings.tish).
+fn freshGreeting() {
+  let now = expandTemplate("{date} {time}", "", "text").split(" ")
+  return greeting(now[0], now.length > 1 ? now[1] : "", Math.random())
+}
+let fieldGreeting = freshGreeting()
+
 fn placeholder() {
   if (inAi()) {
     return ai.answer !== "" ? "Ask a follow-up…" : "Ask anything…"
@@ -6053,7 +6062,7 @@ fn placeholder() {
   if (shell.mode !== null) {
     return "Search " + shell.mode.name + "…"
   }
-  return "Moo Search"
+  return fieldGreeting
 }
 
 fn aiStatusText() {
