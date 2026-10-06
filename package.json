@@ -3,7 +3,8 @@
   "private": true,
   "description": "Build tooling for Moo: the tish compiler and Lattish come from npm (see docs/building.md).",
   "scripts": {
-    "build": "TISH=\"$PWD/node_modules/.bin/tish\" bash plugins/build.sh && bash app/build.sh",
+    "build": "TISH=\"$PWD/node_modules/.bin/tish\" bash plugins/build.sh && TISH_FAST_NATIVE_BUILD=1 bash app/build.sh",
+    "build:release": "TISH=\"$PWD/node_modules/.bin/tish\" bash plugins/build.sh && bash app/build.sh",
     "build:web": "bash web/build.sh",
     "bundle": "bash scripts/bundle-macos.sh",
     "test": "cd packages/moo-macos && cargo test --lib",

@@ -168,6 +168,24 @@ fn native_exe_dir(_args: &[Value]) -> Value {
     }
 }
 
+/// `about()` -> `{ version, exe, app }`: the version this build was made as ("dev" for local
+/// builds), the running binary, and the `.app` bundle holding it (null outside one). For debugging
+/// which Moo is running.
+fn native_about(_args: &[Value]) -> Value {
+    let exe = std::env::current_exe().ok().and_then(|p| p.canonicalize().ok());
+    let app = exe
+        .as_deref()
+        .and_then(|p| p.ancestors().find(|a| a.extension().is_some_and(|e| e == "app")))
+        .map(|p| Value::String(p.to_string_lossy().as_ref().into()))
+        .unwrap_or(Value::Null);
+    let exe = exe.map(|p| p.to_string_lossy().into_owned()).unwrap_or_default();
+    let mut m = ObjectMap::default();
+    m.insert(Arc::from("version"), Value::String(crate::cli::VERSION.into()));
+    m.insert(Arc::from("exe"), Value::String(exe.as_str().into()));
+    m.insert(Arc::from("app"), app);
+    Value::object(m)
+}
+
 /// `recordUse(key)`: count one open of an app path or command key toward its frecency.
 fn native_record_use(args: &[Value]) -> Value {
     frecency::record(&str_arg(args, 0));
@@ -1707,6 +1725,7 @@ pub fn moo_object() -> Value {
     m.insert(Arc::from("watchApps"), Value::native(natives::watch_apps));
     m.insert(Arc::from("bundleResources"), Value::native(native_bundle_resources));
     m.insert(Arc::from("exeDir"), Value::native(native_exe_dir));
+    m.insert(Arc::from("about"), Value::native(native_about));
     m.insert(Arc::from("recordUse"), Value::native(native_record_use));
     m.insert(Arc::from("frecency"), Value::native(native_frecency));
     m.insert(Arc::from("statusItem"), Value::native(natives::status_item));

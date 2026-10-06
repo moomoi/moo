@@ -8,7 +8,7 @@
 
 import { loadModule } from "tish:ffi"
 import { macos, useState } from "tish:macos"
-import { reindex, search, launch, setup, setPanelShape, setArrowKeys, setTheme, typeText, getPref, setPref, searchHistory, addSearchHistory, clearSearchHistory, registerHotkey, quit, hide, appCount, searchFiles, watchApps, fuzzy, pluginPaths, copyText, loadBytecodePlugin, bundleResources, exeDir, recordUse, frecency, statusItem, watchClipboard, onOpenUrl, clipboardHistory, clearClipboardHistory, aiAvailability, aiSession, aiEndSession, aiPrewarm, aiAsk, aiCancel, aiProviders, aiModels, aiChat, aiChatCancel, aiSetKey, aiLogin, aiCancelLogin, aiLogout, aiAccount, aiSetModel, aiSetClientId, aiSetOrganization, imageIcon, imageFile, setAlias, checkAlias, setDisabled, setPanelKey, setPanelKeys, onPluginRefresh, siteIcon, symbolIcon, fileIndexStart, findFiles, recentFiles, queryFiles, runningApps, systemInfo, calculate, define, dictionaryWarm, webSuggest, contactsAccess, contactsRequest, searchContacts, systemCommand, appAction, arrangeWindow, selectedText, watchSnippets, replaceTyped, trashFile, appsFor, openWith, quickLook, quickLookVisible, searchContents, accessibilityTrusted, fileIcon, revealFile, fileIndexStatus, show, toggle, unregisterHotkey, checkHotkey, hotkeyDisplay, recordHotkey, loadShortcuts, saveShortcut, checkKeyword, ensureShortcutsFile, removeShortcut, bindHotkey, unbindHotkey, setLauncherHotkey, expandTemplate, watchShortcuts, runShell, cliMain, cliServe, cliWrite, cliEnd, cliUsage } from "tish:moo"
+import { reindex, search, launch, setup, setPanelShape, setArrowKeys, setTheme, typeText, getPref, setPref, searchHistory, addSearchHistory, clearSearchHistory, registerHotkey, quit, hide, appCount, searchFiles, watchApps, fuzzy, pluginPaths, copyText, loadBytecodePlugin, bundleResources, exeDir, about, recordUse, frecency, statusItem, watchClipboard, onOpenUrl, clipboardHistory, clearClipboardHistory, aiAvailability, aiSession, aiEndSession, aiPrewarm, aiAsk, aiCancel, aiProviders, aiModels, aiChat, aiChatCancel, aiSetKey, aiLogin, aiCancelLogin, aiLogout, aiAccount, aiSetModel, aiSetClientId, aiSetOrganization, imageIcon, imageFile, setAlias, checkAlias, setDisabled, setPanelKey, setPanelKeys, onPluginRefresh, siteIcon, symbolIcon, fileIndexStart, findFiles, recentFiles, queryFiles, runningApps, systemInfo, calculate, define, dictionaryWarm, webSuggest, contactsAccess, contactsRequest, searchContacts, systemCommand, appAction, arrangeWindow, selectedText, watchSnippets, replaceTyped, trashFile, appsFor, openWith, quickLook, quickLookVisible, searchContents, accessibilityTrusted, fileIcon, revealFile, fileIndexStatus, show, toggle, unregisterHotkey, checkHotkey, hotkeyDisplay, recordHotkey, loadShortcuts, saveShortcut, checkKeyword, ensureShortcutsFile, removeShortcut, bindHotkey, unbindHotkey, setLauncherHotkey, expandTemplate, watchShortcuts, runShell, cliMain, cliServe, cliWrite, cliEnd, cliUsage } from "tish:moo"
 import { env } from "tish:process"
 import { THEME } from "./theme.tish"
 import { greeting } from "./greetings.tish"
@@ -1229,6 +1229,12 @@ fn contactsAccessLabel() {
   return a === "notDetermined" ? "Not asked yet" : "Off"
 }
 
+// "dev · /Users/me/moo/app/dist/moo": which Moo this is, for bug reports.
+fn aboutLine() {
+  let me = about()
+  return me.version + " · " + (me.app !== null ? me.app : me.exe)
+}
+
 fn settingsResults(text) {
   let t = text.trim().toLowerCase()
   let rows = [
@@ -1241,6 +1247,7 @@ fn settingsResults(text) {
     { name: "AI Model", kind: modelName(currentModel()), icon: aiIcon, act: "ai-models", group: "AI" },
     { name: "Hypery Account", kind: hyperyLabel(), icon: HYPERY.icon, act: "hypery", group: "AI" },
     { name: "Contacts Access", kind: contactsAccessLabel(), icon: contactIcon, act: "contacts", group: "Privacy" },
+    { name: "About Moo", kind: aboutLine(), icon: appIcon !== "" ? appIcon : symbolIcon("info.circle"), act: "about", group: "Moo" },
     { name: "Quit Moo", kind: "", icon: quitIcon, act: "quit", group: "Moo" }
   ]
   return rows.filter((r) => t === "" || r.name.toLowerCase().indexOf(t) >= 0).map((r) => ({ name: r.name, kind: r.kind, icon: r.icon, act: r.act, group: r.group, mode: "setting" }))
@@ -1270,6 +1277,10 @@ fn openSetting(r) {
     enterSub(modelPicker(false))
   } else if (r.act === "hypery") {
     enterSub({ name: HYPERY.name, mode: "hypery", pluginTitle: "Hypery", icon: HYPERY.icon })
+  } else if (r.act === "about") {
+    copyText("Moo " + aboutLine())
+    shell.hud = "Copied the version and path"
+    refresh()
   } else if (r.act === "quit") {
     quit()
   }
@@ -6772,11 +6783,12 @@ fn cliStatus(token, json) {
       active = active + 1
     }
   }
-  let st = { launcher: hotkeyLabel, apps: appCount(), commands: commands.length - config.shortcuts.length, shortcuts: config.shortcuts.length, hotkeys: active, hotkeysNotActive: hotkeyStatus.length - active, files: s.entries, fileIndex: s.state, config: config.path }
+  let me = about()
+  let st = { version: me.version, path: me.app !== null ? me.app : me.exe, launcher: hotkeyLabel, apps: appCount(), commands: commands.length - config.shortcuts.length, shortcuts: config.shortcuts.length, hotkeys: active, hotkeysNotActive: hotkeyStatus.length - active, files: s.entries, fileIndex: s.state, config: config.path }
   if (json) {
     cliOut(token, JSON.stringify(st) + "\n")
   } else {
-    cliOut(token, "launcher   " + st.launcher + "\napps       " + st.apps + "\ncommands   " + st.commands + "\nshortcuts  " + st.shortcuts + "\nhotkeys    " + st.hotkeys + (st.hotkeysNotActive > 0 ? " (" + st.hotkeysNotActive + " not active)" : "") + "\nfiles      " + st.files + " (" + st.fileIndex + ")\nconfig     " + st.config + "\n")
+    cliOut(token, "version    " + st.version + "\npath       " + st.path + "\nplugins    " + PLUGIN_DIR + "\nlauncher   " + st.launcher + "\napps       " + st.apps + "\ncommands   " + st.commands + "\nshortcuts  " + st.shortcuts + "\nhotkeys    " + st.hotkeys + (st.hotkeysNotActive > 0 ? " (" + st.hotkeysNotActive + " not active)" : "") + "\nfiles      " + st.files + " (" + st.fileIndex + ")\nconfig     " + st.config + "\n")
   }
   cliEnd(token, 0)
 }

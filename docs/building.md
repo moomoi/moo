@@ -33,7 +33,8 @@ A plugin merged into moomoi/plugins ships once this repo points the submodule at
 
 ```sh
 npm ci                       # the tish compiler and Lattish (once, and after package.json changes)
-npm run build                # plugins + app: plugins/dist/, app/dist/moo
+npm run build                # plugins + app: plugins/dist/, app/dist/moo (fast, unoptimized compile)
+npm run build:release        # the same, fully optimized like a release (several minutes from cold)
 npm test                     # moo-macos unit tests
 npm run clean                # remove every build output (dist/, target/, app and plugin node_modules)
 ```

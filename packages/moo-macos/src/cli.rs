@@ -78,7 +78,7 @@ usage: moo [command] [args]
   hotkey rm <keys>
   config                       print the path of shortcuts.json
   status
-  --version                    the installed version
+  --version                    this binary's version and path
 
   --json                       machine-readable output (files, apps, list, clipboard, status)
 
@@ -204,7 +204,11 @@ pub fn client(args: &[String]) -> i32 {
         return 0;
     }
     if matches!(first, "-v" | "--version") {
-        println!("Moo {VERSION}");
+        let exe = std::env::current_exe().ok().and_then(|p| p.canonicalize().ok());
+        match exe {
+            Some(p) => println!("Moo {VERSION} ({})", p.display()),
+            None => println!("Moo {VERSION}"),
+        }
         return 0;
     }
     let stream = match UnixStream::connect(socket_path()) {

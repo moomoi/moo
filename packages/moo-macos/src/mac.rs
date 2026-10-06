@@ -1624,6 +1624,18 @@ fn install_status_item(hotkey: &str, symbol: &str) {
         button.sendActionOn(NSEventMask::LeftMouseUp | NSEventMask::RightMouseUp);
     }
     let menu = NSMenu::new(mtm);
+    // Which Moo this is, greyed out (no action): "Moo 0.4.0", or "Moo dev" for a local build.
+    let version = unsafe {
+        NSMenuItem::initWithTitle_action_keyEquivalent(
+            NSMenuItem::alloc(mtm),
+            &NSString::from_str(&format!("Moo {}", crate::cli::VERSION)),
+            None,
+            &NSString::from_str(""),
+        )
+    };
+    version.setEnabled(false);
+    menu.addItem(&version);
+    menu.addItem(&NSMenuItem::separatorItem(mtm));
     let entries = [(Some("Settings…"), Some(sel!(openSettings:)), ","), (None, None, ""), (Some("Quit Moo"), Some(sel!(quitMoo:)), "q")];
     for (title, action, key) in entries {
         let Some(title) = title else {

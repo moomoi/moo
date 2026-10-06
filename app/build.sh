@@ -15,6 +15,13 @@ unset CARGO_TARGET_DIR
 export MACOSX_DEPLOYMENT_TARGET="${MACOSX_DEPLOYMENT_TARGET:-14.0}"
 export TISH_NATIVE_TARGET_DIR="${TISH_NATIVE_TARGET_DIR:-$(cd .. && pwd)/target/tish-native}"
 OUT="${MOO_OUT:-dist/moo}"
+# Cargo's progress isn't shown, so say what's happening: a release build (one codegen unit, fat
+# LTO) takes minutes from cold; TISH_FAST_NATIVE_BUILD=1 (npm run build) compiles in parallel.
+if [ "${TISH_FAST_NATIVE_BUILD:-}" = "1" ]; then
+  echo "Compiling the app (fast dev build)..."
+else
+  echo "Compiling the app (optimized release build; several minutes from cold)..."
+fi
 "$TISH" build src/main.tish --target native --native-backend rust -o "$OUT"
 
 # An ad hoc signature is a new identity on every build, so the Keychain asks for the login
