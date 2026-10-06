@@ -69,14 +69,10 @@ The launcher hotkey is changed in Settings › Launcher Hotkey: press the new ke
 switches right away and is saved as `"launcher"` in `shortcuts.json` (which can also be edited by
 hand; that takes effect at the next start). `MOO_HOTKEY` wins over it.
 
-Hotkeys name keys as printed on the keyboard. System Settings › Keyboard › Modifier Keys remaps
-them per keyboard below the event system (with Command and Control swapped, the Command key sends
-Control), so `keymap.rs` reads each connected keyboard's mapping
-(`com.apple.keyboard.modifiermapping.<vendor>-<product>-0` in the current-host global domain) and
-registers what the keys actually produce: `cmd+space` becomes `ctrl+space` on a swapped keyboard,
-and keyboards or left/right keys that differ get one registration each. The debug log shows it:
-`hotkey ⌘Space registered as ctrl+space`. Mappings are read when the hotkey is registered, so
-restart Moo after changing them.
+Hotkeys name the modifiers macOS receives, as in every other Mac app. If System Settings ›
+Keyboard › Modifier Keys swaps Command and Control on a keyboard, pressing that keyboard's Control
+key is ⌘ to macOS and to Moo; the hotkey recorder records the same thing, so what you press is
+what you get.
 
 Combinations an enabled macOS shortcut owns (Spotlight ⌘Space, input sources ⌃Space and ⌃⌥Space,
 Finder search ⌘⌥Space, including their defaults when never changed) are skipped and the next

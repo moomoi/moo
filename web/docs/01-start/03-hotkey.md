@@ -21,7 +21,7 @@ Open **Settings** ([[⌘ ,]] in the launcher) and choose **Launcher Hotkey**. Pr
 
 ## Swapped modifier keys
 
-If you remapped modifiers in **System Settings › Keyboard › Modifier Keys** (Command and Control swapped, say), moo reads each keyboard's mapping and registers the keys you actually press. Restart moo after changing those mappings.
+If you swapped modifiers in **System Settings › Keyboard › Modifier Keys** (Command and Control, say), moo uses the keys macOS sees, like every other app. Set the hotkey by pressing it in Settings, and what you press is what you get.
 
 ## It doesn't open
 

@@ -39,7 +39,7 @@ Tish binary) over a Unix-socket RPC. It does not exist yet.
 | `  src/mac.rs` | Panel, focus, key routing, Carbon hotkeys and the recorder, launch, icons, status item (click shows the panel, right click opens Settings… / Quit) |
 | `  src/theme.rs` | Holds the theme set from Tish (`setTheme`) and resolves its colours; no values of its own |
 | `  src/keys.rs` | Key names, hotkey spec parsing and display (`cmd+shift+k` → ⇧⌘K) |
-| `  src/keymap.rs` | Per-keyboard modifier remaps and macOS system shortcut conflicts |
+| `  src/keymap.rs` | macOS system shortcut conflicts (Spotlight, input sources) |
 | `  src/shortcuts.rs` | `shortcuts.json`: parse, validate, save, templates (portable) |
 | `  src/cli.rs` | Unix-socket server and the `moo` command-line client |
 | `  src/shell.rs` | Shell shortcuts: `/bin/sh` on a worker thread, capped output, timeout |
@@ -282,8 +282,7 @@ Moo checks:
   “Downloads”";
 - that the combination is not an enabled macOS shortcut, which macOS would accept and then never
   deliver. This covers every shortcut stored in `com.apple.symbolichotkeys` plus the Space-bar
-  defaults (Spotlight, input sources, Finder search) that are only stored once changed;
-- the keyboards' modifier remaps, as for the launcher (see building.md).
+  defaults (Spotlight, input sources, Finder search) that are only stored once changed.
 
 The command line refuses a conflicting hotkey before saving. A hand-edited conflict is shown as
 "not active" with its reason in `moo list hotkeys`, `moo status` and the Shortcuts list.

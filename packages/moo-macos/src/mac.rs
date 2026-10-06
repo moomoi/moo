@@ -1298,6 +1298,9 @@ thread_local! {
     static HOTKEY_OWNER: RefCell<HashMap<u32, u32>> = RefCell::new(HashMap::new());
     static NEXT_BINDING: Cell<u32> = const { Cell::new(1) };
     static RECORDING: Cell<bool> = const { Cell::new(false) };
+    /// Carbon hotkey id -> the `(key code, logical modifiers)` it was registered for, so a hotkey
+    /// pressed while recording can be handed to the recorder as that key.
+    static HOTKEY_COMBO: RefCell<HashMap<u32, (u32, u32)>> = RefCell::new(HashMap::new());
 }
 
 extern "C" fn on_hotkey(_next: *mut c_void, event: *mut c_void, _user: *mut c_void) -> i32 {
@@ -1313,6 +1316,18 @@ extern "C" fn on_hotkey(_next: *mut c_void, event: *mut c_void, _user: *mut c_vo
             &mut hk as *mut EventHotKeyID as *mut c_void,
         )
     };
+    // Recording a new hotkey: macOS delivers a combination Moo already owns here, never to the
+    // panel, so pass it on as the recorded key instead of running it (which would hide the panel).
+    if RECORDING.with(|r| r.get()) {
+        let spec = (st == 0)
+            .then(|| HOTKEY_COMBO.with(|c| c.borrow().get(&hk.id).copied()))
+            .flatten()
+            .and_then(|(code, mods)| keys::from_event(code, mods));
+        if let Some(spec) = spec {
+            defer_callback("key", format!("record:{spec}"));
+        }
+        return 0;
+    }
     let action = if st == 0 {
         HOTKEY_OWNER
             .with(|o| o.borrow().get(&hk.id).copied())
@@ -1344,10 +1359,8 @@ pub struct Hotkey {
 fn plan_hotkey(spec: &str) -> Result<(keys::Spec, String, Vec<u32>, Vec<String>), String> {
     let s = keys::parse(spec)?;
     let display = keys::display(s.mods, s.key);
-    let combos = keymap::logical_combos(s.mods, &keymap::active_mappings());
-    if combos.is_empty() {
-        return Err(format!("{display}: a modifier is remapped to a non-modifier key on every keyboard"));
-    }
+    // Exactly the keys macOS reports: keyboard remaps (Command ↔ Control) happen below it.
+    let combos = vec![s.mods];
     let owner = BINDINGS.with(|m| {
         m.borrow()
             .values()
@@ -1404,6 +1417,7 @@ pub fn register_hotkey(spec: &str, action: &str, label: &str) -> Result<Hotkey, 
             match RegisterEventHotKey(s.code, mods, id, target, 0, &mut out) {
                 0 => {
                     HOTKEY_OWNER.with(|o| o.borrow_mut().insert(hk_id, binding_id));
+                    HOTKEY_COMBO.with(|c| c.borrow_mut().insert(hk_id, (s.code, mods)));
                     refs.push((out, s.code, mods));
                     registered.push(name);
                 }
@@ -1429,6 +1443,8 @@ pub fn unregister_hotkey(id: u32) -> bool {
     for (r, _, _) in b.refs {
         unsafe { UnregisterEventHotKey(r) };
     }
+    let gone: Vec<u32> = HOTKEY_OWNER.with(|o| o.borrow().iter().filter(|(_, owner)| **owner == id).map(|(hk, _)| *hk).collect());
+    HOTKEY_COMBO.with(|c| c.borrow_mut().retain(|hk, _| !gone.contains(hk)));
     HOTKEY_OWNER.with(|o| o.borrow_mut().retain(|_, owner| *owner != id));
     debug_log(&format!("hotkey {} -> {} unregistered", b.display, b.action));
     true
