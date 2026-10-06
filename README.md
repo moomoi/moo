@@ -16,6 +16,7 @@ User docs are at [moo.moi/docs](https://moo.moi/docs) (source in `web/docs/`). D
 | [docs/building.md](docs/building.md) | Requirements, building and running from a clone |
 | [docs/architecture.md](docs/architecture.md) | How the process is put together |
 | [docs/plugin-api.md](docs/plugin-api.md) | Writing plugins |
+| [docs/plugin-runtime.md](docs/plugin-runtime.md) | How plugins run (`.tishc`), and a plan for moving to WASM/WASI |
 | [docs/ai.md](docs/ai.md) | Ask AI, providers and sign-in |
 | [docs/web.md](docs/web.md) | moo.moi, the OAuth relay |
 | [docs/release.md](docs/release.md) | How releases are cut and published |
