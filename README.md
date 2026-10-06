@@ -45,8 +45,10 @@ This repository holds Moo's releases. The documentation is at [moo.moi/docs](htt
   offline and private. It can find files, check your battery, arrange windows and use the
   calculator. Hypery, OpenAI, Ollama, LM Studio and any OpenAI-compatible server work too.
 - **Plugins.** Written in Tish. Each one runs in its own sandboxed VM with no file or network
-  access beyond the hosts it declares. Slack, Unit Converter and Moo Utils ship built in. Browse
-  them in the [marketplace](https://moo.moi/marketplace).
+  access beyond the hosts it declares. Eight ship built in: Dev Toolbox, GitHub, Package Search,
+  Weather, Slack, Unit Converter, Moo Utils and Hello List. Browse them in the
+  [marketplace](https://moo.moi/marketplace); the source, and how to add your own, is at
+  [moomoi/plugins](https://github.com/moomoi/plugins).
 - **Command line.** The app is also the `moo` CLI, so you can script it or drive it from skhd,
   Karabiner, Hammerspoon or Shortcuts.
 
