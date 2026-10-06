@@ -65,7 +65,7 @@ Tish binary) over a Unix-socket RPC. It does not exist yet.
 | `  src/clip.rs` | Clipboard history |
 | `  src/vmplug.rs` | Tier A loader: runs a bytecode chunk in a VM with no capabilities |
 | `web/` | The moo.moi site: landing page and the sign-in relay, a native Tish HTTP server (see [web.md](web.md)) |
-| `plugins/` | Example plugins (`utils` is Tier B, `convert` is Tier A) and `build.sh` |
+| `plugins/` | Submodule: [moomoi/plugins](https://github.com/moomoi/plugins), the 8 official plugins (`utils` is Tier B, the rest Tier A) and `build.sh` |
 | `scripts/` | `.app` bundling, release packaging, UI drive scripts used for testing |
 | `poc/` | FFI and Lattish proofs of concept |
 

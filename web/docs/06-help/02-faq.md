@@ -12,7 +12,7 @@ It can. Give moo [[⌘ Space]] by turning off Spotlight's shortcut. moo keeps it
 
 ## Is it really native?
 
-Yes. moo is one native process built with [Tish](https://tishlang.com) on AppKit. There are no webviews, no Electron, no Node and no JavaScript.
+Yes. moo is one native process built with [Tish](https://github.com/tishlang/tish) on AppKit. There are no webviews, no Electron, no Node and no JavaScript.
 
 ## Does it phone home?
 

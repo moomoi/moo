@@ -17,6 +17,18 @@
   `@tishlang/tish` in `package.json` and the `tishlang_*` versions in
   `packages/moo-macos/Cargo.toml` together.
 
+## Get the code
+
+`plugins/` is a submodule ([moomoi/plugins](https://github.com/moomoi/plugins)), so clone with it:
+
+```sh
+git clone --recurse-submodules git@github.com:knoeone/moo.git   # or, in a clone: git submodule update --init
+npm ci
+```
+
+A plugin merged into moomoi/plugins ships once this repo points the submodule at it:
+`git -C plugins pull origin main`, then commit `plugins`.
+
 ## Build
 
 ```sh

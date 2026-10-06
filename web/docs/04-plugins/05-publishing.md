@@ -13,13 +13,13 @@ cd plugins
 
 Or fork on [GitHub](https://github.com/moomoi/plugins/fork) and `git clone` your fork.
 
-## 2. Build the compiler
+## 2. Install
 
 ```sh
-bash toolchain/build.sh
+npm ci
 ```
 
-This builds the exact Tish compiler moo uses into `.toolchain/`, and takes a few minutes the first time.
+This installs the Tish compiler (`@tishlang/tish`) and Lattish from npm, at the versions in `package.json`.
 
 ## 3. Add your plugin
 
@@ -40,7 +40,7 @@ Write `src/plugin.tish` following [Your first plugin](/docs/first-plugin) and th
 ## 4. Build and try it
 
 ```sh
-TISH=.toolchain/tish/target/release/tish bash build.sh
+bash build.sh
 MOO_PLUGINS="$PWD/dist" open -a Moo
 ```
 

@@ -1,7 +1,9 @@
 # Plugin API
 
 A Moo plugin is Tish code that adds commands to the root search. This page documents contract
-v0, which both example plugins implement, and then what is planned next.
+v0, which every plugin implements, and then what is planned next. The official plugins live in
+[moomoi/plugins](https://github.com/moomoi/plugins), checked out here as the `plugins/` submodule;
+the user-facing version of this page is [moo.moi/docs/plugin-api](https://moo.moi/docs/plugin-api).
 
 ## Layout
 

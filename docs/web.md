@@ -73,18 +73,15 @@ MOO_TEST_RELAY=http://127.0.0.1:8080/callback cargo test --lib -- --ignored moo_
 ## Deploy
 
 moo.moi is the Vercel project `moo-web` (team Knoeone), running the server as a container
-function. To ship a change:
-
-```sh
-cd web && vercel deploy --prod
-```
+function. It's connected to this repo with `web/` as its root: every push to `main` deploys
+production, and every PR gets a preview deployment (the **Vercel** check on the PR).
 
 Vercel builds `web/Dockerfile.vercel`. It installs the released compiler from npm
 (`@tishlang/tish`, the same version as `package.json`) in a Node stage, compiles `src/main.tish` and runs
 the binary on distroless, listening on port 80. `web/vercel.json` declares the Dockerfile as a service and sends every path to it.
 Without that file Vercel deploys `web/` as static files. A build takes about 5 minutes.
 
-Preview deployments (`vercel deploy` without `--prod`) sit behind Vercel's login; test them with
+Preview deployments sit behind Vercel's login; test them with
 `vercel curl /health --deployment <url>`.
 
 The same Dockerfile runs anywhere else: `docker build -f Dockerfile.vercel -t moo-web web`. The

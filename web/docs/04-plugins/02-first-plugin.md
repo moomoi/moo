@@ -46,7 +46,10 @@ register({
 
 ## Build and load
 
+The Tish compiler is on npm:
+
 ```sh
+npm install -g @tishlang/tish
 tish build src/plugin.tish --target bytecode -o ~/moo-plugins/shout.tishc
 MOO_PLUGINS=~/moo-plugins open -a Moo
 ```
