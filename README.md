@@ -5,7 +5,7 @@ commands, Ask AI and plugins, from one search field. Moo is one native process b
 [Tish](https://github.com/tishlang/tish). No webviews, no Node and no JavaScript run anywhere.
 
 Downloads are on [moomoi/moo](https://github.com/moomoi/moo/releases/latest) (Apple silicon and
-Intel, macOS 14 or later), or `brew install --cask moomoi/moo/moo`.
+Intel, macOS 14 or later), or `brew install moomoi/moo/moo`.
 
 ## Docs
 

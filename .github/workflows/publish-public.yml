@@ -100,7 +100,7 @@ jobs:
             echo "## Moo $TAG"
             echo ""
             echo "**Install:** download \`Moo-macos-universal.dmg\`, open it and drag Moo to Applications (Apple silicon and Intel, macOS 14 or later)."
-            echo "Or with Homebrew: \`brew install --cask moomoi/moo/moo\`"
+            echo "Or with Homebrew: \`brew install moomoi/moo/moo\`"
             echo ""
             if [ -n "$LAST_PUBLIC" ] && [ "$LAST_PUBLIC" != "$TAG" ]; then echo "### Changes since ${LAST_PUBLIC}"; else echo "### Changes"; fi
             echo ""

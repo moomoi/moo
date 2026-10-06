@@ -64,7 +64,7 @@ Assets, under fixed names so `releases/latest/download/…` links never change:
    checks the signature, entitlements, both architectures and the notarization tickets.
 4. **Promote:** Releases → vX.Y.Z → Edit → uncheck **Set as a pre-release** → Update release.
    `publish-public.yml` mirrors it to `moomoi/moo` and bumps the cask.
-5. **Check:** `brew update && brew upgrade --cask moomoi/moo/moo`, and `https://moo.moi/download`.
+5. **Check:** `brew update && brew upgrade moomoi/moo/moo`, and `https://moo.moi/download`.
 
 ## Re-running
 

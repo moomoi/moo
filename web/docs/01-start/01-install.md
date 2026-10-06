@@ -17,7 +17,7 @@ summary: Get moo onto your Mac in under a minute, from the download or Homebrew.
 ## Homebrew
 
 ```sh
-brew install --cask moomoi/moo/moo
+brew install moomoi/moo/moo
 ```
 
 Updates come with `brew upgrade`.

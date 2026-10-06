@@ -11,7 +11,7 @@ import { DOCS } from "./docs.tish"
 // Promoted releases are mirrored to this public repo under a fixed asset name (docs/release.md).
 let DOWNLOAD_URL = "https://github.com/moomoi/moo/releases/latest/download/Moo-macos-universal.dmg"
 let REPO_URL = "https://github.com/moomoi/moo"
-let BREW = "brew install --cask moomoi/moo/moo"
+let BREW = "brew install moomoi/moo/moo"
 
 let DIGITS = "0123456789"
 let NONCE_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
