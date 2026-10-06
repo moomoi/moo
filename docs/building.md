@@ -20,6 +20,15 @@
 ## Build
 
 ```sh
+npm ci                       # the tish compiler and Lattish (once, and after package.json changes)
+npm run build                # plugins + app: plugins/dist/, app/dist/moo
+npm test                     # moo-macos unit tests
+npm run clean                # remove every build output (dist/, target/, app and plugin node_modules)
+```
+
+Or step by step:
+
+```sh
 bash plugins/build.sh        # plugins/dist/convert.tishc, plugins/dist/utils.lib
 bash app/build.sh            # app/dist/moo
 bash scripts/bundle-macos.sh # both of the above, then dist/Moo.app
