@@ -79,10 +79,9 @@ function. To ship a change:
 cd web && vercel deploy --prod
 ```
 
-Vercel builds `web/Dockerfile.vercel`. It clones upstream Tish at a pinned commit
-(`TISH_COMMIT`), since the server needs only stock Tish and Vercel can't see the local
-tish-nimble checkout. It then compiles `src/main.tish` and runs the binary on distroless, listening
-on port 80. `web/vercel.json` declares the Dockerfile as a service and sends every path to it.
+Vercel builds `web/Dockerfile.vercel`. It installs the released compiler from npm
+(`@tishlang/tish`, the same version as `package.json`) in a Node stage, compiles `src/main.tish` and runs
+the binary on distroless, listening on port 80. `web/vercel.json` declares the Dockerfile as a service and sends every path to it.
 Without that file Vercel deploys `web/` as static files. A build takes about 5 minutes.
 
 Preview deployments (`vercel deploy` without `--prod`) sit behind Vercel's login; test them with

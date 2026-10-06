@@ -87,19 +87,9 @@ Without `SIGN_IDENTITY` the app is signed ad hoc. Without `APPLE_ID`, `APPLE_PAS
 ## What CI builds with
 
 - **Runner:** `macos-26` (Swift 6.3, macOS 26 SDK), stable Rust with both Mac targets.
-- **Compiler:** `scripts/ci-toolchain.sh` clones `tishlang/tish` at `TISH_REF` (`toolchain.env`,
-  tish 3.12.2), applies `TISH_PATCHES`, and builds it at `../../tish/tish-nimble` from the repo,
-  the path `packages/moo-macos/Cargo.toml` names. It vendors `tishlang/tish-apple` at `APPLE_REF`
-  against that copy. It refuses to touch a directory it didn't create, so running it on a dev
-  machine can't reset a real checkout.
-- **Patches:**
-  - `tish-embedder-plugins.patch` is the `~/Projects/tish/tish-nimble` working tree. Regenerate it
-    whenever that tree changes, or CI builds with stale compiler changes.
-  - `tish-native-target.patch` adds `TISH_NATIVE_CARGO_TARGET`, which builds a desktop binary or
-    plugin for a named triple and not for the build machine's CPU.
-
-  Both should go upstream into `tishlang/tish`. Then `TISH_REF` becomes a release and the patches
-  go away.
+- **Packages:** `.github/actions/toolchain` installs Node and runs `npm ci` in the repo and in
+  `app/`: the tish compiler (`@tishlang/tish`), Lattish and `@tishlang/tish-macos` come from npm,
+  and the tish crates from crates.io. Nothing is vendored or patched.
 - **Universal:** `scripts/build-universal.sh` builds each native artifact (the app and Tier B
   `.lib` plugins) once per triple and combines them with `lipo`. Bytecode plugins (`.tishc`) are
   the same on both. On Intel, Apple Intelligence reports unavailable and Ask AI offers another

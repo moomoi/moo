@@ -9,8 +9,8 @@
 //
 // Event handlers may return an action for the shell: { copy, open, hud, close }.
 
-export { h, Fragment, useState, useEffect, useMemo, useCallback, useRef, memo } from "../../../vendor/lattish/src/Lattish.tish"
-import { h, createRoot } from "../../../vendor/lattish/src/Lattish.tish"
+export { h, Fragment, useState, useEffect, useMemo, useCallback, useRef, memo } from "lattish"
+import { h, createRoot } from "lattish"
 
 // ── Components (flat names: dotted JSX tags don't parse) ──
 

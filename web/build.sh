@@ -4,7 +4,8 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-TISH="${TISH:-/Users/a_/Projects/tish/tish-nimble/target/release/tish}"
+[ -n "${TISH:-}" ] || [ -x ../node_modules/.bin/tish ] || (cd .. && npm ci --no-audit --no-fund)
+TISH="${TISH:-$(cd .. && pwd)/node_modules/.bin/tish}"
 mkdir -p dist
 "$TISH" run --feature fs gen-docs.tish   # web/docs/**/*.md -> src/docs.tish
 unset CARGO_TARGET_DIR

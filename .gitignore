@@ -10,3 +10,5 @@ web/dist/
 web/.vercel/
 /dist/
 /.toolchain/
+
+node_modules/

@@ -1,6 +1,6 @@
 // Lattish (the Tish source: reconciler + hooks) on the bytecode VM, driving a recording host.
 // This is the Tier A plugin shape: the plugin VM runs Lattish, the host receives node operations.
-import { h, Fragment, useState, createRoot } from "../../vendor/lattish/src/Lattish.tish"
+import { h, Fragment, useState, createRoot } from "lattish"
 
 let nextId = 1
 let ops = []

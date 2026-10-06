@@ -1,16 +1,14 @@
 #!/usr/bin/env bash
 # Build the Moo shell as a native macOS binary (no Node, no webview, no JS runtime).
-# Compiler, vendored tish-macos and moo-macos all use the tish-nimble crates (one tishlang_core);
-# see scripts/vendor-tish-apple.sh.
+# Everything comes from package managers: the compiler from npm (../package.json), tish-macos from
+# npm (package.json), and the tish crates both of them and moo-macos use from crates.io.
 set -euo pipefail
 cd "$(dirname "$0")"
 
-TISH="${TISH:-/Users/a_/Projects/tish/tish-nimble/target/release/tish}"
-[ -d ../vendor/tish-apple/crates/tish-macos ] || bash ../scripts/vendor-tish-apple.sh
-mkdir -p node_modules dist
-ln -sfn ../../vendor/tish-apple/crates/tish-macos node_modules/tish-macos
-rm -f node_modules/moo-macos
-ln -sfn ../../packages/moo-macos node_modules/tish-moo
+[ -x ../node_modules/.bin/tish ] || (cd .. && npm ci --no-audit --no-fund)
+npm ci --no-audit --no-fund
+TISH="${TISH:-$(cd .. && pwd)/node_modules/.bin/tish}"
+mkdir -p dist
 
 unset CARGO_TARGET_DIR
 # Matches LSMinimumSystemVersion; also makes the Swift runtime link from /usr/lib/swift (see .cargo/config.toml).

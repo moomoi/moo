@@ -2,12 +2,15 @@
 # Build Moo for Apple silicon and Intel and lipo each native artifact into one universal file:
 #   dist/universal/moo           the app binary
 #   dist/universal/plugins/      bytecode plugins (.tishc, any architecture) + universal .lib plugins
-# Each slice is built with an explicit target triple (TISH_NATIVE_CARGO_TARGET, from
-# patches/tish-native-target.patch), so neither targets the build machine's CPU.
+# Each slice is built with an explicit target triple (TISH_NATIVE_CARGO_TARGET, in tish since
+# v3.15), so neither targets the build machine's CPU.
 #   MOO_VERSION   baked into the binary (`moo --version`); default "dev"
-#   TISH          the compiler (scripts/ci-toolchain.sh prints it)
+#   TISH          the compiler (default: node_modules/.bin/tish, from npm)
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+# The compiler comes from npm (package.json); plugins/build.sh and app/build.sh use $TISH.
+[ -n "${TISH:-}" ] || [ -x "$ROOT/node_modules/.bin/tish" ] || (cd "$ROOT" && npm ci --no-audit --no-fund)
+export TISH="${TISH:-$ROOT/node_modules/.bin/tish}"
 OUT="$ROOT/dist/universal"
 SLICES="$ROOT/dist/slices"
 export MACOSX_DEPLOYMENT_TARGET="${MACOSX_DEPLOYMENT_TARGET:-14.0}"

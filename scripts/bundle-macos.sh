@@ -10,6 +10,9 @@
 #   BUILD          CFBundleVersion; must grow with every release (CI uses the run number)
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+# The compiler comes from npm (package.json); plugins/build.sh and app/build.sh use $TISH.
+[ -n "${TISH:-}" ] || [ -x "$ROOT/node_modules/.bin/tish" ] || (cd "$ROOT" && npm ci --no-audit --no-fund)
+export TISH="${TISH:-$ROOT/node_modules/.bin/tish}"
 VERSION="${VERSION:-0.1.0}"
 BUILD="${BUILD:-$VERSION}"
 BUNDLE_ID="moi.moo.launcher"

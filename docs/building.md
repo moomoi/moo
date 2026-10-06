@@ -7,13 +7,15 @@
 - Rust (tested with 1.94); `rustup target add x86_64-apple-darwin` for universal builds
 - Xcode or the Command Line Tools with the macOS 26 SDK: `build.rs` compiles
   `packages/moo-macos/swift/ai.swift` (Apple's on-device model) with `swiftc`. Tested with Swift 6.3.
-- A tish compiler built from the `tish-nimble` checkout, which carries the cdylib and runtime
-  module-loading changes: `cargo build --release -p tishlang --features full` in
-  `~/Projects/tish/tish-nimble`. The scripts default to
-  `~/Projects/tish/tish-nimble/target/release/tish`; override with `TISH=...`. CI has no such
-  checkout: `scripts/ci-toolchain.sh` rebuilds the same compiler from `toolchain.env` and
-  `patches/` (see [release.md](release.md)), so regenerate `patches/tish-embedder-plugins.patch`
-  when the tish-nimble working tree changes.
+- Node.js and npm. Everything else comes from package managers, nothing is vendored:
+  - the tish compiler, `@tishlang/tish`, and Lattish, from npm (`package.json`; `npm ci`)
+  - `@tishlang/tish-macos`, from npm (`app/package.json`; `app/build.sh` installs it)
+  - the tish crates `packages/moo-macos` uses, from crates.io at the compiler's version, so the
+    app, tish-macos and the generated code share one `tishlang_core`
+
+  The scripts use `node_modules/.bin/tish`; override with `TISH=...`. To move to a new tish, bump
+  `@tishlang/tish` in `package.json` and the `tishlang_*` versions in
+  `packages/moo-macos/Cargo.toml` together.
 
 ## Build
 
@@ -24,8 +26,9 @@ bash scripts/bundle-macos.sh # both of the above, then dist/Moo.app
 bash web/build.sh            # web/dist/moo-web, the moo.moi server (see web.md)
 ```
 
-`app/build.sh` vendors tish-macos on first run (`scripts/vendor-tish-apple.sh`) so that it, the
-compiler runtime and `packages/moo-macos` all use the same `tishlang_core`. Native builds share
+`app/build.sh` installs the npm packages on first run (`npm ci` here and in `app/`). tish-macos,
+the generated code and `packages/moo-macos` all use the tish crates from crates.io, so they share
+one `tishlang_core`. Native builds share
 `target/tish-native`, so rebuilds take about 40 s.
 
 `bundle-macos.sh` produces an `LSUIElement` app (no Dock icon, bundle id `moi.moo.launcher`) with

@@ -66,9 +66,8 @@ Tish binary) over a Unix-socket RPC. It does not exist yet.
 | `  src/vmplug.rs` | Tier A loader: runs a bytecode chunk in a VM with no capabilities |
 | `web/` | The moo.moi site: landing page and the sign-in relay, a native Tish HTTP server (see [web.md](web.md)) |
 | `plugins/` | Example plugins (`utils` is Tier B, `convert` is Tier A) and `build.sh` |
-| `vendor/tish-apple` | Vendored tish-macos, pointed at the same tish checkout (see below) |
-| `scripts/` | Vendoring, `.app` bundling, UI drive scripts used for testing |
-| `poc/`, `patches/` | FFI and Lattish proofs of concept; patches to tish and Lattish |
+| `scripts/` | `.app` bundling, release packaging, UI drive scripts used for testing |
+| `poc/` | FFI and Lattish proofs of concept |
 
 ## The panel
 
@@ -123,7 +122,7 @@ so does showing the panel. `moo key <name>` feeds a key name to the same handler
 and tests.
 
 The Tish view keeps one fixed shape in every state: a header (icon, a borderless search field
-`<textinput bezeled={false} fontSize placeholder>` added to the vendored tish-macos, and four
+`<textinput bezeled={false} fontSize placeholder>` from tish-macos (1.3+), and four
 category buttons that collapse to 1 pt columns when expanded), 13 list slots, 4 grid rows of 7
 icons, and a footer with up to three key-cap hints. Each list slot is a result row, a section
 heading or filler, and filler takes the leftover height so the list height never changes. A
@@ -347,7 +346,7 @@ closure the VM creates) and wraps each export in a native function that arms a p
 (`tishlang_core::set_thread_execution_deadline`) for the call. A runaway plugin throws after 250 ms
 (1000 ms for its top level) instead of freezing the launcher, and the other plugins keep working.
 The interpreter polls the deadline on loop back-edges and on function calls, so loop-free
-recursion is caught too. Both controls are in the `tish-nimble` checkout and are covered by
+recursion is caught too. Both controls are in tish (since 3.15) and are covered by
 `tish_vm/tests/multi_vm_isolation.rs` and `jit_off_leaves_jit_state.rs`.
 
 Not covered yet: memory (a plugin can allocate without limit), and time spent inside one builtin
@@ -367,9 +366,9 @@ binaries. So:
 
 See [building.md](building.md). Two constraints shape it:
 
-- Cargo identifies a path crate by its path, so tish-macos, `moo-macos` and the compiler's
-  runtime must all point at the same tish checkout, or two incompatible copies of `tishlang_core`
-  get linked. `scripts/vendor-tish-apple.sh` vendors tish-macos with its paths rewritten.
+- tish-macos, `moo-macos` and the code the compiler generates must share one `tishlang_core`.
+  They all take the tish crates from crates.io at semver-compatible versions, so Cargo resolves
+  one copy; keep `packages/moo-macos/Cargo.toml` on the compiler's version.
 - The app build enables `send-values` on `tishlang_core`, so the embedded `tishlang_vm` must be
   built with `send-values` too.
 

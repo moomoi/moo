@@ -1,7 +1,7 @@
 name: Moo toolchain
 description: >-
-  Rust (both Mac targets), ripgrep, and the pinned Tish compiler plus vendored tish-apple from
-  scripts/ci-toolchain.sh, with the compiler and Moo's native builds cached.
+  Rust (both Mac targets) and the tish compiler from npm (package.json), with the cargo registry
+  and Moo's native builds cached. Exports TISH for plugins/build.sh and app/build.sh.
 
 runs:
   using: composite
@@ -10,37 +10,31 @@ runs:
       with:
         targets: aarch64-apple-darwin,x86_64-apple-darwin
 
-    # plugins/build.sh and scripts/vendor-tish-apple.sh read manifests with rg.
-    - name: ripgrep
-      shell: bash
-      run: command -v rg >/dev/null || brew install ripgrep
+    - uses: actions/setup-node@v4
+      with:
+        node-version: "22"
+        cache: npm
+        cache-dependency-path: |
+          package-lock.json
+          app/package-lock.json
 
-    # packages/moo-macos/Cargo.toml names ../../tish/tish-nimble from the repo, so the compiler is
-    # built there (see scripts/ci-toolchain.sh), outside the workspace.
-    - name: Toolchain paths
-      id: paths
-      shell: bash
-      run: echo "tish=$(cd "$GITHUB_WORKSPACE/../.." && pwd)/tish/tish-nimble" >> "$GITHUB_OUTPUT"
-
-    - uses: actions/cache@v6
+    - uses: actions/cache@v4
       with:
         path: |
           ~/.cargo/registry/index
           ~/.cargo/registry/cache
           ~/.cargo/git/db
-          ${{ steps.paths.outputs.tish }}/target
-        key: tish-${{ runner.os }}-${{ hashFiles('toolchain.env', 'patches/tish-*.patch') }}
-
-    - uses: actions/cache@v6
-      with:
-        path: |
           target
           packages/moo-macos/target
-        key: moo-native-${{ runner.os }}-${{ hashFiles('toolchain.env', 'patches/*.patch', 'packages/moo-macos/Cargo.lock') }}-${{ github.sha }}
+        key: moo-native-${{ runner.os }}-${{ hashFiles('package-lock.json', 'app/package-lock.json', 'packages/moo-macos/Cargo.lock') }}-${{ github.sha }}
         restore-keys: |
-          moo-native-${{ runner.os }}-${{ hashFiles('toolchain.env', 'patches/*.patch', 'packages/moo-macos/Cargo.lock') }}-
+          moo-native-${{ runner.os }}-${{ hashFiles('package-lock.json', 'app/package-lock.json', 'packages/moo-macos/Cargo.lock') }}-
           moo-native-${{ runner.os }}-
 
-    - name: Tish compiler and tish-apple
+    - name: Tish compiler and packages (npm)
       shell: bash
-      run: bash scripts/ci-toolchain.sh
+      run: |
+        npm ci --no-audit --no-fund
+        (cd app && npm ci --no-audit --no-fund)
+        echo "TISH=$PWD/node_modules/.bin/tish" >> "$GITHUB_ENV"
+        node_modules/.bin/tish --version

@@ -6,7 +6,7 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 if [ "${1:-}" = "build" ]; then
-  TISH="${TISH:-/Users/a_/Projects/tish/tish-nimble/target/release/tish}"
+  TISH="${TISH:-$ROOT/node_modules/.bin/tish}"
   mkdir -p /tmp/moo-runaway/plugins
   "$TISH" build "$ROOT/scripts/fixtures/runaway.tish" --target bytecode -o /tmp/moo-runaway/plugins/runaway.tishc
   cp "$ROOT/plugins/dist/convert.tishc" /tmp/moo-runaway/plugins/
