@@ -470,6 +470,10 @@ fn make_piece(mtm: MainThreadMarker) -> Retained<NSView> {
         let g = NSGlassEffectView::initWithFrame(NSGlassEffectView::alloc(mtm), NSRect::ZERO);
         g.setStyle(theme.glass_style);
         wrap.addSubview(&g);
+        // A dimming layer over the glass, under the views, so busy content behind stays readable.
+        let scrim = NSView::initWithFrame(NSView::alloc(mtm), NSRect::ZERO);
+        scrim.setWantsLayer(true);
+        wrap.addSubview(&scrim);
         return wrap;
     }
     let fx = NSVisualEffectView::initWithFrame(NSVisualEffectView::alloc(mtm), NSRect::ZERO);
@@ -513,6 +517,10 @@ fn place_piece(piece: &NSView, rect: NSRect, radius: f64) {
         if let Some(g) = glass_face(piece) {
             g.setFrame(NSRect::new(NSPoint::new(0.0, rect.size.height - full_h), NSSize::new(rect.size.width, full_h)));
             g.setCornerRadius(radius.min(full_h / 2.0).min(rect.size.width / 2.0).max(0.0));
+        }
+        let faces = piece.subviews();
+        if faces.count() > 1 {
+            faces.objectAtIndex(1).setFrame(piece.bounds());
         }
         return;
     }
@@ -607,6 +615,7 @@ fn refresh_edge(w: &NSWindow) {
     let theme = theme::get();
     if GLASS.with(|g| g.get()) {
         let single = current_shape().1.len() == 1;
+        let scrim = theme.glass_scrim.resolve(dark);
         let tint = if single { &theme.glass_tint_panel } else { &theme.glass_tint_bar }.resolve(dark);
         PIECES.with(|p| {
             for piece in p.borrow().iter() {
@@ -614,6 +623,12 @@ fn refresh_edge(w: &NSWindow) {
                     g.setTintColor(tint.as_deref());
                     // Follow the panel's light or dark appearance, not the wallpaper's.
                     g.setAppearance(Some(&appearance));
+                }
+                let faces = piece.subviews();
+                if faces.count() > 1 {
+                    if let Some(layer) = faces.objectAtIndex(1).layer() {
+                        layer.setBackgroundColor(scrim.as_ref().map(|c| c.CGColor()).as_deref());
+                    }
                 }
             }
         });

@@ -49,6 +49,7 @@ pub struct Theme {
     /// Glass tint for a shape of several pieces (the idle bar) and for the one-piece panel.
     pub glass_tint_bar: Color,
     pub glass_tint_panel: Color,
+    pub glass_scrim: Color,
     /// Before macOS 26: vibrancy material, its tint and hairline edge, and the window shadow.
     pub material: NSVisualEffectMaterial,
     pub vibrancy_tint: Color,
@@ -84,6 +85,7 @@ impl Default for Theme {
             glass_spacing: 0.0,
             glass_tint_bar: Color::default(),
             glass_tint_panel: Color::default(),
+            glass_scrim: Color::default(),
             material: NSVisualEffectMaterial::WindowBackground,
             vibrancy_tint: Color::default(),
             edge: Color::default(),
@@ -152,6 +154,7 @@ pub fn set(v: &Value) {
         glass_spacing: num(&["glass", "spacing"], d.glass_spacing),
         glass_tint_bar: color(&["glass", "tint", "bar"]),
         glass_tint_panel: color(&["glass", "tint", "panel"]),
+        glass_scrim: color(&["glass", "scrim"]),
         material: material(&text(&["vibrancy", "material"])),
         vibrancy_tint: color(&["vibrancy", "tint"]),
         edge: color(&["vibrancy", "edge"]),

@@ -127,6 +127,9 @@ export const THEME = {
       bar: { light: "#F7F7FA59", dark: "#0F0F1259" },
       panel: { light: "#F7F7FA59", dark: "#0F0F1259" },
     },
+    // Drawn over the glass, under the views: how much the glass dims what is behind it, so busy
+    // content (text, windows) never competes with Moo's own. Raise the alpha for more contrast.
+    scrim: { light: "#FAFAFC8C", dark: "#0C0C0E8C" },
   },
   // Before macOS 26: raw vibrancy lets busy windows show through, so a dense tint keeps text
   // readable, with a hairline edge and the window's shadow.
