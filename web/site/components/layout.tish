@@ -1,8 +1,8 @@
 // The page frame: <html> with the inline stylesheet, the background, nav and footer.
-import { h } from "lattish"
-import { STYLE } from "../style.tish"
-import { ICON_PNG, FAVICON_PNG } from "../icon.tish"
-import { PLUGINS_REPO } from "../links.tish"
+import { h } from 'lattish'
+import { STYLE } from '../style.tish'
+import { ICON_PNG, FAVICON_PNG } from '../icon.tish'
+import { PLUGINS_REPO } from '../links.tish'
 
 export fn Shell(props) {
   return (
@@ -26,7 +26,7 @@ export fn Shell(props) {
 
 // A nav link, lit up when it is the current section.
 fn NavLink(props) {
-  return <a href={props.href} class={props.active === props.name ? "on" : null}>{props.children}</a>
+  return <a href={props.href} class={props.active === props.name ? 'on' : null}>{props.children}</a>
 }
 
 export fn Nav(props) {

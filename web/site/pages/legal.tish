@@ -1,14 +1,14 @@
-import { h } from "lattish"
-import { Page } from "../components/layout.tish"
-import { REPO_URL } from "../links.tish"
+import { h } from 'lattish'
+import { Page } from '../components/layout.tish'
+import { REPO_URL } from '../links.tish'
 
 // Legal pages: a side menu and the text. `active` lights up the current page in the menu.
 fn Legal(props) {
-  let link = (href, name, label) => <a href={href} class={props.active === name ? "on" : null}>{label}</a>
+  let link = (href, name, label) => <a href={href} class={props.active === name ? 'on' : null}>{label}</a>
   return (
     <Page title={props.title} active="legal">
       <div class="wrap doc">
-        <aside>{link("/legal", "index", "Overview")}{link("/legal/terms", "terms", "Terms of Use")}{link("/legal/privacy", "privacy", "Privacy")}</aside>
+        <aside>{link('/legal', 'index', 'Overview')}{link('/legal/terms', 'terms', 'Terms of Use')}{link('/legal/privacy', 'privacy', 'Privacy')}</aside>
         <article class="prose up">{props.children}</article>
       </div>
     </Page>

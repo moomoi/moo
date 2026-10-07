@@ -1,18 +1,18 @@
-import { h } from "lattish"
-import { Page, Hero } from "../components/layout.tish"
-import { Icon } from "../components/icons.tish"
-import { PLUGINS, tagLabel } from "../plugins.tish"
-import { PLUGINS_REPO } from "../links.tish"
+import { h } from 'lattish'
+import { Page, Hero } from '../components/layout.tish'
+import { Icon } from '../components/icons.tish'
+import { PLUGINS, tagLabel } from '../plugins.tish'
+import { PLUGINS_REPO } from '../links.tish'
 
 fn Tag(props) {
-  return <span class={props.plugin.tag === "core" ? "tag core" : "tag"}>{tagLabel(props.plugin)}</span>
+  return <span class={props.plugin.tag === 'core' ? 'tag core' : 'tag'}>{tagLabel(props.plugin)}</span>
 }
 
 fn PluginCard(props) {
   let p = props.plugin
   return (
-    <a class="card plug" href={"/marketplace/" + p.id}>
-      <div class="top"><div class="glyph">{p.glyph}</div><div><h3>{p.name}</h3><span class="by">{"by " + p.by}</span></div></div>
+    <a class="card plug" href={'/marketplace/' + p.id}>
+      <div class="top"><div class="glyph">{p.glyph}</div><div><h3>{p.name}</h3><span class="by">{'by ' + p.by}</span></div></div>
       <p>{p.text}</p>
       <Tag plugin={p} />
     </a>
@@ -41,26 +41,26 @@ export fn Marketplace() {
 // What the plugin may reach, for the facts box.
 fn Access(props) {
   let p = props.plugin
-  if (p.tier !== "A") {
-    return "Full (first-party native plugin)"
+  if (p.tier !== 'A') {
+    return 'Full (first-party native plugin)'
   }
   if (p.network.length === 0) {
-    return "None. No files, no network"
+    return 'None. No files, no network'
   }
-  return <raw html={"Network: <code>" + p.network.join("</code>, <code>") + "</code> only"} />
+  return <raw html={'Network: <code>' + p.network.join('</code>, <code>') + '</code> only'} />
 }
 
 export fn PluginPage(props) {
   let p = props.plugin
-  let source = PLUGINS_REPO + "/tree/main/" + p.id
+  let source = PLUGINS_REPO + '/tree/main/' + p.id
   return (
-    <Page title={p.name + " · Moo Marketplace"} active="market">
+    <Page title={p.name + ' · Moo Marketplace'} active="market">
       <div class="wrap pdp">
         <a class="back" href="/marketplace">← Marketplace</a>
         <header class="up">
           <div class="glyph big">{p.glyph}</div>
-          <div class="who"><h1>{p.name}</h1><p>{p.text}</p><div class="meta"><Tag plugin={p} /><span class="by">{"by " + p.by}</span></div></div>
-          <div class="get"><a class="btn go" href={"moo://plugins/" + p.id}><Icon name="down" />Install</a><span class="fine">Opens in moo. <a href="/get">Don't have it?</a></span></div>
+          <div class="who"><h1>{p.name}</h1><p>{p.text}</p><div class="meta"><Tag plugin={p} /><span class="by">{'by ' + p.by}</span></div></div>
+          <div class="get"><a class="btn go" href={'moo://plugins/' + p.id}><Icon name="down" />Install</a><span class="fine">Opens in moo. <a href="/get">Don't have it?</a></span></div>
         </header>
         <div class="cols up d2">
           <div>

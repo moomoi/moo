@@ -1,12 +1,12 @@
-import { h } from "lattish"
-import { Page } from "../components/layout.tish"
-import { Icon } from "../components/icons.tish"
-import { Demo } from "../components/demo.tish"
-import { BREW } from "../links.tish"
+import { h } from 'lattish'
+import { Page } from '../components/layout.tish'
+import { Icon } from '../components/icons.tish'
+import { Demo } from '../components/demo.tish'
+import { BREW } from '../links.tish'
 
 fn Feature(props) {
   return (
-    <div class={props.size ? "card " + props.size : "card"}>
+    <div class={props.size ? 'card ' + props.size : 'card'}>
       {props.icon ? <div class="glyph"><Icon name={props.icon} /></div> : null}
       {props.stat ? <div class="stat grad">{props.stat}</div> : null}
       <h3>{props.title}</h3>

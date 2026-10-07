@@ -10,12 +10,12 @@
 // Note for the native compiler: a parameter that is only stored in an object literal gets typed as
 // a number (and panics on a string), so such parameters go through `"" + x` first.
 
-import { macos } from "tish:macos"
-import { fetch } from "tish:http"
-import { env } from "tish:process"
-import { keychainGet, keychainSet, keychainDelete, keychainHas, oauthSignIn, oauthCancel, oauthRefresh, withUi } from "tish:moo"
-import { aiConfig } from "./shortcutsfile.tish"
-import { providers, splitModel, origin, endpoints, oauthAccount, noCredential, newLines, feedLines, newStream, streamLine, errorMessage, parseModels, parseOrgs, activeOrg, dollars, parseTokens, tokensJson, staleTokens, ORG_HEADER, utf8 } from "./aicore.tish"
+import { macos } from 'tish:macos'
+import { fetch } from 'tish:http'
+import { env } from 'tish:process'
+import { keychainGet, keychainSet, keychainDelete, keychainHas, oauthSignIn, oauthCancel, oauthRefresh, withUi } from 'tish:moo'
+import { aiConfig } from './shortcutsfile.tish'
+import { providers, splitModel, origin, endpoints, oauthAccount, noCredential, newLines, feedLines, newStream, streamLine, errorMessage, parseModels, parseOrgs, activeOrg, dollars, parseTokens, tokensJson, staleTokens, ORG_HEADER, utf8 } from './aicore.tish'
 
 // Wait for `p`, then `cb(value, error)` against the launcher UI (focus kept).
 fn settle(p, cb) {
@@ -43,11 +43,11 @@ fn findProvider(name) {
 }
 
 fn envValue(name) {
-  if (name === "") {
-    return ""
+  if (name === '') {
+    return ''
   }
   let v = env[name]
-  return typeof v === "string" ? v : ""
+  return typeof v === 'string' ? v : ''
 }
 
 // ── Credentials ─────────────────────────────────────────────────────────────
@@ -56,12 +56,12 @@ fn envValue(name) {
 // or "".
 fn credentialSource(p) {
   if (keychainHas(p.id)) {
-    return "key"
+    return 'key'
   }
   if (keychainHas(oauthAccount(p.id))) {
-    return "signed in"
+    return 'signed in'
   }
-  return envValue(p.keyEnv) !== "" ? "environment" : ""
+  return envValue(p.keyEnv) !== '' ? 'environment' : ''
 }
 
 // Refreshes in flight, by provider id: the callbacks waiting for the new token.
@@ -72,7 +72,7 @@ let refreshing = {}
 fn credential(p, done) {
   if (keychainHas(p.id)) {
     let k = keychainGet(p.id)
-    if (typeof k === "string" && k !== "") {
+    if (typeof k === 'string' && k !== '') {
       done(null, k)
       return
     }
@@ -80,25 +80,25 @@ fn credential(p, done) {
   let account = oauthAccount(p.id)
   if (keychainHas(account)) {
     let saved = keychainGet(account)
-    let t = typeof saved === "string" ? parseTokens(saved) : null
+    let t = typeof saved === 'string' ? parseTokens(saved) : null
     if (t !== null && !staleTokens(t, now())) {
       done(null, t.access)
       return
     }
     let ep = endpoints(p)
-    if (t !== null && ep !== null && t.refresh !== "") {
+    if (t !== null && ep !== null && t.refresh !== '') {
       if (p.id in refreshing) {
         refreshing[p.id].push(done)
         return
       }
       refreshing[p.id] = [done]
-      let title = "" + p.title
+      let title = '' + p.title
       oauthRefresh(ep, t.refresh, (r) => {
         let waiting = refreshing[p.id]
         delete refreshing[p.id]
         let err = null
-        if (r.error !== "") {
-          err = title + ": sign in again (" + r.error + ")"
+        if (r.error !== '') {
+          err = title + ': sign in again (' + r.error + ')'
         } else {
           let saveError = keychainSet(account, tokensJson(r))
           if (saveError !== null) {
@@ -115,19 +115,19 @@ fn credential(p, done) {
   // The index lists it but the Keychain would not hand it over: another build of Moo (signed
   // differently) saved it, or the prompt was refused. "Not signed in" would contradict the UI.
   if (keychainHas(p.id) || keychainHas(account)) {
-    done(p.title + ": the Keychain would not give Moo the saved sign-in; sign in again", null)
+    done(p.title + ': the Keychain would not give Moo the saved sign-in; sign in again', null)
     return
   }
   let fromEnv = envValue(p.keyEnv)
-  done(null, fromEnv !== "" ? fromEnv : null)
+  done(null, fromEnv !== '' ? fromEnv : null)
 }
 
 fn headersFor(key, org) {
-  let h = { "Content-Type": "application/json" }
+  let h = { 'Content-Type': 'application/json' }
   if (key !== null) {
-    h["Authorization"] = "Bearer " + key
+    h['Authorization'] = 'Bearer ' + key
   }
-  if (org !== "") {
+  if (org !== '') {
     h[ORG_HEADER] = org
   }
   return h
@@ -135,7 +135,7 @@ fn headersFor(key, org) {
 
 // Read a whole response body as text; `done(text)` ("" on failure).
 fn bodyText(res, done) {
-  settle(res.text(), (t, e) => done(e === null && typeof t === "string" ? t : ""))
+  settle(res.text(), (t, e) => done(e === null && typeof t === 'string' ? t : ''))
 }
 
 // ── Chat ────────────────────────────────────────────────────────────────────
@@ -152,19 +152,19 @@ fn stopped(request, cb) {
   if (!(request in cancelled)) {
     return false
   }
-  if (cancelled[request] === "pending") {
-    cb(event(request, "cancelled", newStream()))
+  if (cancelled[request] === 'pending') {
+    cb(event(request, 'cancelled', newStream()))
   }
   delete cancelled[request]
   return true
 }
 
 fn event(request, kind, st) {
-  return { request: request, kind: "" + kind, text: st.text, calls: st.calls, finish: st.finish }
+  return { request: request, kind: '' + kind, text: st.text, calls: st.calls, finish: st.finish }
 }
 
 fn failEvent(request, message) {
-  return { request: request, kind: "error", text: "" + message, calls: [], finish: "" }
+  return { request: request, kind: 'error', text: '' + message, calls: [], finish: '' }
 }
 
 // Read the event stream; `cb` gets "partial" events while text arrives, then "done" or "error".
@@ -175,7 +175,7 @@ fn readStream(request, reader, lines, st, cb) {
     }
     if (err !== null) {
       delete active[request]
-      cb(failEvent(request, "" + err))
+      cb(failEvent(request, '' + err))
       return
     }
     let changed = false
@@ -193,12 +193,12 @@ fn readStream(request, reader, lines, st, cb) {
     lines.done = []
     if (r.done) {
       delete active[request]
-      streamLine(st, "")
-      cb(st.error !== "" ? failEvent(request, st.error) : event(request, "done", st))
+      streamLine(st, '')
+      cb(st.error !== '' ? failEvent(request, st.error) : event(request, 'done', st))
       return
     }
     if (changed) {
-      cb(event(request, "partial", st))
+      cb(event(request, 'partial', st))
     }
     readStream(request, reader, lines, st, cb)
   })
@@ -209,18 +209,18 @@ fn send(request, url, key, org, body, attempt, cb) {
     return
   }
   let h = headersFor(key, org)
-  h["Accept"] = "text/event-stream"
-  settle(fetch(url, { method: "POST", headers: h, body: body, timeout: 0 }), (res, err) => {
+  h['Accept'] = 'text/event-stream'
+  settle(fetch(url, { method: 'POST', headers: h, body: body, timeout: 0 }), (res, err) => {
     if (stopped(request, cb)) {
       return
     }
     if (err !== null || res.error) {
-      cb(failEvent(request, err !== null ? "" + err : res.error))
+      cb(failEvent(request, err !== null ? '' + err : res.error))
       return
     }
     if (res.status !== 200) {
       bodyText(res, (text) => {
-        let limited = res.status === 429 || text.indexOf("RATE_LIMITED") >= 0
+        let limited = res.status === 429 || text.indexOf('RATE_LIMITED') >= 0
         if (limited && attempt < 2) {
           setTimeout(() => send(request, url, key, org, body, attempt + 1, cb), 1500 * Math.pow(2, attempt))
           return
@@ -247,11 +247,11 @@ export fn aiChat(model, messages, tools, cb) {
   // Answer on the next turn, so the caller has the id before the first event.
   let answer = (e) => setTimeout(() => withUi(() => cb(e)), 0)
   if (p === null) {
-    answer(failEvent(request, "unknown AI provider `" + parts[0] + "`"))
+    answer(failEvent(request, 'unknown AI provider `' + parts[0] + '`'))
     return request
   }
-  if (name === "") {
-    answer(failEvent(request, "name a model: `" + p.id + ":<model>` (see `moo ai models`)"))
+  if (name === '') {
+    answer(failEvent(request, 'name a model: `' + p.id + ':<model>` (see `moo ai models`)'))
     return request
   }
   credential(p, (err, key) => {
@@ -266,12 +266,12 @@ export fn aiChat(model, messages, tools, cb) {
       answer(failEvent(request, noCredential(p)))
       return
     }
-    let body = "{\"model\":" + JSON.stringify(name) + ",\"stream\":true,\"messages\":" + (messages.trim() === "" ? "[]" : messages)
+    let body = '{"model":' + JSON.stringify(name) + ',"stream":true,"messages":' + (messages.trim() === '' ? '[]' : messages)
     let t = tools.trim()
-    if (t !== "" && t !== "[]") {
-      body = body + ",\"tools\":" + t
+    if (t !== '' && t !== '[]') {
+      body = body + ',"tools":' + t
     }
-    send(request, p.url + "/chat/completions", key, p.organization, body + "}", 0, cb)
+    send(request, p.url + '/chat/completions', key, p.organization, body + '}', 0, cb)
   })
   return request
 }
@@ -281,25 +281,25 @@ export fn aiChatCancel(request) {
   if (request in active) {
     let a = active[request]
     delete active[request]
-    cancelled[request] = "reported"
-    withUi(() => a.cb(event(request, "cancelled", a.st)))
+    cancelled[request] = 'reported'
+    withUi(() => a.cb(event(request, 'cancelled', a.st)))
   } else {
-    cancelled[request] = "pending"
+    cancelled[request] = 'pending'
   }
 }
 
 // ── Models ──────────────────────────────────────────────────────────────────
 
 fn listing(p, models, error) {
-  return { provider: p.id, title: p.title, models: [].concat(models), error: "" + error }
+  return { provider: p.id, title: p.title, models: [].concat(models), error: '' + error }
 }
 
 fn listModels(p, done) {
   let fetchList = (key) => {
-    let h = headersFor(key, "")
-    settle(fetch(p.url + "/models" + p.modelsQuery, { headers: h, timeout: p.local ? 2000 : 20000 }), (res, err) => {
+    let h = headersFor(key, '')
+    settle(fetch(p.url + '/models' + p.modelsQuery, { headers: h, timeout: p.local ? 2000 : 20000 }), (res, err) => {
       if (err !== null || res.error) {
-        done(listing(p, [], p.local ? "not running" : (err !== null ? "" + err : res.error)))
+        done(listing(p, [], p.local ? 'not running' : (err !== null ? '' + err : res.error)))
         return
       }
       bodyText(res, (text) => {
@@ -308,10 +308,10 @@ fn listModels(p, done) {
           return
         }
         let models = parseModels(text)
-        if (p.modelsQuery === "") {
+        if (p.modelsQuery === '') {
           models.sort((a, b) => a.id < b.id ? -1 : (a.id > b.id ? 1 : 0))
         }
-        done(listing(p, models, ""))
+        done(listing(p, models, ''))
       })
     })
   }
@@ -324,7 +324,7 @@ fn listModels(p, done) {
     if (err !== null) {
       done(listing(p, [], err))
     } else if (key === null && !p.local) {
-      done(listing(p, [], "no API key"))
+      done(listing(p, [], 'no API key'))
     } else {
       fetchList(key)
     }
@@ -351,12 +351,12 @@ export fn aiModels(cb) {
 
 // `[{ id, title, url, local, credential, oauth, signIn, account }]`, Apple's on-device model first.
 export fn aiProviders() {
-  let rows = [{ id: "apple", title: "Apple on-device", url: "", local: true, credential: "", oauth: false, signIn: false, account: false }]
+  let rows = [{ id: 'apple', title: 'Apple on-device', url: '', local: true, credential: '', oauth: false, signIn: false, account: false }]
   let list = allProviders()
   for (let i = 0; i < list.length; i = i + 1) {
     let p = list[i]
     rows.push({ id: p.id, title: p.title, url: p.url, local: p.local, credential: credentialSource(p), oauth: p.oauth !== null,
-      signIn: p.oauth !== null && p.clientId !== "", account: p.account })
+      signIn: p.oauth !== null && p.clientId !== '', account: p.account })
   }
   return rows
 }
@@ -364,27 +364,27 @@ export fn aiProviders() {
 // ── Accounts (Hypery) ───────────────────────────────────────────────────────
 
 fn newAccount(p, pname) {
-  let o = p === null ? "" : origin(p.url)
-  return { provider: "" + pname, credential: p === null ? "" : credentialSource(p), email: "", name: "", manage: o + "/dashboard",
-    billing: o + "/dashboard", keys: o + "/dashboard", balance: -1, monthSpent: -1, monthLimit: -1, organization: "", orgs: [], error: "" }
+  let o = p === null ? '' : origin(p.url)
+  return { provider: '' + pname, credential: p === null ? '' : credentialSource(p), email: '', name: '', manage: o + '/dashboard',
+    billing: o + '/dashboard', keys: o + '/dashboard', balance: -1, monthSpent: -1, monthLimit: -1, organization: '', orgs: [], error: '' }
 }
 
 fn setLinks(a, o, slug) {
-  if (slug !== "") {
-    a.manage = o + "/settings/" + slug
-    a.billing = o + "/settings/" + slug + "/billing"
-    a.keys = o + "/settings/" + slug + "/api-keys"
+  if (slug !== '') {
+    a.manage = o + '/settings/' + slug
+    a.billing = o + '/settings/' + slug + '/billing'
+    a.keys = o + '/settings/' + slug + '/api-keys'
   }
 }
 
 fn readBalance(a, text) {
   let v = JSON.parse(text)
-  if (typeof v === "object" && v !== null && typeof v.balance === "object" && v.balance !== null) {
+  if (typeof v === 'object' && v !== null && typeof v.balance === 'object' && v.balance !== null) {
     a.balance = dollars(v.balance.current)
     a.monthSpent = dollars(v.balance.monthlySpent)
     a.monthLimit = dollars(v.balance.monthlyLimit)
   } else {
-    a.error = "the balance reply had no balance"
+    a.error = 'the balance reply had no balance'
   }
 }
 
@@ -393,7 +393,7 @@ fn getPath(p, key, path, done) {
   let h = headersFor(key, p.organization)
   settle(fetch(origin(p.url) + path, { headers: h, timeout: 15000 }), (res, err) => {
     if (err !== null || res.error) {
-      done(0, err !== null ? "" + err : res.error)
+      done(0, err !== null ? '' + err : res.error)
       return
     }
     bodyText(res, (text) => done(res.status, text))
@@ -412,12 +412,12 @@ fn fetchAccount(p, key, cb) {
     }
     // The wallet of the organization in the header; it needs `billing:read`. Without that scope
     // only the personal wallet is readable.
-    getPath(p, key, "/api/wallet/state", (st, text) => {
+    getPath(p, key, '/api/wallet/state', (st, text) => {
       if (st === 200) {
         readBalance(a, text)
         cb(a)
       } else if ((st === 403 || st === 404) && personal) {
-        getPath(p, key, "/api/wallet/balance", (st2, text2) => {
+        getPath(p, key, '/api/wallet/balance', (st2, text2) => {
           if (st2 === 200) {
             readBalance(a, text2)
           } else {
@@ -432,24 +432,24 @@ fn fetchAccount(p, key, cb) {
     })
   }
   let memberships = () => {
-    getPath(p, key, "/api/auth/list_memberships", (st, text) => {
+    getPath(p, key, '/api/auth/list_memberships', (st, text) => {
       if (st === 200) {
         a.orgs = parseOrgs(text)
       }
       wallet()
     })
   }
-  if (a.credential !== "signed in") {
+  if (a.credential !== 'signed in') {
     memberships()
     return
   }
-  getPath(p, key, "/api/user/me", (st, text) => {
+  getPath(p, key, '/api/user/me', (st, text) => {
     if (st === 200) {
       let v = JSON.parse(text)
-      if (typeof v === "object" && v !== null) {
-        a.email = typeof v.email === "string" ? v.email : ""
-        a.name = typeof v.name === "string" ? v.name : ""
-        setLinks(a, o, typeof v.slug === "string" ? v.slug : "")
+      if (typeof v === 'object' && v !== null) {
+        a.email = typeof v.email === 'string' ? v.email : ''
+        a.name = typeof v.name === 'string' ? v.name : ''
+        setLinks(a, o, typeof v.slug === 'string' ? v.slug : '')
       }
     }
     memberships()
@@ -464,20 +464,20 @@ export fn aiAccount(pname, cb) {
   let answer = (a) => setTimeout(() => withUi(() => cb(a)), 0)
   if (p === null) {
     let a = newAccount(null, pname)
-    a.error = "unknown AI provider `" + pname + "`"
+    a.error = 'unknown AI provider `' + pname + '`'
     answer(a)
     return
   }
   if (!p.account) {
     let a = newAccount(p, p.id)
-    a.error = p.title + " has no account details"
+    a.error = p.title + ' has no account details'
     answer(a)
     return
   }
   credential(p, (err, key) => {
     if (err !== null || key === null) {
       let a = newAccount(p, p.id)
-      a.error = err !== null ? err : "not signed in"
+      a.error = err !== null ? err : 'not signed in'
       answer(a)
       return
     }
@@ -490,14 +490,14 @@ export fn aiAccount(pname, cb) {
 // Save (or, with "", forget) an API key -> { ok, error }.
 export fn aiSetKey(pname, key) {
   if (findProvider(pname) === null) {
-    return { ok: false, error: "unknown AI provider `" + pname + "`" }
+    return { ok: false, error: 'unknown AI provider `' + pname + '`' }
   }
-  if (key.trim() === "") {
+  if (key.trim() === '') {
     keychainDelete(pname)
-    return { ok: true, error: "" }
+    return { ok: true, error: '' }
   }
   let e = keychainSet(pname, key.trim())
-  return e === null ? { ok: true, error: "" } : { ok: false, error: e }
+  return e === null ? { ok: true, error: '' } : { ok: false, error: e }
 }
 
 // Forget the provider's API key and sign-in.
@@ -509,28 +509,28 @@ export fn aiLogout(pname) {
 // Browser sign-in; `cb({ ok, error })`.
 export fn aiLogin(pname, cb) {
   let p = findProvider(pname)
-  let answer = (error) => setTimeout(() => withUi(() => cb({ ok: error === "", error: error })), 0)
+  let answer = (error) => setTimeout(() => withUi(() => cb({ ok: error === '', error: error })), 0)
   if (p === null) {
-    answer("unknown AI provider `" + pname + "`")
+    answer('unknown AI provider `' + pname + '`')
     return
   }
   let ep = endpoints(p)
   if (ep === null) {
-    answer(p.title + " has no browser sign-in; use an API key")
+    answer(p.title + ' has no browser sign-in; use an API key')
     return
   }
-  if (ep.clientId === "") {
-    answer(p.title + " sign-in needs an OAuth client id: set ai.providers." + p.id + ".clientId in shortcuts.json or MOO_" + p.id.toUpperCase() + "_CLIENT_ID")
+  if (ep.clientId === '') {
+    answer(p.title + ' sign-in needs an OAuth client id: set ai.providers.' + p.id + '.clientId in shortcuts.json or MOO_' + p.id.toUpperCase() + '_CLIENT_ID')
     return
   }
   let account = oauthAccount(p.id)
   oauthSignIn(ep, (r) => {
-    if (r.error !== "") {
+    if (r.error !== '') {
       cb({ ok: false, error: r.error })
       return
     }
     let e = keychainSet(account, tokensJson(r))
-    cb({ ok: e === null, error: e === null ? "" : e })
+    cb({ ok: e === null, error: e === null ? '' : e })
   })
 }
 

@@ -14,14 +14,14 @@ fn roundAway(x) {
 }
 
 fn trimZeros(s) {
-  if (s.indexOf(".") < 0) {
+  if (s.indexOf('.') < 0) {
     return s
   }
   let end = s.length
-  while (end > 0 && s[end - 1] === "0") {
+  while (end > 0 && s[end - 1] === '0') {
     end = end - 1
   }
-  if (end > 0 && s[end - 1] === ".") {
+  if (end > 0 && s[end - 1] === '.') {
     end = end - 1
   }
   return s.slice(0, end)
@@ -33,20 +33,20 @@ fn sig(v, digits) {
     return null
   }
   if (v === 0) {
-    return "0"
+    return '0'
   }
   let a = Math.abs(v)
   if (a < 1e-9 || a >= 1e15) {
     let s = v.toExponential(Math.max(Math.min(digits, 7) - 1, 0))
-    let i = s.indexOf("e")
+    let i = s.indexOf('e')
     let mantissa = trimZeros(s.slice(0, i))
     let exp = parseInt(s.slice(i + 1))
-    return mantissa + "e" + (exp < 0 ? "-" : "+") + Math.abs(exp)
+    return mantissa + 'e' + (exp < 0 ? '-' : '+') + Math.abs(exp)
   }
   let intDigits = Math.floor(Math.log10(a)) + 1
   let decimals = Math.min(Math.max(digits - intDigits, 0), 12)
   let s = trimZeros(v.toFixed(decimals))
-  return s === "-0" ? "0" : s
+  return s === '-0' ? '0' : s
 }
 
 // Up to 12 significant digits: what gets copied.
@@ -62,43 +62,43 @@ fn short(v) {
 
 // "1234567.5" -> "1,234,567.5"; scientific notation is left alone.
 export fn group(s) {
-  if (s.indexOf("e") >= 0) {
+  if (s.indexOf('e') >= 0) {
     return s
   }
-  let sign = s.startsWith("-") ? "-" : ""
-  let rest = sign === "-" ? s.slice(1) : s
-  let dot = rest.indexOf(".")
+  let sign = s.startsWith('-') ? '-' : ''
+  let rest = sign === '-' ? s.slice(1) : s
+  let dot = rest.indexOf('.')
   let int = dot >= 0 ? rest.slice(0, dot) : rest
   let frac = dot >= 0 ? rest.slice(dot + 1) : null
   if (int.length <= 3) {
     return s
   }
-  let out = ""
+  let out = ''
   for (let i = 0; i < int.length; i = i + 1) {
     if (i > 0 && (int.length - i) % 3 === 0) {
-      out = out + ","
+      out = out + ','
     }
     out = out + int[i]
   }
-  return frac !== null ? sign + out + "." + frac : sign + out
+  return frac !== null ? sign + out + '.' + frac : sign + out
 }
 
 // ── Characters ──────────────────────────────────────────────────────────────
 
-let LETTER = RegExp("^\\p{L}$", "u")
-let LETTER_OR_DIGIT = RegExp("^[\\p{L}\\p{N}]$", "u")
-let SPACE = RegExp("^\\s$", "u")
+let LETTER = RegExp('^\\p{L}$', 'u')
+let LETTER_OR_DIGIT = RegExp('^[\\p{L}\\p{N}]$', 'u')
+let SPACE = RegExp('^\\s$', 'u')
 
 fn isDigit(c) {
-  return typeof c === "string" && c >= "0" && c <= "9"
+  return typeof c === 'string' && c >= '0' && c <= '9'
 }
 
 fn isHexDigit(c) {
-  return isDigit(c) || (typeof c === "string" && "abcdefABCDEF".indexOf(c) >= 0 && c.length === 1)
+  return isDigit(c) || (typeof c === 'string' && 'abcdefABCDEF'.indexOf(c) >= 0 && c.length === 1)
 }
 
 fn isDigitOf(c, radix) {
-  if (typeof c !== "string" || c.length !== 1) {
+  if (typeof c !== 'string' || c.length !== 1) {
     return false
   }
   let d = parseInt(c, radix)
@@ -106,11 +106,11 @@ fn isDigitOf(c, radix) {
 }
 
 fn isLetter(c) {
-  return typeof c === "string" && LETTER.test(c)
+  return typeof c === 'string' && LETTER.test(c)
 }
 
 fn isSpace(c) {
-  return typeof c === "string" && SPACE.test(c)
+  return typeof c === 'string' && SPACE.test(c)
 }
 
 // ── Expressions ─────────────────────────────────────────────────────────────
@@ -126,38 +126,38 @@ fn lex(s) {
     let next = c[i + 1]
     if (isSpace(ch)) {
       i = i + 1
-    } else if (ch === "0" && typeof next === "string" && "xXbBoO".indexOf(next) >= 0 && isHexDigit(c[i + 2])) {
+    } else if (ch === '0' && typeof next === 'string' && 'xXbBoO'.indexOf(next) >= 0 && isHexDigit(c[i + 2])) {
       let low = next.toLowerCase()
-      let radix = low === "x" ? 16 : (low === "b" ? 2 : 8)
+      let radix = low === 'x' ? 16 : (low === 'b' ? 2 : 8)
       let j = i + 2
-      let digits = ""
-      while (j < c.length && (isDigitOf(c[j], radix) || c[j] === "_")) {
-        if (c[j] !== "_") {
+      let digits = ''
+      while (j < c.length && (isDigitOf(c[j], radix) || c[j] === '_')) {
+        if (c[j] !== '_') {
           digits = digits + c[j]
         }
         j = j + 1
       }
-      if (digits === "") {
+      if (digits === '') {
         return null
       }
-      out.push({ k: "based", v: parseInt(digits, radix) })
+      out.push({ k: 'based', v: parseInt(digits, radix) })
       i = j
-    } else if (isDigit(ch) || (ch === "." && isDigit(next))) {
-      let num = ""
+    } else if (isDigit(ch) || (ch === '.' && isDigit(next))) {
+      let num = ''
       let j = i
       while (j < c.length) {
         let d = c[j]
-        if (isDigit(d) || d === "." || d === "_") {
-          if (d !== "_") {
+        if (isDigit(d) || d === '.' || d === '_') {
+          if (d !== '_') {
             num = num + d
           }
           j = j + 1
-        } else if (d === "," && isDigit(c[j + 1]) && isDigit(c[j + 2]) && isDigit(c[j + 3]) && !isDigit(c[j + 4])) {
+        } else if (d === ',' && isDigit(c[j + 1]) && isDigit(c[j + 2]) && isDigit(c[j + 3]) && !isDigit(c[j + 4])) {
           // Thousands separator: "1,000".
           j = j + 1
-        } else if ((d === "e" || d === "E") && (isDigit(c[j + 1]) || ((c[j + 1] === "+" || c[j + 1] === "-") && isDigit(c[j + 2])))) {
-          num = num + "e"
-          if (c[j + 1] === "+" || c[j + 1] === "-") {
+        } else if ((d === 'e' || d === 'E') && (isDigit(c[j + 1]) || ((c[j + 1] === '+' || c[j + 1] === '-') && isDigit(c[j + 2])))) {
+          num = num + 'e'
+          if (c[j + 1] === '+' || c[j + 1] === '-') {
             num = num + c[j + 1]
             j = j + 1
           }
@@ -167,26 +167,26 @@ fn lex(s) {
         }
       }
       // "3.1.4" or "1." with nothing after: not one number.
-      if (num.split(".").length > 2 || num.endsWith(".")) {
+      if (num.split('.').length > 2 || num.endsWith('.')) {
         return null
       }
       let n = Number(num)
       if (isNaN(n)) {
         return null
       }
-      out.push({ k: "num", v: n })
+      out.push({ k: 'num', v: n })
       i = j
-    } else if (isLetter(ch) || ch === "π" || ch === "_") {
+    } else if (isLetter(ch) || ch === 'π' || ch === '_') {
       let j = i
-      let id = ""
-      while (j < c.length && (LETTER_OR_DIGIT.test(c[j]) || c[j] === "_" || c[j] === "π")) {
+      let id = ''
+      while (j < c.length && (LETTER_OR_DIGIT.test(c[j]) || c[j] === '_' || c[j] === 'π')) {
         id = id + c[j]
         j = j + 1
       }
-      out.push({ k: "id", v: id.toLowerCase() })
+      out.push({ k: 'id', v: id.toLowerCase() })
       i = j
-    } else if ("+-*/^%!(),".indexOf(ch) >= 0) {
-      out.push({ k: "op", v: ch })
+    } else if ('+-*/^%!(),'.indexOf(ch) >= 0) {
+      out.push({ k: 'op', v: ch })
       i = i + 1
     } else {
       return null
@@ -195,9 +195,9 @@ fn lex(s) {
   return out
 }
 
-let CONSTANTS = { pi: Math.PI, "π": Math.PI, e: Math.E, tau: 2 * Math.PI, phi: 1.618033988749895 }
-let FUNCTIONS = ["sqrt", "cbrt", "abs", "round", "floor", "ceil", "trunc", "sin", "cos", "tan", "asin", "acos", "atan",
-  "sinh", "cosh", "tanh", "ln", "log", "log2", "log10", "exp", "min", "max", "pow", "hypot", "fact"]
+let CONSTANTS = { pi: Math.PI, 'π': Math.PI, e: Math.E, tau: 2 * Math.PI, phi: 1.618033988749895 }
+let FUNCTIONS = ['sqrt', 'cbrt', 'abs', 'round', 'floor', 'ceil', 'trunc', 'sin', 'cos', 'tan', 'asin', 'acos', 'atan',
+  'sinh', 'cosh', 'tanh', 'ln', 'log', 'log2', 'log10', 'exp', 'min', 'max', 'pow', 'hypot', 'fact']
 
 // Deeper input isn't arithmetic anyone types; without a limit `((((…` or `----…` would recurse
 // until the stack runs out.
@@ -219,17 +219,17 @@ fn apply(f, a) {
     return null
   }
   let x = a[0]
-  if (f === "min") {
+  if (f === 'min') {
     return Math.min(...a)
   }
-  if (f === "max") {
+  if (f === 'max') {
     return Math.max(...a)
   }
   if (a.length === 2) {
-    if (f === "pow") { return Math.pow(x, a[1]) }
-    if (f === "hypot") { return Math.hypot(x, a[1]) }
-    if (f === "log") { return Math.log(x) / Math.log(a[1]) }
-    if (f === "round") {
+    if (f === 'pow') { return Math.pow(x, a[1]) }
+    if (f === 'hypot') { return Math.hypot(x, a[1]) }
+    if (f === 'log') { return Math.log(x) / Math.log(a[1]) }
+    if (f === 'round') {
       let m = Math.pow(10, Math.trunc(a[1]))
       return roundAway(x * m) / m
     }
@@ -237,27 +237,27 @@ fn apply(f, a) {
   if (a.length !== 1) {
     return null
   }
-  if (f === "sqrt") { return Math.sqrt(x) }
-  if (f === "cbrt") { return Math.cbrt(x) }
-  if (f === "abs") { return Math.abs(x) }
-  if (f === "round") { return roundAway(x) }
-  if (f === "floor") { return Math.floor(x) }
-  if (f === "ceil") { return Math.ceil(x) }
-  if (f === "trunc") { return Math.trunc(x) }
-  if (f === "sin") { return Math.sin(x) }
-  if (f === "cos") { return Math.cos(x) }
-  if (f === "tan") { return Math.tan(x) }
-  if (f === "asin") { return Math.asin(x) }
-  if (f === "acos") { return Math.acos(x) }
-  if (f === "atan") { return Math.atan(x) }
-  if (f === "sinh") { return Math.sinh(x) }
-  if (f === "cosh") { return Math.cosh(x) }
-  if (f === "tanh") { return Math.tanh(x) }
-  if (f === "ln") { return Math.log(x) }
-  if (f === "log" || f === "log10") { return Math.log10(x) }
-  if (f === "log2") { return Math.log2(x) }
-  if (f === "exp") { return Math.exp(x) }
-  if (f === "fact") { return factorial(x) }
+  if (f === 'sqrt') { return Math.sqrt(x) }
+  if (f === 'cbrt') { return Math.cbrt(x) }
+  if (f === 'abs') { return Math.abs(x) }
+  if (f === 'round') { return roundAway(x) }
+  if (f === 'floor') { return Math.floor(x) }
+  if (f === 'ceil') { return Math.ceil(x) }
+  if (f === 'trunc') { return Math.trunc(x) }
+  if (f === 'sin') { return Math.sin(x) }
+  if (f === 'cos') { return Math.cos(x) }
+  if (f === 'tan') { return Math.tan(x) }
+  if (f === 'asin') { return Math.asin(x) }
+  if (f === 'acos') { return Math.acos(x) }
+  if (f === 'atan') { return Math.atan(x) }
+  if (f === 'sinh') { return Math.sinh(x) }
+  if (f === 'cosh') { return Math.cosh(x) }
+  if (f === 'tanh') { return Math.tanh(x) }
+  if (f === 'ln') { return Math.log(x) }
+  if (f === 'log' || f === 'log10') { return Math.log10(x) }
+  if (f === 'log2') { return Math.log2(x) }
+  if (f === 'exp') { return Math.exp(x) }
+  if (f === 'fact') { return factorial(x) }
   return null
 }
 
@@ -266,7 +266,7 @@ fn apply(f, a) {
 fn parser(toks) {
   let p = { pos: 0, depth: 0 }
   let peek = () => p.pos < toks.length ? toks[p.pos] : null
-  let isOp = (t, op) => t !== null && t.k === "op" && t.v === op
+  let isOp = (t, op) => t !== null && t.k === 'op' && t.v === op
   let eat = (op) => {
     if (isOp(peek(), op)) {
       p.pos = p.pos + 1
@@ -280,10 +280,10 @@ fn parser(toks) {
     if (t === null) {
       return false
     }
-    if (isOp(t, "(")) {
+    if (isOp(t, '(')) {
       return true
     }
-    return t.k === "id" && (t.v in CONSTANTS || FUNCTIONS.indexOf(t.v) >= 0)
+    return t.k === 'id' && (t.v in CONSTANTS || FUNCTIONS.indexOf(t.v) >= 0)
   }
 
   let expr = null
@@ -295,19 +295,19 @@ fn parser(toks) {
     if (t === null) {
       return null
     }
-    if (t.k === "num" || t.k === "based") {
+    if (t.k === 'num' || t.k === 'based') {
       p.pos = p.pos + 1
       return val(t.v)
     }
-    if (isOp(t, "(")) {
+    if (isOp(t, '(')) {
       p.pos = p.pos + 1
       let x = expr()
-      if (x === null || !eat(")")) {
+      if (x === null || !eat(')')) {
         return null
       }
       return val(x.v)
     }
-    if (t.k === "id") {
+    if (t.k === 'id') {
       p.pos = p.pos + 1
       if (t.v in CONSTANTS) {
         return val(CONSTANTS[t.v])
@@ -316,20 +316,20 @@ fn parser(toks) {
         return null
       }
       let args = []
-      if (eat("(")) {
+      if (eat('(')) {
         let first = expr()
         if (first === null) {
           return null
         }
         args.push(first.v)
-        while (eat(",")) {
+        while (eat(',')) {
           let more = expr()
           if (more === null) {
             return null
           }
           args.push(more.v)
         }
-        if (!eat(")")) {
+        if (!eat(')')) {
           return null
         }
       } else {
@@ -351,13 +351,13 @@ fn parser(toks) {
       return null
     }
     while (true) {
-      if (eat("!")) {
+      if (eat('!')) {
         let f = factorial(x.v)
         if (f === null) {
           return null
         }
         x = val(f)
-      } else if (eat("%")) {
+      } else if (eat('%')) {
         x = { v: x.v / 100, pct: true }
       } else {
         return x
@@ -370,7 +370,7 @@ fn parser(toks) {
     if (base === null) {
       return null
     }
-    if (eat("^")) {
+    if (eat('^')) {
       let e = unary()
       if (e === null) {
         return null
@@ -386,10 +386,10 @@ fn parser(toks) {
     }
     p.depth = p.depth + 1
     let r = null
-    if (eat("-")) {
+    if (eat('-')) {
       let x = unary()
       r = x === null ? null : { v: -x.v, pct: x.pct }
-    } else if (eat("+")) {
+    } else if (eat('+')) {
       r = unary()
     } else {
       r = power()
@@ -406,22 +406,22 @@ fn parser(toks) {
     while (true) {
       let t = peek()
       let b = null
-      if (isOp(t, "*")) {
+      if (isOp(t, '*')) {
         p.pos = p.pos + 1
         b = unary()
         if (b === null) { return null }
         a = val(a.v * b.v)
-      } else if (isOp(t, "/")) {
+      } else if (isOp(t, '/')) {
         p.pos = p.pos + 1
         b = unary()
         if (b === null) { return null }
         a = val(a.v / b.v)
-      } else if (t !== null && t.k === "id" && t.v === "mod") {
+      } else if (t !== null && t.k === 'id' && t.v === 'mod') {
         p.pos = p.pos + 1
         b = unary()
         if (b === null) { return null }
         a = val(a.v - b.v * Math.floor(a.v / b.v))
-      } else if (t !== null && t.k === "id" && t.v === "of" && a.pct) {
+      } else if (t !== null && t.k === 'id' && t.v === 'of' && a.pct) {
         p.pos = p.pos + 1
         b = unary()
         if (b === null) { return null }
@@ -443,7 +443,7 @@ fn parser(toks) {
     }
     while (true) {
       let t = peek()
-      if (!isOp(t, "+") && !isOp(t, "-")) {
+      if (!isOp(t, '+') && !isOp(t, '-')) {
         return a
       }
       p.pos = p.pos + 1
@@ -452,7 +452,7 @@ fn parser(toks) {
         return null
       }
       let bv = b.pct && !a.pct ? a.v * b.v : b.v
-      a = val(t.v === "+" ? a.v + bv : a.v - bv)
+      a = val(t.v === '+' ? a.v + bv : a.v - bv)
     }
   }
 
@@ -460,7 +460,7 @@ fn parser(toks) {
 }
 
 fn normalize(s) {
-  return s.trim().split("×").join("*").split("÷").join("/").split("−").join("-").split("**").join("^")
+  return s.trim().split('×').join('*').split('÷').join('/').split('−').join('-').split('**').join('^')
 }
 
 // Evaluate an arithmetic expression, or null.
@@ -480,13 +480,13 @@ fn math(text) {
     return null
   }
   // A bare number is not a calculation; "0xff" (another base) and constants like "pi" are.
-  if (toks.length === 1 && toks[0].k === "num") {
+  if (toks.length === 1 && toks[0].k === 'num') {
     return null
   }
-  if (toks.length === 2 && toks[0].k === "op" && toks[0].v === "-" && toks[1].k === "num") {
+  if (toks.length === 2 && toks[0].k === 'op' && toks[0].v === '-' && toks[1].k === 'num') {
     return null
   }
-  if (toks.length === 1 && toks[0].k === "id" && Array.from(toks[0].v).length < 2) {
+  if (toks.length === 1 && toks[0].k === 'id' && Array.from(toks[0].v).length < 2) {
     return null
   }
   let p = parser(toks)
@@ -498,7 +498,7 @@ fn math(text) {
   if (copy === null) {
     return null
   }
-  return { display: group(copy), copy: copy, detail: "Calculator" }
+  return { display: group(copy), copy: copy, detail: 'Calculator' }
 }
 
 // ── Units ───────────────────────────────────────────────────────────────────
@@ -509,94 +509,94 @@ fn u(names, symbol, dim, factor) {
 }
 
 let UNITS = [
-  u(["mm", "millimeter", "millimeters", "millimetre", "millimetres"], "mm", "length", 0.001),
-  u(["cm", "centimeter", "centimeters", "centimetre", "centimetres"], "cm", "length", 0.01),
-  u(["m", "meter", "meters", "metre", "metres"], "m", "length", 1),
-  u(["km", "kilometer", "kilometers", "kilometre", "kilometres", "kms"], "km", "length", 1000),
-  u(["inch", "inches", "\""], "in", "length", 0.0254),
-  u(["ft", "foot", "feet", "'"], "ft", "length", 0.3048),
-  u(["yd", "yard", "yards"], "yd", "length", 0.9144),
-  u(["mi", "mile", "miles"], "mi", "length", 1609.344),
-  u(["nmi", "nauticalmile", "nauticalmiles"], "nmi", "length", 1852),
-  u(["mg", "milligram", "milligrams"], "mg", "mass", 1e-6),
-  u(["g", "gram", "grams", "gramme", "grammes"], "g", "mass", 0.001),
-  u(["kg", "kilo", "kilos", "kilogram", "kilograms"], "kg", "mass", 1),
-  u(["t", "tonne", "tonnes", "ton", "tons"], "t", "mass", 1000),
-  u(["oz", "ounce", "ounces"], "oz", "mass", 0.028349523125),
-  u(["lb", "lbs", "pound", "pounds"], "lb", "mass", 0.45359237),
-  u(["st", "stone", "stones"], "st", "mass", 6.35029318),
-  u(["ml", "milliliter", "milliliters", "millilitre", "millilitres"], "ml", "volume", 0.001),
-  u(["cl", "centiliter", "centiliters"], "cl", "volume", 0.01),
-  u(["dl", "deciliter", "deciliters"], "dl", "volume", 0.1),
-  u(["l", "liter", "liters", "litre", "litres"], "L", "volume", 1),
-  u(["m3", "m³"], "m³", "volume", 1000),
-  u(["tsp", "teaspoon", "teaspoons"], "tsp", "volume", 0.00492892159375),
-  u(["tbsp", "tablespoon", "tablespoons"], "tbsp", "volume", 0.01478676478125),
-  u(["floz", "fluidounce", "fluidounces"], "fl oz", "volume", 0.0295735295625),
-  u(["cup", "cups"], "cups", "volume", 0.2365882365),
-  u(["pt", "pint", "pints"], "pt", "volume", 0.473176473),
-  u(["qt", "quart", "quarts"], "qt", "volume", 0.946352946),
-  u(["gal", "gallon", "gallons"], "gal", "volume", 3.785411784),
-  { names: ["c", "°c", "celsius", "degc"], symbol: "°C", dim: "temp", factor: 1, offset: 273.15 },
-  { names: ["f", "°f", "fahrenheit", "degf"], symbol: "°F", dim: "temp", factor: 5 / 9, offset: 459.67 * 5 / 9 },
-  u(["k", "kelvin"], "K", "temp", 1),
-  u(["ms", "millisecond", "milliseconds"], "ms", "time", 0.001),
-  u(["s", "sec", "secs", "second", "seconds"], "s", "time", 1),
-  u(["min", "mins", "minute", "minutes"], "min", "time", 60),
-  u(["h", "hr", "hrs", "hour", "hours"], "h", "time", 3600),
-  u(["d", "day", "days"], "days", "time", 86400),
-  u(["wk", "wks", "week", "weeks"], "weeks", "time", 604800),
-  u(["month", "months"], "months", "time", 2629746),
-  u(["yr", "yrs", "year", "years"], "years", "time", 31556952),
-  u(["bit", "bits"], "bit", "data", 0.125),
-  u(["byte", "bytes"], "B", "data", 1),
-  u(["kb", "kilobyte", "kilobytes"], "KB", "data", 1e3),
-  u(["mb", "megabyte", "megabytes"], "MB", "data", 1e6),
-  u(["gb", "gigabyte", "gigabytes"], "GB", "data", 1e9),
-  u(["tb", "terabyte", "terabytes"], "TB", "data", 1e12),
-  u(["pb", "petabyte", "petabytes"], "PB", "data", 1e15),
-  u(["kib", "kibibyte", "kibibytes"], "KiB", "data", 1024),
-  u(["mib", "mebibyte", "mebibytes"], "MiB", "data", 1048576),
-  u(["gib", "gibibyte", "gibibytes"], "GiB", "data", 1073741824),
-  u(["tib", "tebibyte", "tebibytes"], "TiB", "data", 1099511627776),
-  u(["m/s", "mps"], "m/s", "speed", 1),
-  u(["km/h", "kmh", "kph", "kmph"], "km/h", "speed", 1 / 3.6),
-  u(["mph"], "mph", "speed", 0.44704),
-  u(["kn", "kt", "knot", "knots"], "kn", "speed", 0.514444444),
-  u(["ft/s", "fps"], "ft/s", "speed", 0.3048),
-  u(["cm2", "cm²"], "cm²", "area", 1e-4),
-  u(["m2", "m²", "sqm"], "m²", "area", 1),
-  u(["km2", "km²", "sqkm"], "km²", "area", 1e6),
-  u(["in2", "in²", "sqin"], "in²", "area", 0.00064516),
-  u(["ft2", "ft²", "sqft"], "ft²", "area", 0.09290304),
-  u(["mi2", "mi²", "sqmi"], "mi²", "area", 2589988.110336),
-  u(["acre", "acres", "ac"], "acres", "area", 4046.8564224),
-  u(["ha", "hectare", "hectares"], "ha", "area", 10000),
-  u(["j", "joule", "joules"], "J", "energy", 1),
-  u(["kj", "kilojoule", "kilojoules"], "kJ", "energy", 1000),
-  u(["cal", "calorie", "calories"], "cal", "energy", 4.184),
-  u(["kcal", "kilocalorie", "kilocalories"], "kcal", "energy", 4184),
-  u(["wh"], "Wh", "energy", 3600),
-  u(["kwh"], "kWh", "energy", 3.6e6),
-  u(["pa", "pascal", "pascals"], "Pa", "pressure", 1),
-  u(["kpa"], "kPa", "pressure", 1000),
-  u(["bar", "bars"], "bar", "pressure", 1e5),
-  u(["psi"], "psi", "pressure", 6894.757293168),
-  u(["atm"], "atm", "pressure", 101325),
-  u(["mmhg"], "mmHg", "pressure", 133.322387415),
-  u(["rad", "radian", "radians"], "rad", "angle", 1),
-  u(["deg", "degree", "degrees", "°"], "°", "angle", Math.PI / 180)
+  u(['mm', 'millimeter', 'millimeters', 'millimetre', 'millimetres'], 'mm', 'length', 0.001),
+  u(['cm', 'centimeter', 'centimeters', 'centimetre', 'centimetres'], 'cm', 'length', 0.01),
+  u(['m', 'meter', 'meters', 'metre', 'metres'], 'm', 'length', 1),
+  u(['km', 'kilometer', 'kilometers', 'kilometre', 'kilometres', 'kms'], 'km', 'length', 1000),
+  u(['inch', 'inches', '"'], 'in', 'length', 0.0254),
+  u(['ft', 'foot', 'feet', "'"], 'ft', 'length', 0.3048),
+  u(['yd', 'yard', 'yards'], 'yd', 'length', 0.9144),
+  u(['mi', 'mile', 'miles'], 'mi', 'length', 1609.344),
+  u(['nmi', 'nauticalmile', 'nauticalmiles'], 'nmi', 'length', 1852),
+  u(['mg', 'milligram', 'milligrams'], 'mg', 'mass', 1e-6),
+  u(['g', 'gram', 'grams', 'gramme', 'grammes'], 'g', 'mass', 0.001),
+  u(['kg', 'kilo', 'kilos', 'kilogram', 'kilograms'], 'kg', 'mass', 1),
+  u(['t', 'tonne', 'tonnes', 'ton', 'tons'], 't', 'mass', 1000),
+  u(['oz', 'ounce', 'ounces'], 'oz', 'mass', 0.028349523125),
+  u(['lb', 'lbs', 'pound', 'pounds'], 'lb', 'mass', 0.45359237),
+  u(['st', 'stone', 'stones'], 'st', 'mass', 6.35029318),
+  u(['ml', 'milliliter', 'milliliters', 'millilitre', 'millilitres'], 'ml', 'volume', 0.001),
+  u(['cl', 'centiliter', 'centiliters'], 'cl', 'volume', 0.01),
+  u(['dl', 'deciliter', 'deciliters'], 'dl', 'volume', 0.1),
+  u(['l', 'liter', 'liters', 'litre', 'litres'], 'L', 'volume', 1),
+  u(['m3', 'm³'], 'm³', 'volume', 1000),
+  u(['tsp', 'teaspoon', 'teaspoons'], 'tsp', 'volume', 0.00492892159375),
+  u(['tbsp', 'tablespoon', 'tablespoons'], 'tbsp', 'volume', 0.01478676478125),
+  u(['floz', 'fluidounce', 'fluidounces'], 'fl oz', 'volume', 0.0295735295625),
+  u(['cup', 'cups'], 'cups', 'volume', 0.2365882365),
+  u(['pt', 'pint', 'pints'], 'pt', 'volume', 0.473176473),
+  u(['qt', 'quart', 'quarts'], 'qt', 'volume', 0.946352946),
+  u(['gal', 'gallon', 'gallons'], 'gal', 'volume', 3.785411784),
+  { names: ['c', '°c', 'celsius', 'degc'], symbol: '°C', dim: 'temp', factor: 1, offset: 273.15 },
+  { names: ['f', '°f', 'fahrenheit', 'degf'], symbol: '°F', dim: 'temp', factor: 5 / 9, offset: 459.67 * 5 / 9 },
+  u(['k', 'kelvin'], 'K', 'temp', 1),
+  u(['ms', 'millisecond', 'milliseconds'], 'ms', 'time', 0.001),
+  u(['s', 'sec', 'secs', 'second', 'seconds'], 's', 'time', 1),
+  u(['min', 'mins', 'minute', 'minutes'], 'min', 'time', 60),
+  u(['h', 'hr', 'hrs', 'hour', 'hours'], 'h', 'time', 3600),
+  u(['d', 'day', 'days'], 'days', 'time', 86400),
+  u(['wk', 'wks', 'week', 'weeks'], 'weeks', 'time', 604800),
+  u(['month', 'months'], 'months', 'time', 2629746),
+  u(['yr', 'yrs', 'year', 'years'], 'years', 'time', 31556952),
+  u(['bit', 'bits'], 'bit', 'data', 0.125),
+  u(['byte', 'bytes'], 'B', 'data', 1),
+  u(['kb', 'kilobyte', 'kilobytes'], 'KB', 'data', 1e3),
+  u(['mb', 'megabyte', 'megabytes'], 'MB', 'data', 1e6),
+  u(['gb', 'gigabyte', 'gigabytes'], 'GB', 'data', 1e9),
+  u(['tb', 'terabyte', 'terabytes'], 'TB', 'data', 1e12),
+  u(['pb', 'petabyte', 'petabytes'], 'PB', 'data', 1e15),
+  u(['kib', 'kibibyte', 'kibibytes'], 'KiB', 'data', 1024),
+  u(['mib', 'mebibyte', 'mebibytes'], 'MiB', 'data', 1048576),
+  u(['gib', 'gibibyte', 'gibibytes'], 'GiB', 'data', 1073741824),
+  u(['tib', 'tebibyte', 'tebibytes'], 'TiB', 'data', 1099511627776),
+  u(['m/s', 'mps'], 'm/s', 'speed', 1),
+  u(['km/h', 'kmh', 'kph', 'kmph'], 'km/h', 'speed', 1 / 3.6),
+  u(['mph'], 'mph', 'speed', 0.44704),
+  u(['kn', 'kt', 'knot', 'knots'], 'kn', 'speed', 0.514444444),
+  u(['ft/s', 'fps'], 'ft/s', 'speed', 0.3048),
+  u(['cm2', 'cm²'], 'cm²', 'area', 1e-4),
+  u(['m2', 'm²', 'sqm'], 'm²', 'area', 1),
+  u(['km2', 'km²', 'sqkm'], 'km²', 'area', 1e6),
+  u(['in2', 'in²', 'sqin'], 'in²', 'area', 0.00064516),
+  u(['ft2', 'ft²', 'sqft'], 'ft²', 'area', 0.09290304),
+  u(['mi2', 'mi²', 'sqmi'], 'mi²', 'area', 2589988.110336),
+  u(['acre', 'acres', 'ac'], 'acres', 'area', 4046.8564224),
+  u(['ha', 'hectare', 'hectares'], 'ha', 'area', 10000),
+  u(['j', 'joule', 'joules'], 'J', 'energy', 1),
+  u(['kj', 'kilojoule', 'kilojoules'], 'kJ', 'energy', 1000),
+  u(['cal', 'calorie', 'calories'], 'cal', 'energy', 4.184),
+  u(['kcal', 'kilocalorie', 'kilocalories'], 'kcal', 'energy', 4184),
+  u(['wh'], 'Wh', 'energy', 3600),
+  u(['kwh'], 'kWh', 'energy', 3.6e6),
+  u(['pa', 'pascal', 'pascals'], 'Pa', 'pressure', 1),
+  u(['kpa'], 'kPa', 'pressure', 1000),
+  u(['bar', 'bars'], 'bar', 'pressure', 1e5),
+  u(['psi'], 'psi', 'pressure', 6894.757293168),
+  u(['atm'], 'atm', 'pressure', 101325),
+  u(['mmhg'], 'mmHg', 'pressure', 133.322387415),
+  u(['rad', 'radian', 'radians'], 'rad', 'angle', 1),
+  u(['deg', 'degree', 'degrees', '°'], '°', 'angle', Math.PI / 180)
 ]
 
 // "5 km" with no target converts to the other measuring system.
-let COUNTERPARTS = { km: "mi", mi: "km", m: "ft", ft: "m", cm: "in", "in": "cm", mm: "in", yd: "m", kg: "lb", lb: "kg",
-  g: "oz", oz: "g", L: "gal", gal: "L", ml: "fl oz", "fl oz": "ml", "°C": "°F", "°F": "°C", "km/h": "mph", mph: "km/h" }
+let COUNTERPARTS = { km: 'mi', mi: 'km', m: 'ft', ft: 'm', cm: 'in', 'in': 'cm', mm: 'in', yd: 'm', kg: 'lb', lb: 'kg',
+  g: 'oz', oz: 'g', L: 'gal', gal: 'L', ml: 'fl oz', 'fl oz': 'ml', '°C': '°F', '°F': '°C', 'km/h': 'mph', mph: 'km/h' }
 
 fn unit(name) {
-  let n = name.trim().toLowerCase().split(" ").join("")
+  let n = name.trim().toLowerCase().split(' ').join('')
   for (let i = 0; i < UNITS.length; i = i + 1) {
     let x = UNITS[i]
-    if (x.names.indexOf(n) >= 0 || x.symbol.toLowerCase().split(" ").join("") === n) {
+    if (x.names.indexOf(n) >= 0 || x.symbol.toLowerCase().split(' ').join('') === n) {
       return x
     }
   }
@@ -618,12 +618,12 @@ fn convertUnit(v, from, to) {
 
 // ── Currency ────────────────────────────────────────────────────────────────
 
-let CURRENCY_WORDS = { "$": "USD", "us$": "USD", dollar: "USD", dollars: "USD", "€": "EUR", euro: "EUR", euros: "EUR",
-  "£": "GBP", sterling: "GBP", "¥": "JPY", yen: "JPY", "₹": "INR", rupee: "INR", rupees: "INR", yuan: "CNY",
-  rmb: "CNY", "₩": "KRW", won: "KRW", "₺": "TRY", lira: "TRY", "₪": "ILS", shekel: "ILS", shekels: "ILS",
-  "฿": "THB", baht: "THB", franc: "CHF", francs: "CHF", real: "BRL", reais: "BRL", peso: "MXN" }
+let CURRENCY_WORDS = { '$': 'USD', 'us$': 'USD', dollar: 'USD', dollars: 'USD', '€': 'EUR', euro: 'EUR', euros: 'EUR',
+  '£': 'GBP', sterling: 'GBP', '¥': 'JPY', yen: 'JPY', '₹': 'INR', rupee: 'INR', rupees: 'INR', yuan: 'CNY',
+  rmb: 'CNY', '₩': 'KRW', won: 'KRW', '₺': 'TRY', lira: 'TRY', '₪': 'ILS', shekel: 'ILS', shekels: 'ILS',
+  '฿': 'THB', baht: 'THB', franc: 'CHF', francs: 'CHF', real: 'BRL', reais: 'BRL', peso: 'MXN' }
 
-let SYMBOL_PREFIXES = ["$", "€", "£", "¥", "₹", "₩", "₺", "₪", "฿", "₽"]
+let SYMBOL_PREFIXES = ['$', '€', '£', '¥', '₹', '₩', '₺', '₪', '฿', '₽']
 
 fn currency(name, rates) {
   let n = name.trim().toLowerCase()
@@ -631,11 +631,11 @@ fn currency(name, rates) {
     return CURRENCY_WORDS[n]
   }
   let up = n.toUpperCase()
-  return up.length === 3 && (up === "EUR" || up in rates) ? up : null
+  return up.length === 3 && (up === 'EUR' || up in rates) ? up : null
 }
 
 fn perEur(code, rates) {
-  if (code === "EUR") {
+  if (code === 'EUR') {
     return 1
   }
   return code in rates ? rates[code] : null
@@ -663,31 +663,31 @@ fn quantity(text, rates) {
   let first = c[0]
   if (SYMBOL_PREFIXES.indexOf(first) >= 0) {
     let code = currency(first, r)
-    let v = evaluate(c.slice(1).join(""))
+    let v = evaluate(c.slice(1).join(''))
     return code === null || v === null ? null : { v: v, money: code }
   }
   let last = c[c.length - 1]
   if (SYMBOL_PREFIXES.indexOf(last) >= 0) {
     let code = currency(last, r)
-    let v = evaluate(c.slice(0, c.length - 1).join(""))
+    let v = evaluate(c.slice(0, c.length - 1).join(''))
     return code === null || v === null ? null : { v: v, money: code }
   }
   // The unit is the last word ("5 km", "3 fl oz") or the letters stuck to the number ("5km").
-  let expr = ""
-  let name = ""
+  let expr = ''
+  let name = ''
   let i = lastSpace(c)
   let after = i >= 0 ? c[i + 1] : null
-  if (i >= 0 && (isLetter(after) || after === "°" || after === "\"" || after === "'")) {
-    let e = c.slice(0, i).join("").trim()
-    let n = c.slice(i + 1).join("")
+  if (i >= 0 && (isLetter(after) || after === '°' || after === '"' || after === "'")) {
+    let e = c.slice(0, i).join('').trim()
+    let n = c.slice(i + 1).join('')
     // Two-word units: "fl oz", "nautical miles".
     let ec = Array.from(e)
     let j = lastSpace(ec)
     if (j >= 0) {
-      let two = ec.slice(j + 1).join("") + n
+      let two = ec.slice(j + 1).join('') + n
       if (unit(two) !== null) {
         n = two
-        e = ec.slice(0, j).join("").trim()
+        e = ec.slice(0, j).join('').trim()
       }
     }
     expr = e
@@ -696,7 +696,7 @@ fn quantity(text, rates) {
     let split = -1
     for (let k = c.length - 1; k >= 0; k = k - 1) {
       let ch = c[k]
-      if (isLetter(ch) || ch === "°" || ch === "/" || ch === "\"" || ch === "'") {
+      if (isLetter(ch) || ch === '°' || ch === '/' || ch === '"' || ch === "'") {
         split = k
       } else {
         break
@@ -705,10 +705,10 @@ fn quantity(text, rates) {
     if (split < 0) {
       return null
     }
-    expr = c.slice(0, split).join("").trim()
-    name = c.slice(split).join("")
+    expr = c.slice(0, split).join('').trim()
+    name = c.slice(split).join('')
   }
-  if (expr === "") {
+  if (expr === '') {
     return null
   }
   let v = evaluate(expr)
@@ -729,12 +729,12 @@ fn inBase(v, base) {
   if (v !== Math.floor(v) || Math.abs(v) > 9.007e15) {
     return null
   }
-  let sign = v < 0 ? "-" : ""
+  let sign = v < 0 ? '-' : ''
   let m = Math.abs(v)
-  if (base === 16) { return sign + "0x" + m.toString(16).toUpperCase() }
-  if (base === 2) { return sign + "0b" + m.toString(2) }
-  if (base === 8) { return sign + "0o" + m.toString(8) }
-  return "" + v
+  if (base === 16) { return sign + '0x' + m.toString(16).toUpperCase() }
+  if (base === 2) { return sign + '0b' + m.toString(2) }
+  if (base === 8) { return sign + '0o' + m.toString(8) }
+  return '' + v
 }
 
 fn unitAnswer(v, from, to) {
@@ -743,8 +743,8 @@ fn unitAnswer(v, from, to) {
   if (out === null || shown === null) {
     return null
   }
-  let display = group(out) + " " + to.symbol
-  return { display: display, copy: out, detail: group(shown) + " " + from.symbol + " = " + display }
+  let display = group(out) + ' ' + to.symbol
+  return { display: display, copy: out, detail: group(shown) + ' ' + from.symbol + ' = ' + display }
 }
 
 fn convert(left, right, rates) {
@@ -752,7 +752,7 @@ fn convert(left, right, rates) {
   if (base in BASES) {
     let v = evaluate(left)
     let s = v === null ? null : inBase(v, BASES[base])
-    return s === null ? null : { display: s, copy: s, detail: left + " = " + s }
+    return s === null ? null : { display: s, copy: s, detail: left + ' = ' + s }
   }
   let q = quantity(left, rates)
   if (q === null) {
@@ -776,8 +776,8 @@ fn convert(left, right, rates) {
     return null
   }
   let amount = (q.v / from * into).toFixed(2)
-  let display = group(amount) + " " + to
-  return { display: display, copy: amount, detail: group(shown) + " " + q.money + " = " + display }
+  let display = group(amount) + ' ' + to
+  return { display: display, copy: amount, detail: group(shown) + ' ' + q.money + ' = ' + display }
 }
 
 // "5 km" (a number and a unit, nothing else) -> miles.
@@ -795,7 +795,7 @@ fn splitConversion(text) {
   let lower = text.toLowerCase()
   let best = -1
   let bestLen = 0
-  let seps = [" in ", " to ", " as ", " into ", " = "]
+  let seps = [' in ', ' to ', ' as ', ' into ', ' = ']
   for (let i = 0; i < seps.length; i = i + 1) {
     let at = lower.lastIndexOf(seps[i])
     if (at > best) {
@@ -808,12 +808,12 @@ fn splitConversion(text) {
   }
   let left = text.slice(0, best).trim()
   let right = text.slice(best + bestLen).trim()
-  return left !== "" && right !== "" ? [left, right] : null
+  return left !== '' && right !== '' ? [left, right] : null
 }
 
 export fn answer(input, rates) {
   let text = normalize(input)
-  if (text === "" || text.length > 200) {
+  if (text === '' || text.length > 200) {
     return null
   }
   let parts = splitConversion(text)
@@ -834,8 +834,8 @@ export fn answer(input, rates) {
 // { rates: { USD: 1.0812, ... }, date: "2026-10-02" }.
 export fn parseEcb(xml) {
   let rates = {}
-  let date = ""
-  let parts = xml.split("<Cube")
+  let date = ''
+  let parts = xml.split('<Cube')
   let attr = (part, name) => {
     let key = name + "='"
     let i = part.indexOf(key)
@@ -847,12 +847,12 @@ export fn parseEcb(xml) {
     return j < 0 ? null : part.slice(start, j)
   }
   for (let i = 1; i < parts.length; i = i + 1) {
-    let t = attr(parts[i], "time")
+    let t = attr(parts[i], 'time')
     if (t !== null) {
       date = t
     }
-    let c = attr(parts[i], "currency")
-    let r = attr(parts[i], "rate")
+    let c = attr(parts[i], 'currency')
+    let r = attr(parts[i], 'rate')
     if (c !== null && r !== null && !isNaN(Number(r))) {
       rates[c] = Number(r)
     }
@@ -863,7 +863,7 @@ export fn parseEcb(xml) {
 // The rates cache file (rates.tish): `date\nfetched\nCODE rate\n…`.
 // -> { rates, date, fetched } or null.
 export fn parseCache(text) {
-  let lines = text.split("\n")
+  let lines = text.split('\n')
   if (lines.length < 3) {
     return null
   }
@@ -874,7 +874,7 @@ export fn parseCache(text) {
   let rates = {}
   let n = 0
   for (let i = 2; i < lines.length; i = i + 1) {
-    let sp = lines[i].indexOf(" ")
+    let sp = lines[i].indexOf(' ')
     if (sp > 0) {
       let r = Number(lines[i].slice(sp + 1))
       if (!isNaN(r)) {
@@ -888,5 +888,5 @@ export fn parseCache(text) {
 
 export fn formatCache(c) {
   let codes = Object.keys(c.rates).sort()
-  return c.date + "\n" + c.fetched + "\n" + codes.map((k) => k + " " + c.rates[k] + "\n").join("")
+  return c.date + '\n' + c.fetched + '\n' + codes.map((k) => k + ' ' + c.rates[k] + '\n').join('')
 }

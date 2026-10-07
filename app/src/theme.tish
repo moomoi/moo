@@ -9,25 +9,25 @@
 export const THEME = {
   // Views drawn by Tish.
   colors: {
-    text: "label",
-    secondaryText: "secondaryLabel",
-    accent: "controlAccent",
-    onAccent: "#FFFFFF",
+    text: 'label',
+    secondaryText: 'secondaryLabel',
+    accent: 'controlAccent',
+    onAccent: '#FFFFFF',
     // Selected row, grid cell and key-cap backgrounds.
-    selection: "quaternaryLabel",
-    keycap: "quaternaryLabel",
+    selection: 'quaternaryLabel',
+    keycap: 'quaternaryLabel',
     // Under the pointer: rows, grid cells, category buttons and scroll bar thumb; key caps. Fainter
     // than the selection, which keeps its colour when hovered.
-    hover: "#8080801F",
-    keycapHover: "tertiaryLabel",
-    scrollThumbHover: "secondaryLabel",
+    hover: '#8080801F',
+    keycapHover: 'tertiaryLabel',
+    scrollThumbHover: 'secondaryLabel',
     // Layer colours need alpha hex: "#00000000" keeps a row's layer, so its shape never changes.
-    clear: "#00000000",
+    clear: '#00000000',
     // The hairline under the search field and above the footer.
-    divider: "separator",
+    divider: 'separator',
     // Scroll bar beside lists and the grid: the thumb, and the track behind it.
-    scrollThumb: "tertiaryLabel",
-    scrollTrack: "#00000000",
+    scrollThumb: 'tertiaryLabel',
+    scrollTrack: '#00000000',
   },
   // Shown only when there is more than fits. width: the bar; gap: space left of it; inset: space
   // above and below the track; minThumb: the shortest thumb.
@@ -48,48 +48,48 @@ export const THEME = {
     gridLabel: 11,
   },
   weight: {
-    row: "regular",
-    section: "semibold",
-    keycap: "medium",
+    row: 'regular',
+    section: 'semibold',
+    keycap: 'medium',
   },
   // Icon heights: result rows, the field's search / category symbol, category buttons, the grid.
   icon: {
     // Image in the field outside a category, among Moo's resources (packaging/ in the repo), tinted
     // like a symbol. `search` (an SF Symbol) stands in when that file is missing.
-    searchImage: "SearchIcon.png",
-    search: "magnifyingglass",
+    searchImage: 'SearchIcon.png',
+    search: 'magnifyingglass',
     // SF Symbol beside calculator and time zone answers.
-    calculator: "equal.circle.fill",
+    calculator: 'equal.circle.fill',
     // SF Symbol of Define Word and dictionary answers.
-    dictionary: "character.book.closed.fill",
+    dictionary: 'character.book.closed.fill',
     // SF Symbol of Search the Web, its suggestions and the root "Search Google" row.
-    web: "globe",
+    web: 'globe',
     // SF Symbol of Settings.
-    settings: "gearshape",
+    settings: 'gearshape',
     // SF Symbols of Search Contacts: a contact, its email addresses and phone numbers.
-    contact: "person.crop.circle.fill",
-    email: "envelope",
-    phone: "phone",
+    contact: 'person.crop.circle.fill',
+    email: 'envelope',
+    phone: 'phone',
     // SF Symbols of Ask AI and AI Models, and of the Hypery Account rows.
-    ai: "sparkles",
-    account: "person.crop.circle",
-    signedIn: "person.crop.circle.fill",
-    apiKey: "key",
-    signUp: "person.badge.plus",
-    balance: "creditcard",
-    addCredits: "plus.circle",
-    signOut: "rectangle.portrait.and.arrow.right",
-    waiting: "globe",
-    warning: "exclamationmark.triangle",
+    ai: 'sparkles',
+    account: 'person.crop.circle',
+    signedIn: 'person.crop.circle.fill',
+    apiKey: 'key',
+    signUp: 'person.badge.plus',
+    balance: 'creditcard',
+    addCredits: 'plus.circle',
+    signOut: 'rectangle.portrait.and.arrow.right',
+    waiting: 'globe',
+    warning: 'exclamationmark.triangle',
     // SF Symbols of a Hypery organization without its own icon: a team, the personal one.
-    organization: "building.2",
-    personalOrg: "person.crop.square",
+    organization: 'building.2',
+    personalOrg: 'person.crop.square',
     row: 24,
     field: 22,
     category: 20,
     grid: 64,
     // SF Symbol scale: "small", "medium" or "large".
-    symbolScale: "large",
+    symbolScale: 'large',
   },
   radius: {
     row: 10,
@@ -103,10 +103,10 @@ export const THEME = {
   },
   // Menu bar icon: an image among Moo's resources (packaging/ in the repo), drawn as a template.
   // `statusSymbol` (an SF Symbol) stands in when that file is missing.
-  statusIcon: "MenuBarIcon.tiff",
-  statusSymbol: "magnifyingglass",
+  statusIcon: 'MenuBarIcon.tiff',
+  statusSymbol: 'magnifyingglass',
   // App icon, also on Moo's own rows (Settings, Quit Moo).
-  appIcon: "AppIcon.icns",
+  appIcon: 'AppIcon.icns',
 
   // The panel behind the views (glass on macOS 26, vibrancy before).
   panel: {
@@ -119,24 +119,24 @@ export const THEME = {
   },
   glass: {
     // "regular" or "clear".
-    style: "clear",
+    style: 'clear',
     // Pieces closer than this melt together; the idle bar's 8 pt gaps keep them apart at rest.
     spacing: 6,
     // Clear glass with one light tint, the same collapsed and expanded.
     tint: {
-      bar: { light: "#F7F7FA59", dark: "#0F0F1259" },
-      panel: { light: "#F7F7FA59", dark: "#0F0F1259" },
+      bar: { light: '#F7F7FA59', dark: '#0F0F1259' },
+      panel: { light: '#F7F7FA59', dark: '#0F0F1259' },
     },
     // Drawn over the glass, under the views: how much the glass dims what is behind it, so busy
     // content (text, windows) never competes with Moo's own. Raise the alpha for more contrast.
-    scrim: { light: "#FAFAFC8C", dark: "#0C0C0E8C" },
+    scrim: { light: '#FAFAFC8C', dark: '#0C0C0E8C' },
   },
   // Before macOS 26: raw vibrancy lets busy windows show through, so a dense tint keeps text
   // readable, with a hairline edge and the window's shadow.
   vibrancy: {
-    material: "popover",
-    tint: { light: "#FAFAFCC7", dark: "#1A1A1CC7" },
-    edge: { light: "#0000001F", dark: "#FFFFFF24" },
+    material: 'popover',
+    tint: { light: '#FAFAFCC7', dark: '#1A1A1CC7' },
+    edge: { light: '#0000001F', dark: '#FFFFFF24' },
     edgeWidth: 1,
     shadow: true,
   },

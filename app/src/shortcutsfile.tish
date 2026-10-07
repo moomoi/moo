@@ -2,47 +2,47 @@
 // for the format). Each edit reads the file fresh, changes it and writes it atomically, so hand
 // edits made meanwhile are kept.
 
-import { readFile, writeFile, mkdir, rename, fileExists } from "tish:fs"
-import { env } from "tish:process"
-import { keysError, localDateTime } from "tish:moo"
-import { clipboardText, selectedText } from "./platform.tish"
-import { parse, toJson, emptyConfig, shortcut, needsQuery, expand, shellValues as argsOf, upsert, remove, bind, unbind, checkKeyword as keywordError, checkAlias as aliasError, setAlias as putAlias, setDisabled as putDisabled, setPanelKey as putPanelKey, setProvider } from "./shortcuts.tish"
+import { readFile, writeFile, mkdir, rename, fileExists } from 'tish:fs'
+import { env } from 'tish:process'
+import { keysError, localDateTime } from 'tish:moo'
+import { clipboardText, selectedText } from './platform.tish'
+import { parse, toJson, emptyConfig, shortcut, needsQuery, expand, shellValues as argsOf, upsert, remove, bind, unbind, checkKeyword as keywordError, checkAlias as aliasError, setAlias as putAlias, setDisabled as putDisabled, setPanelKey as putPanelKey, setProvider } from './shortcuts.tish'
 
 export fn configPath() {
   if (env.MOO_CONFIG) {
     return env.MOO_CONFIG
   }
   if (env.XDG_CONFIG_HOME) {
-    return env.XDG_CONFIG_HOME + "/moo/shortcuts.json"
+    return env.XDG_CONFIG_HOME + '/moo/shortcuts.json'
   }
-  return env.HOME ? env.HOME + "/.config/moo/shortcuts.json" : ""
+  return env.HOME ? env.HOME + '/.config/moo/shortcuts.json' : ''
 }
 
 export fn configDir() {
   let p = configPath()
-  let i = p.lastIndexOf("/")
-  return i > 0 ? p.slice(0, i) : ""
+  let i = p.lastIndexOf('/')
+  return i > 0 ? p.slice(0, i) : ''
 }
 
 fn failed(r) {
-  return typeof r === "object" && r !== null && "error" in r
+  return typeof r === 'object' && r !== null && 'error' in r
 }
 
 // -> { cfg, warnings } or { error }; a missing file is an empty config.
 fn load() {
   let path = configPath()
-  if (path === "") {
-    return { error: "HOME is not set" }
+  if (path === '') {
+    return { error: 'HOME is not set' }
   }
   if (!fileExists(path)) {
     return { cfg: emptyConfig(), warnings: [] }
   }
   let text = readFile(path)
   if (failed(text)) {
-    return { error: path + ": " + text.error }
+    return { error: path + ': ' + text.error }
   }
   let r = parse(text, keysError)
-  return failed(r) ? { error: path + ": " + r.error } : r
+  return failed(r) ? { error: path + ': ' + r.error } : r
 }
 
 // Write atomically (temp file, then rename), creating the folder. null or the error.
@@ -50,15 +50,15 @@ fn save(cfg) {
   let path = configPath()
   let made = mkdir(configDir(), { recursive: true })
   if (failed(made)) {
-    return configDir() + ": " + made.error
+    return configDir() + ': ' + made.error
   }
-  let tmp = path + ".tmp"
+  let tmp = path + '.tmp'
   let w = writeFile(tmp, toJson(cfg))
   if (failed(w)) {
-    return tmp + ": " + w.error
+    return tmp + ': ' + w.error
   }
   let r = rename(tmp, path)
-  return failed(r) ? path + ": " + r.error : null
+  return failed(r) ? path + ': ' + r.error : null
 }
 
 fn result(error) {
@@ -82,14 +82,14 @@ export fn loadShortcuts() {
   let cfg = failed(r) ? emptyConfig() : r.cfg
   return {
     ok: !failed(r),
-    error: failed(r) ? r.error : "",
+    error: failed(r) ? r.error : '',
     path: configPath(),
     launcher: cfg.launcher,
     aiModel: cfg.ai.model,
     shortcuts: cfg.shortcuts.map((x) => ({
       keyword: x.keyword, name: x.name, kind: x.kind, target: x.target, input: x.input, output: x.output,
-      hotkey: x.hotkey, expand: x.kind === "text" && x.expand,
-      needsQuery: needsQuery(x.kind === "command" ? x.input : x.target)
+      hotkey: x.hotkey, expand: x.kind === 'text' && x.expand,
+      needsQuery: needsQuery(x.kind === 'command' ? x.input : x.target)
     })),
     hotkeys: cfg.hotkeys,
     aliases: cfg.aliases.map((p) => ({ run: p[0], alias: p[1] })),
@@ -103,16 +103,16 @@ export fn loadShortcuts() {
 // organization }] }; empty when the file is missing or broken.
 export fn aiConfig() {
   let r = load()
-  return failed(r) ? { model: "", providers: [] } : r.cfg.ai
+  return failed(r) ? { model: '', providers: [] } : r.cfg.ai
 }
 
 // The file's path, creating an empty one if missing (never rewrites).
 export fn ensureShortcutsFile() {
   let path = configPath()
-  if (path !== "" && !fileExists(path)) {
+  if (path !== '' && !fileExists(path)) {
     let e = save(emptyConfig())
     if (e !== null) {
-      console.error("moo: " + e)
+      console.error('moo: ' + e)
     }
   }
   return path
@@ -122,7 +122,7 @@ export fn ensureShortcutsFile() {
 // replacing?)`; `replacing` is the keyword of the shortcut being edited.
 export fn saveShortcut(v, replacing) {
   let s = shortcut(v)
-  if (s.hotkey !== "") {
+  if (s.hotkey !== '') {
     let e = keysError(s.hotkey)
     if (e !== null) {
       return result(e)
@@ -143,7 +143,7 @@ export fn removeShortcut(keyword) {
 // Add or replace a hotkey binding.
 export fn bindHotkey(keys, run, query) {
   let e = keysError(keys)
-  let b = { keys: keys, run: run, query: typeof query === "string" ? query : "" }
+  let b = { keys: keys, run: run, query: typeof query === 'string' ? query : '' }
   return e !== null ? result(e) : edit((cfg) => bind(cfg, b))
 }
 
@@ -153,7 +153,7 @@ export fn unbindHotkey(keys) {
 
 // Save the launcher hotkey ("" removes it). Registering it is up to the caller.
 export fn setLauncherHotkey(keys) {
-  let e = keys === "" ? null : keysError(keys)
+  let e = keys === '' ? null : keysError(keys)
   if (e !== null) {
     return result(e)
   }
@@ -180,7 +180,7 @@ export fn setDisabled(run, disabled) {
 
 // Save a panel key ("none" for no key, "" for the default).
 export fn setPanelKey(action, keys) {
-  let e = keys === "" || keys === "none" ? null : keysError(keys)
+  let e = keys === '' || keys === 'none' ? null : keysError(keys)
   return e !== null ? result(e) : edit((cfg) => putPanelKey(cfg, action, keys))
 }
 
@@ -194,25 +194,25 @@ export fn aiSetModel(model) {
 
 // The OAuth client id for a provider's browser sign-in.
 export fn aiSetClientId(provider, id) {
-  return edit((cfg) => setProvider(cfg, provider, "clientId", id.trim()))
+  return edit((cfg) => setProvider(cfg, provider, 'clientId', id.trim()))
 }
 
 // The organization a provider's requests act for and bill to; "" for the personal one.
 export fn aiSetOrganization(provider, id) {
-  return edit((cfg) => setProvider(cfg, provider, "organization", id.trim()))
+  return edit((cfg) => setProvider(cfg, provider, 'organization', id.trim()))
 }
 
 // Values for a template, reading the clipboard, selection and clock only when it uses them.
 fn varsFor(template, query) {
-  let v = { query: query, clipboard: "", selection: "", date: "", time: "" }
-  if (template.indexOf("{clipboard}") >= 0) {
+  let v = { query: query, clipboard: '', selection: '', date: '', time: '' }
+  if (template.indexOf('{clipboard}') >= 0) {
     v.clipboard = clipboardText()
   }
-  if (template.indexOf("{selection}") >= 0) {
+  if (template.indexOf('{selection}') >= 0) {
     let t = selectedText()
-    v.selection = typeof t === "string" ? t : ""
+    v.selection = typeof t === 'string' ? t : ''
   }
-  if (template.indexOf("{date}") >= 0 || template.indexOf("{time}") >= 0) {
+  if (template.indexOf('{date}') >= 0 || template.indexOf('{time}') >= 0) {
     let dt = localDateTime()
     v.date = dt[0]
     v.time = dt[1]
@@ -224,7 +224,7 @@ fn varsFor(template, query) {
 // `~/` at the start becomes the home folder for `open`.
 export fn expandTemplate(template, query, kind) {
   let out = expand(template, varsFor(template, query), kind)
-  if (kind === "open" && (out === "~" || out.startsWith("~/")) && env.HOME) {
+  if (kind === 'open' && (out === '~' || out.startsWith('~/')) && env.HOME) {
     out = env.HOME + out.slice(1)
   }
   return out

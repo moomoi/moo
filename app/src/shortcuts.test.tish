@@ -1,15 +1,15 @@
-import { test } from "tish:test"
-import assert from "node:assert/strict"
-import { parse, toJson, emptyConfig, shortcut, upsert, remove, bind, unbind, setAlias, setDisabled, setPanelKey, setProvider, expand, needsQuery } from "./shortcuts.tish"
+import { test } from 'tish:test'
+import assert from 'node:assert/strict'
+import { parse, toJson, emptyConfig, shortcut, upsert, remove, bind, unbind, setAlias, setDisabled, setPanelKey, setProvider, expand, needsQuery } from './shortcuts.tish'
 
 // Accepts what the native parser does for these tests: modifiers+key, no bare letters.
 fn keysError(spec) {
-  return spec.indexOf("+") > 0 ? null : "needs a modifier"
+  return spec.indexOf('+') > 0 ? null : 'needs a modifier'
 }
 
 fn ok(json) {
   let r = parse(json, keysError)
-  assert.ok(!("error" in r))
+  assert.ok(!('error' in r))
   return r
 }
 
@@ -21,140 +21,140 @@ fn same(a, b) {
   assert.equal(JSON.stringify(a), JSON.stringify(b))
 }
 
-test("ai snippets and search round trip", () => {
-  let r = ok("{ \"shortcuts\": [ { \"keyword\": \"fix\", \"kind\": \"ai\", \"target\": \"Fix the grammar: {selection}\", \"model\": \"hypery:gpt-5-mini\" }, { \"keyword\": \";sig\", \"kind\": \"text\", \"target\": \"Best,\\nA\", \"expand\": true } ], \"hotkeys\": [], \"search\": \"https://duckduckgo.com/?q={query}\", \"ai\": { \"model\": \"ollama:llama3.2\", \"providers\": { \"work\": { \"url\": \"https://llm.example/v1\", \"keyEnv\": \"WORK_KEY\" }, \"hypery\": { \"clientId\": \"abc\" } } } }")
+test('ai snippets and search round trip', () => {
+  let r = ok('{ "shortcuts": [ { "keyword": "fix", "kind": "ai", "target": "Fix the grammar: {selection}", "model": "hypery:gpt-5-mini" }, { "keyword": ";sig", "kind": "text", "target": "Best,\\nA", "expand": true } ], "hotkeys": [], "search": "https://duckduckgo.com/?q={query}", "ai": { "model": "ollama:llama3.2", "providers": { "work": { "url": "https://llm.example/v1", "keyEnv": "WORK_KEY" }, "hypery": { "clientId": "abc" } } } }')
   let cfg = r.cfg
   assert.equal(r.warnings.length, 0)
-  assert.equal(cfg.shortcuts[0].kind, "ai")
-  assert.equal(cfg.shortcuts[0].model, "hypery:gpt-5-mini")
+  assert.equal(cfg.shortcuts[0].kind, 'ai')
+  assert.equal(cfg.shortcuts[0].model, 'hypery:gpt-5-mini')
   assert.equal(cfg.shortcuts[1].expand, true)
-  assert.equal(cfg.ai.model, "ollama:llama3.2")
-  same(cfg.ai.providers.map((p) => p.id), ["hypery", "work"])
-  assert.equal(cfg.ai.providers[1].keyEnv, "WORK_KEY")
+  assert.equal(cfg.ai.model, 'ollama:llama3.2')
+  same(cfg.ai.providers.map((p) => p.id), ['hypery', 'work'])
+  assert.equal(cfg.ai.providers[1].keyEnv, 'WORK_KEY')
   let written = toJson(cfg)
   same(ok(written).cfg, cfg)
-  assert.ok(written.indexOf("\"expand\": true") >= 0)
-  assert.equal(expand(cfg.shortcuts[0].target, { query: "", clipboard: "", selection: "teh cat", date: "", time: "" }, "ai"), "Fix the grammar: teh cat")
+  assert.ok(written.indexOf('"expand": true') >= 0)
+  assert.equal(expand(cfg.shortcuts[0].target, { query: '', clipboard: '', selection: 'teh cat', date: '', time: '' }, 'ai'), 'Fix the grammar: teh cat')
 })
 
-test("parses, skips bad entries and round trips", () => {
-  let r = ok("{ \"launcher\": \"cmd+space\", \"shortcuts\": [ { \"keyword\": \"g\", \"name\": \"Google\", \"kind\": \"url\", \"target\": \"https://www.google.com/search?q={query}\" }, { \"keyword\": \"dl\", \"kind\": \"open\", \"target\": \"~/Downloads\", \"hotkey\": \"ctrl+alt+d\" }, { \"keyword\": \"G\", \"kind\": \"url\", \"target\": \"https://dup\" }, { \"keyword\": \"x\", \"kind\": \"teleport\", \"target\": \"y\" }, { \"keyword\": \"ip\", \"kind\": \"shell\", \"target\": \"curl -s ifconfig.me\", \"output\": \"copy\" }, { \"keyword\": \"cc\", \"kind\": \"command\", \"target\": \"plugin:hello-list/change-case\" } ], \"hotkeys\": [{ \"keys\": \"cmd+shift+v\", \"run\": \"moo:clipboard\" }, { \"keys\": \"cmd+1\" }] }")
+test('parses, skips bad entries and round trips', () => {
+  let r = ok('{ "launcher": "cmd+space", "shortcuts": [ { "keyword": "g", "name": "Google", "kind": "url", "target": "https://www.google.com/search?q={query}" }, { "keyword": "dl", "kind": "open", "target": "~/Downloads", "hotkey": "ctrl+alt+d" }, { "keyword": "G", "kind": "url", "target": "https://dup" }, { "keyword": "x", "kind": "teleport", "target": "y" }, { "keyword": "ip", "kind": "shell", "target": "curl -s ifconfig.me", "output": "copy" }, { "keyword": "cc", "kind": "command", "target": "plugin:hello-list/change-case" } ], "hotkeys": [{ "keys": "cmd+shift+v", "run": "moo:clipboard" }, { "keys": "cmd+1" }] }')
   let cfg = r.cfg
-  assert.equal(cfg.launcher, "cmd+space")
-  same(cfg.shortcuts.map((s) => s.keyword), ["g", "dl", "ip", "cc"])
+  assert.equal(cfg.launcher, 'cmd+space')
+  same(cfg.shortcuts.map((s) => s.keyword), ['g', 'dl', 'ip', 'cc'])
   assert.equal(r.warnings.length, 3)
-  assert.ok(r.warnings[0].indexOf("already used by \"Google\"") >= 0)
-  assert.ok(r.warnings[1].indexOf("unknown kind") >= 0)
-  assert.ok(r.warnings[2].indexOf("needs `keys` and `run`") >= 0)
-  assert.equal(cfg.shortcuts[1].name, "dl")
-  assert.equal(cfg.shortcuts[3].input, "{query}")
-  same(cfg.hotkeys, [{ keys: "cmd+shift+v", run: "moo:clipboard", query: "" }])
+  assert.ok(r.warnings[0].indexOf('already used by "Google"') >= 0)
+  assert.ok(r.warnings[1].indexOf('unknown kind') >= 0)
+  assert.ok(r.warnings[2].indexOf('needs `keys` and `run`') >= 0)
+  assert.equal(cfg.shortcuts[1].name, 'dl')
+  assert.equal(cfg.shortcuts[3].input, '{query}')
+  same(cfg.hotkeys, [{ keys: 'cmd+shift+v', run: 'moo:clipboard', query: '' }])
   let written = toJson(cfg)
   let again = ok(written)
   assert.equal(again.warnings.length, 0)
   same(again.cfg, cfg)
-  assert.ok(written.indexOf("\"output\": \"copy\"") >= 0)
-  assert.ok(written.indexOf("\"input\"") < 0)
+  assert.ok(written.indexOf('"output": "copy"') >= 0)
+  assert.ok(written.indexOf('"input"') < 0)
 })
 
-test("empty and malformed files", () => {
-  same(ok("").cfg, emptyConfig())
-  assert.ok(typeof parse("{ nope", keysError).error === "string")
-  assert.ok(typeof parse("[1]", keysError).error === "string")
-  assert.equal(toJson(emptyConfig()), "{\n  \"shortcuts\": [],\n  \"hotkeys\": []\n}\n")
+test('empty and malformed files', () => {
+  same(ok('').cfg, emptyConfig())
+  assert.ok(typeof parse('{ nope', keysError).error === 'string')
+  assert.ok(typeof parse('[1]', keysError).error === 'string')
+  assert.equal(toJson(emptyConfig()), '{\n  "shortcuts": [],\n  "hotkeys": []\n}\n')
 })
 
-test("unknown keys are kept", () => {
-  let r = ok("{ \"shortcuts\": [], \"future\": { \"a\": [1, 2] }, \"note\": \"hi\" }")
+test('unknown keys are kept', () => {
+  let r = ok('{ "shortcuts": [], "future": { "a": [1, 2] }, "note": "hi" }')
   let again = ok(toJson(r.cfg)).cfg
-  assert.equal(again.extra.note, "hi")
+  assert.equal(again.extra.note, 'hi')
   assert.equal(again.extra.future.a[1], 2)
 })
 
-test("keywords are validated", () => {
+test('keywords are validated', () => {
   let cfg = emptyConfig()
-  assert.equal(upsert(cfg, sc("g", "url", "https://g/{query}"), null), null)
-  assert.ok(upsert(cfg, sc("G", "url", "x"), null).indexOf("already used") >= 0)
-  assert.ok(upsert(cfg, sc("a b", "url", "x"), null).indexOf("spaces") >= 0)
-  assert.ok(upsert(cfg, sc("", "url", "x"), null).indexOf("keyword") >= 0)
-  assert.ok(upsert(cfg, sc("t", "url", " "), null).indexOf("target") >= 0)
-  let edited = sc("G", "url", "https://google/{query}")
-  edited.name = "Google"
-  assert.equal(upsert(cfg, edited, "g"), null)
+  assert.equal(upsert(cfg, sc('g', 'url', 'https://g/{query}'), null), null)
+  assert.ok(upsert(cfg, sc('G', 'url', 'x'), null).indexOf('already used') >= 0)
+  assert.ok(upsert(cfg, sc('a b', 'url', 'x'), null).indexOf('spaces') >= 0)
+  assert.ok(upsert(cfg, sc('', 'url', 'x'), null).indexOf('keyword') >= 0)
+  assert.ok(upsert(cfg, sc('t', 'url', ' '), null).indexOf('target') >= 0)
+  let edited = sc('G', 'url', 'https://google/{query}')
+  edited.name = 'Google'
+  assert.equal(upsert(cfg, edited, 'g'), null)
   assert.equal(cfg.shortcuts.length, 1)
-  assert.equal(cfg.shortcuts[0].keyword, "G")
-  assert.equal(remove(cfg, "g"), null)
+  assert.equal(cfg.shortcuts[0].keyword, 'G')
+  assert.equal(remove(cfg, 'g'), null)
   assert.equal(cfg.shortcuts.length, 0)
 })
 
-test("hotkey bindings", () => {
+test('hotkey bindings', () => {
   let cfg = emptyConfig()
-  bind(cfg, { keys: "cmd+shift+v", run: "moo:clipboard", query: "" })
-  bind(cfg, { keys: "CMD+SHIFT+V", run: "moo:files", query: "" })
+  bind(cfg, { keys: 'cmd+shift+v', run: 'moo:clipboard', query: '' })
+  bind(cfg, { keys: 'CMD+SHIFT+V', run: 'moo:files', query: '' })
   assert.equal(cfg.hotkeys.length, 1)
-  assert.equal(cfg.hotkeys[0].run, "moo:files")
-  let s = sc("dl", "open", "~/Downloads")
-  s.hotkey = "ctrl+alt+d"
+  assert.equal(cfg.hotkeys[0].run, 'moo:files')
+  let s = sc('dl', 'open', '~/Downloads')
+  s.hotkey = 'ctrl+alt+d'
   upsert(cfg, s, null)
-  assert.equal(unbind(cfg, "ctrl+alt+d"), null)
-  assert.equal(cfg.shortcuts[0].hotkey, "")
-  assert.equal(unbind(cfg, "cmd+shift+v"), null)
-  assert.ok(unbind(cfg, "cmd+shift+v") !== null)
+  assert.equal(unbind(cfg, 'ctrl+alt+d'), null)
+  assert.equal(cfg.shortcuts[0].hotkey, '')
+  assert.equal(unbind(cfg, 'cmd+shift+v'), null)
+  assert.ok(unbind(cfg, 'cmd+shift+v') !== null)
 })
 
-test("aliases, disabled and panel keys round trip", () => {
-  let r = ok("{ \"shortcuts\": [{ \"keyword\": \"g\", \"kind\": \"url\", \"target\": \"https://g/{query}\" }], \"hotkeys\": [], \"aliases\": { \"moo:clipboard\": \"cb\", \"moo:files\": \"g\", \"plugin:slack/send\": \"CB\", \"/Applications/Safari.app\": \"web\" }, \"disabled\": [\"moo:system:empty-trash\", \"moo:system:empty-trash\", 3], \"keys\": { \"actions\": \"cmd+j\", \"settings\": \"none\", \"category1\": \"j\" } }")
+test('aliases, disabled and panel keys round trip', () => {
+  let r = ok('{ "shortcuts": [{ "keyword": "g", "kind": "url", "target": "https://g/{query}" }], "hotkeys": [], "aliases": { "moo:clipboard": "cb", "moo:files": "g", "plugin:slack/send": "CB", "/Applications/Safari.app": "web" }, "disabled": ["moo:system:empty-trash", "moo:system:empty-trash", 3], "keys": { "actions": "cmd+j", "settings": "none", "category1": "j" } }')
   let cfg = r.cfg
-  same(cfg.aliases, [["/Applications/Safari.app", "web"], ["moo:clipboard", "cb"]])
+  same(cfg.aliases, [['/Applications/Safari.app', 'web'], ['moo:clipboard', 'cb']])
   assert.equal(r.warnings.length, 3)
-  assert.ok(r.warnings.some((x) => x.indexOf("keyword of") >= 0))
-  assert.ok(r.warnings.some((x) => x.indexOf("already the alias of moo:clipboard") >= 0))
-  assert.ok(r.warnings.some((x) => x.startsWith("key for category1")))
-  same(cfg.disabled, ["moo:system:empty-trash"])
-  same(cfg.keys, [["actions", "cmd+j"], ["settings", "none"]])
+  assert.ok(r.warnings.some((x) => x.indexOf('keyword of') >= 0))
+  assert.ok(r.warnings.some((x) => x.indexOf('already the alias of moo:clipboard') >= 0))
+  assert.ok(r.warnings.some((x) => x.startsWith('key for category1')))
+  same(cfg.disabled, ['moo:system:empty-trash'])
+  same(cfg.keys, [['actions', 'cmd+j'], ['settings', 'none']])
   same(ok(toJson(cfg)).cfg, cfg)
 })
 
-test("alias edits", () => {
+test('alias edits', () => {
   let cfg = emptyConfig()
-  upsert(cfg, sc("g", "url", "https://g/{query}"), null)
-  assert.equal(setAlias(cfg, "moo:clipboard", "cb"), null)
-  assert.equal(setAlias(cfg, "moo:clipboard", "clip"), null)
-  same(cfg.aliases, [["moo:clipboard", "clip"]])
-  assert.ok(setAlias(cfg, "moo:files", "CLIP").indexOf("already the alias") >= 0)
-  assert.ok(setAlias(cfg, "moo:files", "g").indexOf("keyword of") >= 0)
-  assert.ok(setAlias(cfg, "moo:files", "a b").indexOf("spaces") >= 0)
-  assert.ok(upsert(cfg, sc("clip", "url", "x"), null).indexOf("alias of moo:clipboard") >= 0)
-  setAlias(cfg, "moo:clipboard", "")
+  upsert(cfg, sc('g', 'url', 'https://g/{query}'), null)
+  assert.equal(setAlias(cfg, 'moo:clipboard', 'cb'), null)
+  assert.equal(setAlias(cfg, 'moo:clipboard', 'clip'), null)
+  same(cfg.aliases, [['moo:clipboard', 'clip']])
+  assert.ok(setAlias(cfg, 'moo:files', 'CLIP').indexOf('already the alias') >= 0)
+  assert.ok(setAlias(cfg, 'moo:files', 'g').indexOf('keyword of') >= 0)
+  assert.ok(setAlias(cfg, 'moo:files', 'a b').indexOf('spaces') >= 0)
+  assert.ok(upsert(cfg, sc('clip', 'url', 'x'), null).indexOf('alias of moo:clipboard') >= 0)
+  setAlias(cfg, 'moo:clipboard', '')
   assert.equal(cfg.aliases.length, 0)
-  setDisabled(cfg, "moo:files", true)
-  setDisabled(cfg, "moo:files", true)
+  setDisabled(cfg, 'moo:files', true)
+  setDisabled(cfg, 'moo:files', true)
   assert.equal(cfg.disabled.length, 1)
-  setDisabled(cfg, "moo:files", false)
+  setDisabled(cfg, 'moo:files', false)
   assert.equal(cfg.disabled.length, 0)
-  setPanelKey(cfg, "actions", "cmd+j")
-  setPanelKey(cfg, "actions", "")
+  setPanelKey(cfg, 'actions', 'cmd+j')
+  setPanelKey(cfg, 'actions', '')
   assert.equal(cfg.keys.length, 0)
 })
 
-test("providers", () => {
+test('providers', () => {
   let cfg = emptyConfig()
-  setProvider(cfg, "work", "url", "https://llm.example/v1")
-  setProvider(cfg, "hypery", "clientId", "abc")
-  setProvider(cfg, "work", "organization", "team")
-  same(cfg.ai.providers.map((p) => p.id), ["hypery", "work"])
+  setProvider(cfg, 'work', 'url', 'https://llm.example/v1')
+  setProvider(cfg, 'hypery', 'clientId', 'abc')
+  setProvider(cfg, 'work', 'organization', 'team')
+  same(cfg.ai.providers.map((p) => p.id), ['hypery', 'work'])
   let back = ok(toJson(cfg)).cfg
-  assert.equal(back.ai.providers[1].organization, "team")
-  assert.equal(back.ai.providers[1].url, "https://llm.example/v1")
+  assert.equal(back.ai.providers[1].organization, 'team')
+  assert.equal(back.ai.providers[1].url, 'https://llm.example/v1')
 })
 
-test("templates encode per kind", () => {
-  let v = { query: "rust & 'tish'", clipboard: "a b", selection: "", date: "2026-10-03", time: "17:20" }
-  assert.equal(expand("https://g.com/?q={query}", v, "url"), "https://g.com/?q=rust%20%26%20%27tish%27")
-  assert.equal(expand("echo {query}", v, "shell"), "echo \"$1\"")
-  assert.equal(expand("say '{clipboard}' {}", v, "shell"), "say '\"$2\"' \"$1\"")
-  assert.equal(expand("{} | {clipboard} | {date} {time} | {other}", v, "text"), "rust & 'tish' | a b | 2026-10-03 17:20 | {other}")
-  assert.equal(expand("é {query}", { query: "ü/", clipboard: "", selection: "", date: "", time: "" }, "url"), "é %C3%BC%2F")
-  assert.ok(needsQuery("x{}"))
-  assert.ok(!needsQuery("~/Downloads"))
+test('templates encode per kind', () => {
+  let v = { query: "rust & 'tish'", clipboard: 'a b', selection: '', date: '2026-10-03', time: '17:20' }
+  assert.equal(expand('https://g.com/?q={query}', v, 'url'), 'https://g.com/?q=rust%20%26%20%27tish%27')
+  assert.equal(expand('echo {query}', v, 'shell'), 'echo "$1"')
+  assert.equal(expand("say '{clipboard}' {}", v, 'shell'), "say '\"$2\"' \"$1\"")
+  assert.equal(expand('{} | {clipboard} | {date} {time} | {other}', v, 'text'), "rust & 'tish' | a b | 2026-10-03 17:20 | {other}")
+  assert.equal(expand('é {query}', { query: 'ü/', clipboard: '', selection: '', date: '', time: '' }, 'url'), 'é %C3%BC%2F')
+  assert.ok(needsQuery('x{}'))
+  assert.ok(!needsQuery('~/Downloads'))
 })

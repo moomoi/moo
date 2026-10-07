@@ -1,6 +1,6 @@
-import { test } from "tish:test"
-import assert from "node:assert/strict"
-import { answer, group, parseEcb, parseCache, formatCache } from "./calc.tish"
+import { test } from 'tish:test'
+import assert from 'node:assert/strict'
+import { answer, group, parseEcb, parseCache, formatCache } from './calc.tish'
 
 fn show(s) {
   let a = answer(s, null)
@@ -13,79 +13,79 @@ fn cases(list) {
   }
 }
 
-test("arithmetic", () => {
-  cases([["2+2", "4"], ["2^10", "1,024"], ["(1+2)*3", "9"], ["0.1+0.2", "0.3"], ["10/4", "2.5"], ["-3^2", "-9"],
-    ["2^3^2", "512"], ["5!", "120"], ["17 mod 5", "2"], ["sqrt(16)", "4"], ["sqrt 2", "1.41421356237"],
-    ["2pi", "6.28318530718"], ["max(3, 9, 4)", "9"], ["1,000 * 3", "3,000"], ["3 × 4 ÷ 2", "6"], ["1e3 + 1", "1,001"],
-    ["2^100", "1.267651e+30"], ["pi", "3.14159265359"]])
+test('arithmetic', () => {
+  cases([['2+2', '4'], ['2^10', '1,024'], ['(1+2)*3', '9'], ['0.1+0.2', '0.3'], ['10/4', '2.5'], ['-3^2', '-9'],
+    ['2^3^2', '512'], ['5!', '120'], ['17 mod 5', '2'], ['sqrt(16)', '4'], ['sqrt 2', '1.41421356237'],
+    ['2pi', '6.28318530718'], ['max(3, 9, 4)', '9'], ['1,000 * 3', '3,000'], ['3 × 4 ÷ 2', '6'], ['1e3 + 1', '1,001'],
+    ['2^100', '1.267651e+30'], ['pi', '3.14159265359']])
 })
 
-test("percentages", () => {
-  cases([["15% of 80", "12"], ["120 + 15%", "138"], ["200 - 10%", "180"], ["50%", "0.5"]])
+test('percentages', () => {
+  cases([['15% of 80', '12'], ['120 + 15%', '138'], ['200 - 10%', '180'], ['50%', '0.5']])
 })
 
-test("not calculations", () => {
-  let none = ["42", "-5", "safari", "e", "hello world", "1/0", "2 3", "visual studio code", "sqrt(", "3.1.4"]
+test('not calculations', () => {
+  let none = ['42', '-5', 'safari', 'e', 'hello world', '1/0', '2 3', 'visual studio code', 'sqrt(', '3.1.4']
   for (let i = 0; i < none.length; i = i + 1) {
     assert.equal(show(none[i]), null, none[i])
   }
 })
 
-test("units", () => {
-  cases([["5 km in mi", "3.10686 mi"], ["5km to miles", "3.10686 mi"], ["100 c in f", "212 °F"], ["70f", "21.1111 °C"],
-    ["0 k in c", "-273.15 °C"], ["3 cups to ml", "709.765 ml"], ["2 fl oz in ml", "59.1471 ml"],
-    ["1 gib in mb", "1,073.74 MB"], ["90 min in h", "1.5 h"], ["100 kph to mph", "62.1371 mph"],
-    ["1 acre in m2", "4,046.86 m²"], ["2*3 kg in lb", "13.2277 lb"], ["1 km in kg", null],
-    ["1000000 m in km", "1,000 km"]])
-  let a = answer("5 km", null)
-  assert.equal(a.display, "3.10686 mi")
-  assert.equal(a.copy, "3.10686")
-  assert.equal(a.detail, "5 km = 3.10686 mi")
+test('units', () => {
+  cases([['5 km in mi', '3.10686 mi'], ['5km to miles', '3.10686 mi'], ['100 c in f', '212 °F'], ['70f', '21.1111 °C'],
+    ['0 k in c', '-273.15 °C'], ['3 cups to ml', '709.765 ml'], ['2 fl oz in ml', '59.1471 ml'],
+    ['1 gib in mb', '1,073.74 MB'], ['90 min in h', '1.5 h'], ['100 kph to mph', '62.1371 mph'],
+    ['1 acre in m2', '4,046.86 m²'], ['2*3 kg in lb', '13.2277 lb'], ['1 km in kg', null],
+    ['1000000 m in km', '1,000 km']])
+  let a = answer('5 km', null)
+  assert.equal(a.display, '3.10686 mi')
+  assert.equal(a.copy, '3.10686')
+  assert.equal(a.detail, '5 km = 3.10686 mi')
 })
 
-test("bases", () => {
-  cases([["255 in hex", "0xFF"], ["10 in binary", "0b1010"], ["0xff", "255"], ["0b1010 + 1", "11"],
-    ["0x10 in dec", "16"], ["1.5 in hex", null]])
+test('bases', () => {
+  cases([['255 in hex', '0xFF'], ['10 in binary', '0b1010'], ['0xff', '255'], ['0b1010 + 1', '11'],
+    ['0x10 in dec', '16'], ['1.5 in hex', null]])
 })
 
-test("currencies", () => {
+test('currencies', () => {
   let p = parseEcb("<Cube><Cube time='2026-10-02'><Cube currency='USD' rate='1.1000'/><Cube currency='GBP' rate='0.8500'/><Cube currency='JPY' rate='160.00'/></Cube></Cube>")
-  assert.equal(p.date, "2026-10-02")
+  assert.equal(p.date, '2026-10-02')
   assert.equal(Object.keys(p.rates).length, 3)
   let a = (s) => {
     let r = answer(s, p.rates)
     return r === null ? null : r.display
   }
-  assert.equal(a("100 usd to eur"), "90.91 EUR")
-  assert.equal(a("€50 in $"), "55.00 USD")
-  assert.equal(a("10 gbp in usd"), "12.94 USD")
-  assert.equal(a("1000 yen to euros"), "6.25 EUR")
-  assert.equal(a("100 usd to xyz"), null)
-  assert.equal(answer("100 usd to eur", null), null)
+  assert.equal(a('100 usd to eur'), '90.91 EUR')
+  assert.equal(a('€50 in $'), '55.00 USD')
+  assert.equal(a('10 gbp in usd'), '12.94 USD')
+  assert.equal(a('1000 yen to euros'), '6.25 EUR')
+  assert.equal(a('100 usd to xyz'), null)
+  assert.equal(answer('100 usd to eur', null), null)
 })
 
-test("deep nesting is refused, not a crash", () => {
-  assert.equal(answer("(".repeat(100000), null), null)
-  assert.equal(answer("-".repeat(100000), null), null)
-  assert.equal(answer("(".repeat(150) + "1" + ")".repeat(40), null), null)
-  assert.equal(answer("(".repeat(70) + "1" + ")".repeat(70), null), null)
-  assert.equal(answer("-(-(-(2)))", null).copy, "-2")
+test('deep nesting is refused, not a crash', () => {
+  assert.equal(answer('('.repeat(100000), null), null)
+  assert.equal(answer('-'.repeat(100000), null), null)
+  assert.equal(answer('('.repeat(150) + '1' + ')'.repeat(40), null), null)
+  assert.equal(answer('('.repeat(70) + '1' + ')'.repeat(70), null), null)
+  assert.equal(answer('-(-(-(2)))', null).copy, '-2')
 })
 
-test("grouping", () => {
-  assert.equal(group("123"), "123")
-  assert.equal(group("1234"), "1,234")
-  assert.equal(group("12345"), "12,345")
-  assert.equal(group("-1234567.25"), "-1,234,567.25")
-  assert.equal(group("1.2e+20"), "1.2e+20")
+test('grouping', () => {
+  assert.equal(group('123'), '123')
+  assert.equal(group('1234'), '1,234')
+  assert.equal(group('12345'), '12,345')
+  assert.equal(group('-1234567.25'), '-1,234,567.25')
+  assert.equal(group('1.2e+20'), '1.2e+20')
 })
 
-test("cache file round trip", () => {
-  let c = { rates: { USD: 1.08, EUR: 1 }, date: "2026-10-02", fetched: 1000 }
+test('cache file round trip', () => {
+  let c = { rates: { USD: 1.08, EUR: 1 }, date: '2026-10-02', fetched: 1000 }
   let back = parseCache(formatCache(c))
-  assert.equal(back.date, "2026-10-02")
+  assert.equal(back.date, '2026-10-02')
   assert.equal(back.fetched, 1000)
   assert.equal(back.rates.USD, 1.08)
-  assert.equal(parseCache("x\n1\n"), null)
-  assert.equal(parseCache("x\nnope\nUSD 1\n"), null)
+  assert.equal(parseCache('x\n1\n'), null)
+  assert.equal(parseCache('x\nnope\nUSD 1\n'), null)
 })

@@ -2,11 +2,11 @@
 // `~/Library/Caches/Moo/icons` (`MOO_ICONS`), refetched in the background when over a week old, and
 // registered as a named image (`macos.icons.image`) so `<image src={name}>` finds it.
 
-import { macos } from "tish:macos"
-import { fetch } from "tish:http"
-import { writeFile, mkdir, rename, fileExists, stat } from "tish:fs"
-import { env } from "tish:process"
-import { splitUrl, hashName } from "./siteurl.tish"
+import { macos } from 'tish:macos'
+import { fetch } from 'tish:http'
+import { writeFile, mkdir, rename, fileExists, stat } from 'tish:fs'
+import { env } from 'tish:process'
+import { splitUrl, hashName } from './siteurl.tish'
 
 let MAX_AGE_MS = 7 * 24 * 3600 * 1000
 // Team images are uploaded photos, often over a megabyte; anything larger is not an icon.
@@ -18,7 +18,7 @@ fn iconDir() {
   if (env.MOO_ICONS) {
     return env.MOO_ICONS
   }
-  return env.HOME ? env.HOME + "/Library/Caches/Moo/icons" : ""
+  return env.HOME ? env.HOME + '/Library/Caches/Moo/icons' : ''
 }
 
 fn stale(path) {
@@ -26,7 +26,7 @@ fn stale(path) {
     return true
   }
   let s = stat(path)
-  return typeof s !== "object" || s === null || !("mtimeMs" in s) || Date.now() - s.mtimeMs > MAX_AGE_MS
+  return typeof s !== 'object' || s === null || !('mtimeMs' in s) || Date.now() - s.mtimeMs > MAX_AGE_MS
 }
 
 // Read the whole body as bytes, then `done(bytes)` (null on failure or when too big).
@@ -47,7 +47,7 @@ fn readBytes(reader, bytes, done) {
 // The image name for `path` now ("" until cached); when the file is missing or old, download
 // `source` and call `cb(name)` once the new image is registered.
 fn cached(path, source, cb) {
-  let have = fileExists(path) ? macos.icons.image(path, false, false) : ""
+  let have = fileExists(path) ? macos.icons.image(path, false, false) : ''
   if (!stale(path) || fetching[path] === true) {
     return have
   }
@@ -63,11 +63,11 @@ fn cached(path, source, cb) {
         return
       }
       mkdir(iconDir(), { recursive: true })
-      if (writeFile(path + ".tmp", bytes) !== null || rename(path + ".tmp", path) !== null) {
+      if (writeFile(path + '.tmp', bytes) !== null || rename(path + '.tmp', path) !== null) {
         return
       }
       let name = macos.icons.image(path, false, true)
-      if (name !== "" && typeof cb === "function") {
+      if (name !== '' && typeof cb === 'function') {
         cb(name)
       }
     })
@@ -79,17 +79,17 @@ fn cached(path, source, cb) {
 export fn siteIcon(url, cb) {
   let u = splitUrl(url)
   let dir = iconDir()
-  if (u === null || dir === "") {
-    return ""
+  if (u === null || dir === '') {
+    return ''
   }
-  return cached(dir + "/" + u.host + ".ico", u.origin + "/favicon.ico", cb)
+  return cached(dir + '/' + u.host + '.ico', u.origin + '/favicon.ico', cb)
 }
 
 // Like `siteIcon`, for the image at `url` itself (an organization's icon, say).
 export fn imageIcon(url, cb) {
   let dir = iconDir()
-  if (splitUrl(url) === null || dir === "") {
-    return ""
+  if (splitUrl(url) === null || dir === '') {
+    return ''
   }
-  return cached(dir + "/" + hashName(url) + ".img", url, cb)
+  return cached(dir + '/' + hashName(url) + '.img', url, cb)
 }

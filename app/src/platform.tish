@@ -3,12 +3,12 @@
 // opening something hides the panel, Moo's own copies are labelled "Moo", MOO_SYSTEM_DRY_RUN
 // keeps the Trash untouched.
 
-import { macos } from "tish:macos"
-import { mkdir } from "tish:fs"
-import { env } from "tish:process"
-import { about, hide, quit, reindex as reindexApps, search as searchApps, findFiles as findIndexed, recentFiles as recentIndexed, appFolders, appPaths, withUi, watchTyped, fuzzy, show } from "tish:moo"
-import { nameQuery, filterQuery, dateAttr, wanted, wantedIn, detailFor, fileName } from "./spotlightquery.tish"
-import { layoutTitle, layoutFrame, moveToScreen, screenFor } from "./windowlayout.tish"
+import { macos } from 'tish:macos'
+import { mkdir } from 'tish:fs'
+import { env } from 'tish:process'
+import { about, hide, quit, reindex as reindexApps, search as searchApps, findFiles as findIndexed, recentFiles as recentIndexed, appFolders, appPaths, withUi, watchTyped, fuzzy, show } from 'tish:moo'
+import { nameQuery, filterQuery, dateAttr, wanted, wantedIn, detailFor, fileName } from './spotlightquery.tish'
+import { layoutTitle, layoutFrame, moveToScreen, screenFor } from './windowlayout.tish'
 
 // Open a URL, file, folder or app; hides the launcher when macOS took it.
 export fn launch(target) {
@@ -39,14 +39,14 @@ export fn clipboardText() {
 // `cb({ text, app, appPath })` for each copy; Moo's own copies say "Moo".
 export fn watchClipboard(cb) {
   return macos.pasteboard.watch((c) => {
-    cb({ text: c.text, app: c.app === "" && c.appPath === "" ? "Moo" : c.app, appPath: c.appPath })
+    cb({ text: c.text, app: c.app === '' && c.appPath === '' ? 'Moo' : c.app, appPath: c.appPath })
   })
 }
 
 // -> { ok, message, error }; message is where the file went.
 export fn trashFile(path) {
   if (env.MOO_SYSTEM_DRY_RUN) {
-    return { ok: true, message: "dry run: trash " + path, error: "" }
+    return { ok: true, message: 'dry run: trash ' + path, error: '' }
   }
   let r = macos.workspace.trash(path)
   return { ok: r.ok, message: r.path, error: r.error }
@@ -54,13 +54,13 @@ export fn trashFile(path) {
 
 // -> [{ name, icon, path, isDefault }], the default app first.
 export fn appsFor(path) {
-  return macos.workspace.appsFor(path).map((a) => ({ name: a.name, icon: fileIcon(a.path), path: a.path, isDefault: a["default"] }))
+  return macos.workspace.appsFor(path).map((a) => ({ name: a.name, icon: fileIcon(a.path), path: a.path, isDefault: a['default'] }))
 }
 
 // -> { ok, message, error }
 export fn openWith(path, app) {
   let r = macos.workspace.openWith(path, app)
-  return { ok: r.ok, message: "", error: r.error }
+  return { ok: r.ok, message: '', error: r.error }
 }
 
 export fn onOpenUrl(cb) {
@@ -130,14 +130,14 @@ export fn recentFiles(limit) {
 export fn statusItem(hotkey, symbol, onMenu) {
   return macos.statusItem({
     image: symbol,
-    title: "Moo",
-    tooltip: hotkey === "" ? "Moo" : "Moo  (" + hotkey + ")",
+    title: 'Moo',
+    tooltip: hotkey === '' ? 'Moo' : 'Moo  (' + hotkey + ')',
     // Which Moo this is, greyed out: "Moo 0.4.0", or "Moo dev" for a local build.
-    menu: [{ title: "Moo " + about().version, id: "version", enabled: false }, { separator: true },
-      { title: "Settings…", id: "settings", key: "," }, { separator: true }, { title: "Quit Moo", id: "quit", key: "q" }],
+    menu: [{ title: 'Moo ' + about().version, id: 'version', enabled: false }, { separator: true },
+      { title: 'Settings…', id: 'settings', key: ',' }, { separator: true }, { title: 'Quit Moo', id: 'quit', key: 'q' }],
     onClick: () => show(),
     onMenu: (picked) => {
-      if (picked === "quit") {
+      if (picked === 'quit') {
         quit()
       } else {
         onMenu(picked)
@@ -155,7 +155,7 @@ export fn watchApps() {
 
 // `cb()` when anything in `dir` (shortcuts.json's folder) changes; creates the folder first.
 export fn watchShortcuts(dir, cb) {
-  if (dir === "") {
+  if (dir === '') {
     return false
   }
   mkdir(dir, { recursive: true })
@@ -171,7 +171,7 @@ export fn dictionaryEntries(word) {
 // dictionary's cold load (about 60 ms).
 export fn dictionaryWarm() {
   setTimeout(() => {
-    macos.dictionary.lookup("a")
+    macos.dictionary.lookup('a')
   }, 1500)
 }
 
@@ -207,7 +207,7 @@ export fn systemInfo() {
 // -> { percent, muted } or null
 export fn volume() {
   let v = macos.system.volume()
-  return "error" in v ? null : { percent: v.level, muted: v.muted }
+  return 'error' in v ? null : { percent: v.level, muted: v.muted }
 }
 
 export fn darkMode() {
@@ -217,7 +217,7 @@ export fn darkMode() {
 // "1.2 GB", "340 MB".
 export fn bytesText(n) {
   let mb = n / 1048576
-  return mb >= 1024 ? (mb / 1024).toFixed(1) + " GB" : mb.toFixed(0) + " MB"
+  return mb >= 1024 ? (mb / 1024).toFixed(1) + ' GB' : mb.toFixed(0) + ' MB'
 }
 
 // Apps in the Dock, most memory first: [{ name, icon, path, pid, bundleId, active, hidden, memory,
@@ -231,27 +231,27 @@ export fn runningApps() {
 
 // `switch`, `hide`, `unhide`, `quit` or `force-quit` the app with `pid` -> { ok, message }.
 export fn appAction(pid, action) {
-  if (env.MOO_SYSTEM_DRY_RUN && ["switch", "hide", "unhide", "quit", "force-quit"].indexOf(action) >= 0) {
+  if (env.MOO_SYSTEM_DRY_RUN && ['switch', 'hide', 'unhide', 'quit', 'force-quit'].indexOf(action) >= 0) {
     let app = macos.apps.running().filter((a) => a.pid === pid)
-    return app.length === 0 ? { ok: false, message: "no app with pid " + pid } : { ok: true, message: "dry run: " + action + " " + app[0].name }
+    return app.length === 0 ? { ok: false, message: 'no app with pid ' + pid } : { ok: true, message: 'dry run: ' + action + ' ' + app[0].name }
   }
   let r = macos.apps.act(pid, action)
   return { ok: r.ok, message: r.ok ? r.message : r.error }
 }
 
-let SYSTEM_COMMANDS = ["lock", "sleep", "sleep-displays", "restart", "shut-down", "log-out", "empty-trash", "screen-saver",
-  "dark-mode", "mute", "volume", "eject", "quit-all", "hide-all"]
+let SYSTEM_COMMANDS = ['lock', 'sleep', 'sleep-displays', 'restart', 'shut-down', 'log-out', 'empty-trash', 'screen-saver',
+  'dark-mode', 'mute', 'volume', 'eject', 'quit-all', 'hide-all']
 
 fn toggled(arg, current) {
-  return arg === "on" ? true : (arg === "off" ? false : !current)
+  return arg === 'on' ? true : (arg === 'off' ? false : !current)
 }
 
 fn done(message) {
-  return { ok: true, message: "" + message }
+  return { ok: true, message: '' + message }
 }
 
 fn failed(error) {
-  return { ok: false, message: "" + error }
+  return { ok: false, message: '' + error }
 }
 
 fn actionResult(error, message) {
@@ -265,81 +265,81 @@ fn actionResult(error, message) {
 export fn systemCommand(id, rawArg, cb) {
   let arg = rawArg.trim().toLowerCase()
   let answer = (r) => {
-    if (typeof cb === "function") {
+    if (typeof cb === 'function') {
       cb(r)
     }
     return r
   }
   if (SYSTEM_COMMANDS.indexOf(id) < 0) {
-    return answer(failed("unknown system command `" + id + "`"))
+    return answer(failed('unknown system command `' + id + '`'))
   }
   if (env.MOO_SYSTEM_DRY_RUN) {
-    return answer(done(("dry run: " + id + " " + arg).trim()))
+    return answer(done(('dry run: ' + id + ' ' + arg).trim()))
   }
   let sys = macos.system
-  if (id === "lock") {
-    return answer(actionResult(sys.lockScreen(), ""))
-  } else if (id === "sleep") {
-    return answer(actionResult(sys.sleep(), ""))
-  } else if (id === "sleep-displays") {
-    return answer(actionResult(sys.sleepDisplays(), ""))
-  } else if (id === "restart") {
-    return answer(actionResult(sys.restart(), "Restarting"))
-  } else if (id === "shut-down") {
-    return answer(actionResult(sys.shutDown(), "Shutting down"))
-  } else if (id === "log-out") {
-    return answer(actionResult(sys.logOut(), "Logging out"))
-  } else if (id === "screen-saver") {
-    return answer(actionResult(sys.screenSaver(), ""))
-  } else if (id === "empty-trash") {
-    sys.emptyTrash((e) => withUi(() => answer(actionResult(e, "Trash emptied"))))
-    return done("Emptying the Trash")
-  } else if (id === "eject") {
+  if (id === 'lock') {
+    return answer(actionResult(sys.lockScreen(), ''))
+  } else if (id === 'sleep') {
+    return answer(actionResult(sys.sleep(), ''))
+  } else if (id === 'sleep-displays') {
+    return answer(actionResult(sys.sleepDisplays(), ''))
+  } else if (id === 'restart') {
+    return answer(actionResult(sys.restart(), 'Restarting'))
+  } else if (id === 'shut-down') {
+    return answer(actionResult(sys.shutDown(), 'Shutting down'))
+  } else if (id === 'log-out') {
+    return answer(actionResult(sys.logOut(), 'Logging out'))
+  } else if (id === 'screen-saver') {
+    return answer(actionResult(sys.screenSaver(), ''))
+  } else if (id === 'empty-trash') {
+    sys.emptyTrash((e) => withUi(() => answer(actionResult(e, 'Trash emptied'))))
+    return done('Emptying the Trash')
+  } else if (id === 'eject') {
     sys.ejectAll((r) => withUi(() => {
       if (r.failed.length > 0) {
-        answer(failed("Could not eject " + r.failed.join("; ")))
+        answer(failed('Could not eject ' + r.failed.join('; ')))
       } else {
-        answer(done(r.ejected.length === 0 ? "No disks to eject" : "Ejected " + r.ejected.join(", ")))
+        answer(done(r.ejected.length === 0 ? 'No disks to eject' : 'Ejected ' + r.ejected.join(', ')))
       }
     }))
-    return done("Ejecting")
-  } else if (id === "dark-mode") {
+    return done('Ejecting')
+  } else if (id === 'dark-mode') {
     let now = sys.darkMode()
     if (now === null) {
-      return answer(failed("cannot read the appearance"))
+      return answer(failed('cannot read the appearance'))
     }
     let on = toggled(arg, now)
-    return answer(actionResult(sys.setDarkMode(on), on ? "Dark mode on" : "Dark mode off"))
-  } else if (id === "mute") {
+    return answer(actionResult(sys.setDarkMode(on), on ? 'Dark mode on' : 'Dark mode off'))
+  } else if (id === 'mute') {
     let v = sys.volume()
-    if ("error" in v) {
+    if ('error' in v) {
       return answer(failed(v.error))
     }
     let on = toggled(arg, v.muted)
-    return answer(actionResult(sys.setMuted(on), on ? "Sound muted" : "Sound on"))
-  } else if (id === "volume") {
+    return answer(actionResult(sys.setMuted(on), on ? 'Sound muted' : 'Sound on'))
+  } else if (id === 'volume') {
     let v = sys.volume()
-    if ("error" in v) {
+    if ('error' in v) {
       return answer(failed(v.error))
     }
-    let a = arg.endsWith("%") ? arg.slice(0, arg.length - 1) : arg
-    if (a === "") {
-      return answer(done("Volume " + v.level + "%" + (v.muted ? " (muted)" : "")))
+    let a = arg.endsWith('%') ? arg.slice(0, arg.length - 1) : arg
+    if (a === '') {
+      return answer(done('Volume ' + v.level + '%' + (v.muted ? ' (muted)' : '')))
     }
-    let target = a === "up" ? v.level + 10 : (a === "down" ? v.level - 10 : Number(a))
+    let target = a === 'up' ? v.level + 10 : (a === 'down' ? v.level - 10 : Number(a))
     if (isNaN(target)) {
-      return answer(failed("not a volume: " + rawArg))
+      return answer(failed('not a volume: ' + rawArg))
     }
     target = Math.round(Math.min(Math.max(target, 0), 100))
     let e = sys.setVolume(target)
     if (e === null && target > 0 && v.muted) {
       e = sys.setMuted(false)
     }
-    return answer(actionResult(e, "Volume " + target + "%"))
-  } else if (id === "quit-all") {
-    return answer(done("Asked " + macos.apps.quitAll() + " apps to quit"))
+    return answer(actionResult(e, 'Volume ' + target + '%'))
+  } else if (id === 'quit-all') {
+    return answer(done('Asked ' + macos.apps.quitAll() + ' apps to quit'))
   }
-  return answer(done("Hid " + macos.apps.hideAll() + " apps"))
+  return answer(done('Hid ' + macos.apps.hideAll() + ' apps'))
 }
 
 // ── Contacts ────────────────────────────────────────────────────────────────
@@ -358,7 +358,7 @@ let contactsGeneration = 0
 export fn searchContacts(query, limit, cb) {
   contactsGeneration = contactsGeneration + 1
   let mine = contactsGeneration
-  let q = "" + query
+  let q = '' + query
   macos.contacts.query(q, Math.min(Math.max(limit, 1), 500), (r) => {
     if (mine === contactsGeneration) {
       withUi(() => cb({ query: q, results: r.contacts, error: r.error }))
@@ -369,7 +369,7 @@ export fn searchContacts(query, limit, cb) {
 
 // ── Accessibility ───────────────────────────────────────────────────────────
 
-let NEEDS_ACCESSIBILITY = "Moo needs Accessibility: System Settings › Privacy & Security › Accessibility"
+let NEEDS_ACCESSIBILITY = 'Moo needs Accessibility: System Settings › Privacy & Security › Accessibility'
 
 export fn accessibilityTrusted(prompt) {
   return macos.accessibility.trusted(prompt === true)
@@ -383,7 +383,7 @@ export fn selectedText() {
 // Replace `typed` just before the cursor in the focused field with `text` -> { ok, error }.
 export fn replaceTyped(typed, text) {
   let e = macos.accessibility.replaceBeforeCursor(typed, text)
-  return e === null ? { ok: true, error: "" } : { ok: false, error: e === "needs Accessibility permission" ? NEEDS_ACCESSIBILITY : e }
+  return e === null ? { ok: true, error: '' } : { ok: false, error: e === 'needs Accessibility permission' ? NEEDS_ACCESSIBILITY : e }
 }
 
 // Watch for snippet keywords typed in other apps -> { ok, error }; asks for Accessibility when
@@ -394,7 +394,7 @@ export fn watchSnippets(keywords, cb) {
     macos.accessibility.trusted(true)
     return { ok: false, error: NEEDS_ACCESSIBILITY }
   }
-  return { ok: true, error: "" }
+  return { ok: true, error: '' }
 }
 
 // Each window's frame before Moo last moved it, by "pid:window", for Restore.
@@ -405,7 +405,7 @@ let framesBefore = {}
 export fn arrangeWindow(layout) {
   let title = layoutTitle(layout)
   if (title === null) {
-    return { ok: false, message: "unknown layout `" + layout + "`" }
+    return { ok: false, message: 'unknown layout `' + layout + '`' }
   }
   let ax = macos.accessibility
   if (!ax.trusted(false)) {
@@ -413,45 +413,45 @@ export fn arrangeWindow(layout) {
     return { ok: false, message: NEEDS_ACCESSIBILITY }
   }
   let win = ax.focusedWindow()
-  if ("error" in win) {
+  if ('error' in win) {
     return { ok: false, message: win.error }
   }
   let cur = { x: win.x, y: win.y, w: win.w, h: win.h }
   let screens = macos.screens()
   if (screens.length === 0) {
-    return { ok: false, message: "no displays" }
+    return { ok: false, message: 'no displays' }
   }
   let i = screenFor(cur, screens.map((sc) => sc.frame))
-  let key = win.pid + ":" + win.key
+  let key = win.pid + ':' + win.key
   let target = null
-  if (layout === "next-display" || layout === "previous-display") {
+  if (layout === 'next-display' || layout === 'previous-display') {
     if (screens.length < 2) {
-      return { ok: false, message: "only one display" }
+      return { ok: false, message: 'only one display' }
     }
     let n = screens.length
-    let j = layout === "next-display" ? (i + 1) % n : (i + n - 1) % n
+    let j = layout === 'next-display' ? (i + 1) % n : (i + n - 1) % n
     target = moveToScreen(cur, screens[i].visible, screens[j].visible)
-  } else if (layout === "restore") {
+  } else if (layout === 'restore') {
     if (!(key in framesBefore)) {
-      return { ok: false, message: "nothing to restore for " + win.app }
+      return { ok: false, message: 'nothing to restore for ' + win.app }
     }
     target = framesBefore[key]
   } else {
     target = layoutFrame(layout, screens[i].visible, cur)
   }
   if (env.MOO_SYSTEM_DRY_RUN) {
-    return { ok: true, message: "dry run: " + title + " " + win.app + " " + cur.x + "," + cur.y + " " + cur.w + "×" + cur.h + " → " + target.x + "," + target.y + " " + target.w + "×" + target.h }
+    return { ok: true, message: 'dry run: ' + title + ' ' + win.app + ' ' + cur.x + ',' + cur.y + ' ' + cur.w + '×' + cur.h + ' → ' + target.x + ',' + target.y + ' ' + target.w + '×' + target.h }
   }
-  if (layout !== "restore") {
+  if (layout !== 'restore') {
     framesBefore[key] = cur
   }
   let e = ax.setFocusedWindowFrame(target.x, target.y, target.w, target.h)
-  return e === null ? { ok: true, message: "" } : { ok: false, message: e }
+  return e === null ? { ok: true, message: '' } : { ok: false, message: e }
 }
 
 // ── Spotlight file search ───────────────────────────────────────────────────
 
-let HOME = env.HOME ? env.HOME : ""
+let HOME = env.HOME ? env.HOME : ''
 // Spotlight returns matches in index order, not by relevance, so fetch a pool and rank it here.
 let NAME_CANDIDATES = 400
 let FIND_CANDIDATES = 2000
@@ -461,7 +461,7 @@ let SIZE_STEPS = [1073741824, 104857600, 10485760, 1048576, 0]
 let AGE_STEPS = [86400, 604800, 2592000, 31536000, 0]
 
 fn isFolder(item) {
-  return item.contentType === "public.folder"
+  return item.contentType === 'public.folder'
 }
 
 let filesGeneration = 0
@@ -472,14 +472,14 @@ let filesGeneration = 0
 export fn searchFiles(query, limit, cb) {
   filesGeneration = filesGeneration + 1
   let mine = filesGeneration
-  let q = "" + query
+  let q = '' + query
   let mdq = nameQuery(q)
   if (mdq === null) {
     setTimeout(() => withUi(() => cb({ query: q, results: [], ms: 0 })), 0)
     return mine
   }
   let t0 = Date.now()
-  macos.spotlight.query(mdq, { scope: "home", max: NAME_CANDIDATES }, (r) => {
+  macos.spotlight.query(mdq, { scope: 'home', max: NAME_CANDIDATES }, (r) => {
     if (mine !== filesGeneration) {
       return
     }
@@ -496,7 +496,7 @@ export fn searchFiles(query, limit, cb) {
       return a.item.path.length - b.item.path.length
     })
     let results = ranked.slice(0, limit).map((h) => ({
-      name: h.name, path: h.item.path, icon: fileIcon(h.item.path), kind: isFolder(h.item) ? "Folder" : "File",
+      name: h.name, path: h.item.path, icon: fileIcon(h.item.path), kind: isFolder(h.item) ? 'Folder' : 'File',
       detail: detailFor(h.item.path, HOME), score: h.score
     }))
     withUi(() => cb({ query: q, results: results, ms: Date.now() - t0 }))
@@ -511,21 +511,21 @@ let contentsGeneration = 0
 export fn searchContents(text, limit, cb) {
   contentsGeneration = contentsGeneration + 1
   let mine = contentsGeneration
-  let q = "" + text
+  let q = '' + text
   let n = Math.min(Math.max(limit, 1), 50)
-  if (q.trim() === "") {
+  if (q.trim() === '') {
     setTimeout(() => withUi(() => cb({ query: q, results: [] })), 0)
     return mine
   }
-  let f = { name: "", contains: q, kind: "", minBytes: 0, maxBytes: 0, createdSecs: 0, modifiedSecs: 0, openedSecs: 0 }
-  macos.spotlight.query(filterQuery(f, 0, null), { scope: "home", max: FIND_CANDIDATES }, (r) => {
+  let f = { name: '', contains: q, kind: '', minBytes: 0, maxBytes: 0, createdSecs: 0, modifiedSecs: 0, openedSecs: 0 }
+  macos.spotlight.query(filterQuery(f, 0, null), { scope: 'home', max: FIND_CANDIDATES }, (r) => {
     if (mine !== contentsGeneration) {
       return
     }
     let items = r.items.filter((it) => wanted(it.path, HOME))
     items.sort((a, b) => b.modified - a.modified)
     let results = items.slice(0, n).map((it) => ({
-      name: fileName(it.path), path: it.path, icon: fileIcon(it.path), kind: isFolder(it) ? "Folder" : "File", detail: detailFor(it.path, HOME)
+      name: fileName(it.path), path: it.path, icon: fileIcon(it.path), kind: isFolder(it) ? 'Folder' : 'File', detail: detailFor(it.path, HOME)
     }))
     withUi(() => cb({ query: q, results: results }))
   })
@@ -533,7 +533,7 @@ export fn searchContents(text, limit, cb) {
 }
 
 fn findItems(query, folder) {
-  let items = macos.spotlight.query(query, { scope: folder === "" ? "home" : folder, max: FIND_CANDIDATES })
+  let items = macos.spotlight.query(query, { scope: folder === '' ? 'home' : folder, max: FIND_CANDIDATES })
   return items.filter((it) => wantedIn(it.path, folder))
 }
 
@@ -544,21 +544,21 @@ fn findItems(query, folder) {
 export fn queryFiles(filter) {
   let t0 = Date.now()
   let f = {
-    name: filter.name ? filter.name : "", contains: filter.contains ? filter.contains : "", kind: filter.kind ? filter.kind : "",
+    name: filter.name ? filter.name : '', contains: filter.contains ? filter.contains : '', kind: filter.kind ? filter.kind : '',
     minBytes: Math.max(filter.minBytes ? filter.minBytes : 0, 0), maxBytes: Math.max(filter.maxBytes ? filter.maxBytes : 0, 0),
     createdSecs: Math.max(filter.createdSecs ? filter.createdSecs : 0, 0), modifiedSecs: Math.max(filter.modifiedSecs ? filter.modifiedSecs : 0, 0),
     openedSecs: Math.max(filter.openedSecs ? filter.openedSecs : 0, 0)
   }
-  let folder = filter.folder ? filter.folder : ""
-  while (folder.endsWith("/")) {
+  let folder = filter.folder ? filter.folder : ''
+  while (folder.endsWith('/')) {
     folder = folder.slice(0, folder.length - 1)
   }
-  let sort = filter.sort ? filter.sort : ""
+  let sort = filter.sort ? filter.sort : ''
   let limit = Math.min(Math.max(filter.limit ? filter.limit : 1, 1), 50)
-  let dateSort = sort === "created" || sort === "modified" || sort === "opened"
-  let hasRange = sort === "created" ? f.createdSecs > 0 : (sort === "opened" ? f.openedSecs > 0 : f.modifiedSecs > 0)
+  let dateSort = sort === 'created' || sort === 'modified' || sort === 'opened'
+  let hasRange = sort === 'created' ? f.createdSecs > 0 : (sort === 'opened' ? f.openedSecs > 0 : f.modifiedSecs > 0)
   let items = []
-  if (sort === "size" && f.minBytes === 0) {
+  if (sort === 'size' && f.minBytes === 0) {
     for (let i = 0; i < SIZE_STEPS.length; i = i + 1) {
       items = findItems(filterQuery(f, SIZE_STEPS[i], null), folder)
       if (items.length >= limit) {
@@ -575,20 +575,20 @@ export fn queryFiles(filter) {
   } else {
     items = findItems(filterQuery(f, f.minBytes, null), folder)
   }
-  if (sort === "size") {
+  if (sort === 'size') {
     items.sort((a, b) => b.size - a.size)
-  } else if (sort === "created") {
+  } else if (sort === 'created') {
     items.sort((a, b) => b.created - a.created)
-  } else if (sort === "opened") {
+  } else if (sort === 'opened') {
     items.sort((a, b) => b.lastUsed - a.lastUsed)
-  } else if (sort === "name") {
+  } else if (sort === 'name') {
     items.sort((a, b) => fileName(a.path).toLowerCase() < fileName(b.path).toLowerCase() ? -1 : 1)
   } else {
     items.sort((a, b) => b.modified - a.modified)
   }
   let total = items.length
   let results = items.slice(0, limit).map((it) => ({
-    name: fileName(it.path), icon: fileIcon(it.path), kind: isFolder(it) ? "Folder" : "File", detail: detailFor(it.path, HOME),
+    name: fileName(it.path), icon: fileIcon(it.path), kind: isFolder(it) ? 'Folder' : 'File', detail: detailFor(it.path, HOME),
     bytes: it.size, created: Math.round(it.created * 1000), modified: Math.round(it.modified * 1000), opened: Math.round(it.lastUsed * 1000), path: it.path
   }))
   return { results: results, total: total, ms: Date.now() - t0 }

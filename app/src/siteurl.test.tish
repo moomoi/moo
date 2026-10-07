@@ -1,18 +1,18 @@
-import { test } from "tish:test"
-import assert from "node:assert/strict"
-import { splitUrl, hashName } from "./siteurl.tish"
+import { test } from 'tish:test'
+import assert from 'node:assert/strict'
+import { splitUrl, hashName } from './siteurl.tish'
 
-test("splits origin and host", () => {
-  assert.equal(JSON.stringify(splitUrl("https://hypery.ai")), JSON.stringify({ origin: "https://hypery.ai", host: "hypery.ai" }))
-  assert.equal(splitUrl("https://Hypery.ai/settings/x?y#z").origin, "https://hypery.ai")
-  assert.equal(JSON.stringify(splitUrl("http://127.0.0.1:18765/v1")), JSON.stringify({ origin: "http://127.0.0.1:18765", host: "127.0.0.1" }))
-  assert.equal(splitUrl("file:///etc/passwd"), null)
-  assert.equal(splitUrl("https://../x"), null)
-  assert.equal(splitUrl("https://a b.com"), null)
+test('splits origin and host', () => {
+  assert.equal(JSON.stringify(splitUrl('https://hypery.ai')), JSON.stringify({ origin: 'https://hypery.ai', host: 'hypery.ai' }))
+  assert.equal(splitUrl('https://Hypery.ai/settings/x?y#z').origin, 'https://hypery.ai')
+  assert.equal(JSON.stringify(splitUrl('http://127.0.0.1:18765/v1')), JSON.stringify({ origin: 'http://127.0.0.1:18765', host: '127.0.0.1' }))
+  assert.equal(splitUrl('file:///etc/passwd'), null)
+  assert.equal(splitUrl('https://../x'), null)
+  assert.equal(splitUrl('https://a b.com'), null)
 })
 
-test("hash names are stable and short", () => {
-  assert.equal(hashName("h"), "ed0c3757")
-  assert.equal(hashName("https://a/x.png").length, 8)
-  assert.ok(hashName("https://a/x.png") !== hashName("https://a/y.png"))
+test('hash names are stable and short', () => {
+  assert.equal(hashName('h'), 'ed0c3757')
+  assert.equal(hashName('https://a/x.png').length, 8)
+  assert.ok(hashName('https://a/x.png') !== hashName('https://a/y.png'))
 })

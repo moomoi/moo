@@ -8,34 +8,34 @@
 // travels in `state` as `<port>.<nonce>`. Moo checks the whole state and redeems the code with its
 // PKCE verifier, which never leaves the Mac, so nothing passing through here can be redeemed alone.
 
-import { PAGES, SIGN_IN_FAILED, NOT_FOUND } from "../dist/pages.tish"
+import { PAGES, SIGN_IN_FAILED, NOT_FOUND } from '../dist/pages.tish'
 
 // Promoted releases are mirrored to this public repo under a fixed asset name (docs/release.md).
-let DOWNLOAD_URL = "https://github.com/moomoi/moo/releases/latest/download/Moo-macos-universal.dmg"
+let DOWNLOAD_URL = 'https://github.com/moomoi/moo/releases/latest/download/Moo-macos-universal.dmg'
 
-let DIGITS = "0123456789"
-let NONCE_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
+let DIGITS = '0123456789'
+let NONCE_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_'
 
 // Pages carry no script; the policy keeps it that way. Every effect below is CSS.
 let PAGE_HEADERS = {
-    "Content-Type": "text/html; charset=utf-8",
-    "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
-    "Referrer-Policy": "no-referrer",
-    "X-Content-Type-Options": "nosniff",
-    "Strict-Transport-Security": "max-age=31536000"
+    'Content-Type': 'text/html; charset=utf-8',
+    'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+    'Referrer-Policy': 'no-referrer',
+    'X-Content-Type-Options': 'nosniff',
+    'Strict-Transport-Security': 'max-age=31536000'
 }
 
 // Other spellings of a page's path.
-let ALIASES = { "/index.html": "/", "/docs/": "/docs" }
+let ALIASES = { '/index.html': '/', '/docs/': '/docs' }
 
 fn queryParam(query, name) {
-    let parts = query.split("&")
+    let parts = query.split('&')
     for (let i = 0; i < parts.length; i = i + 1) {
         let p = parts[i]
-        let eq = p.indexOf("=")
+        let eq = p.indexOf('=')
         let key = eq < 0 ? p : p.slice(0, eq)
         if (key === name) {
-            return eq < 0 ? "" : p.slice(eq + 1)
+            return eq < 0 ? '' : p.slice(eq + 1)
         }
     }
     return null
@@ -46,7 +46,7 @@ fn relayPort(state) {
     if (state === null) {
         return 0
     }
-    let dot = state.indexOf(".")
+    let dot = state.indexOf('.')
     if (dot < 4 || dot > 5) {
         return 0
     }
@@ -74,33 +74,33 @@ fn relayPort(state) {
 }
 
 fn callback(req) {
-    let port = relayPort(queryParam(req.query, "state"))
+    let port = relayPort(queryParam(req.query, 'state'))
     if (port === 0) {
         return { status: 400, headers: PAGE_HEADERS, body: SIGN_IN_FAILED }
     }
     return {
         status: 302,
         headers: {
-            "Location": `http://127.0.0.1:${port}/callback?${req.query}`,
-            "Cache-Control": "no-store",
-            "Referrer-Policy": "no-referrer"
+            'Location': `http://127.0.0.1:${port}/callback?${req.query}`,
+            'Cache-Control': 'no-store',
+            'Referrer-Policy': 'no-referrer'
         },
-        body: ""
+        body: ''
     }
 }
 
 fn handle(req) {
-    if (req.method !== "GET" && req.method !== "HEAD") {
-        return { status: 405, headers: { "Allow": "GET, HEAD" }, body: "" }
+    if (req.method !== 'GET' && req.method !== 'HEAD') {
+        return { status: 405, headers: { 'Allow': 'GET, HEAD' }, body: '' }
     }
-    if (req.path === "/callback") {
+    if (req.path === '/callback') {
         return callback(req)
     }
-    if (req.path === "/download") {
-        return { status: 302, headers: { "Location": DOWNLOAD_URL, "Cache-Control": "no-store" }, body: "" }
+    if (req.path === '/download') {
+        return { status: 302, headers: { 'Location': DOWNLOAD_URL, 'Cache-Control': 'no-store' }, body: '' }
     }
-    if (req.path === "/health") {
-        return { status: 200, headers: { "Content-Type": "text/plain", "Cache-Control": "no-store" }, body: "ok" }
+    if (req.path === '/health') {
+        return { status: 200, headers: { 'Content-Type': 'text/plain', 'Cache-Control': 'no-store' }, body: 'ok' }
     }
     let path = req.path in ALIASES ? ALIASES[req.path] : req.path
     if (path in PAGES) {
@@ -109,6 +109,6 @@ fn handle(req) {
     return { status: 404, headers: PAGE_HEADERS, body: NOT_FOUND }
 }
 
-let port = "PORT" in process.env ? parseInt(process.env.PORT) : 8080
+let port = 'PORT' in process.env ? parseInt(process.env.PORT) : 8080
 console.log(`moo.moi listening on ${port}`)
 serve(port, handle)

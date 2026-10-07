@@ -7,47 +7,47 @@
 // Moo's OAuth app on hypery.ai (public client: PKCE). Its registered redirect is the moo.moi relay
 // (web/ in this repo), which hands the code to the loopback listener. Config and
 // `MOO_HYPERY_CLIENT_ID` / `MOO_HYPERY_REDIRECT` win.
-let HYPERY_CLIENT_ID = "app_1791139621564_l2l6kzx0m"
-let HYPERY_REDIRECT = "https://moo.moi/callback"
+let HYPERY_CLIENT_ID = 'app_1791139621564_l2l6kzx0m'
+let HYPERY_REDIRECT = 'https://moo.moi/callback'
 
 // Picks which of the user's Hypery organizations a request acts for and bills to.
-export let ORG_HEADER = "x-hypery-active-organization-id"
+export let ORG_HEADER = 'x-hypery-active-organization-id'
 
 fn provider(pid, title, url, keyEnv, local) {
-  return { id: pid, title: title, url: url, keyEnv: keyEnv, oauth: null, scope: "", clientId: "", redirect: "",
-    local: local, modelsQuery: "", publicModels: false, account: false, organization: "" }
+  return { id: pid, title: title, url: url, keyEnv: keyEnv, oauth: null, scope: '', clientId: '', redirect: '',
+    local: local, modelsQuery: '', publicModels: false, account: false, organization: '' }
 }
 
 fn builtins() {
-  let hypery = provider("hypery", "Hypery", "https://hypery.ai/v1", "HYPERY_API_KEY", false)
-  hypery.oauth = { authorize: "/api/oauth/authorize", token: "/api/oauth/token" }
-  hypery.scope = "ai:chat ai:models billing:read"
-  hypery.modelsQuery = "?category=chat&limit=1000"
+  let hypery = provider('hypery', 'Hypery', 'https://hypery.ai/v1', 'HYPERY_API_KEY', false)
+  hypery.oauth = { authorize: '/api/oauth/authorize', token: '/api/oauth/token' }
+  hypery.scope = 'ai:chat ai:models billing:read'
+  hypery.modelsQuery = '?category=chat&limit=1000'
   hypery.publicModels = true
   hypery.account = true
   return [
     hypery,
-    provider("openai", "OpenAI", "https://api.openai.com/v1", "OPENAI_API_KEY", false),
-    provider("ollama", "Ollama", "http://localhost:11434/v1", "", true),
-    provider("lmstudio", "LM Studio", "http://localhost:1234/v1", "", true)
+    provider('openai', 'OpenAI', 'https://api.openai.com/v1', 'OPENAI_API_KEY', false),
+    provider('ollama', 'Ollama', 'http://localhost:11434/v1', '', true),
+    provider('lmstudio', 'LM Studio', 'http://localhost:1234/v1', '', true)
   ]
 }
 
 export fn isLocal(url) {
-  let i = url.indexOf("://")
-  let rest = i >= 0 ? url.slice(i + 3) : ""
-  let host = rest.split("/")[0]
-  if (host.startsWith("[")) {
-    host = host.slice(0, host.indexOf("]") + 1)
+  let i = url.indexOf('://')
+  let rest = i >= 0 ? url.slice(i + 3) : ''
+  let host = rest.split('/')[0]
+  if (host.startsWith('[')) {
+    host = host.slice(0, host.indexOf(']') + 1)
   } else {
-    host = host.split(":")[0]
+    host = host.split(':')[0]
   }
-  return host === "localhost" || host === "127.0.0.1" || host === "[::1]"
+  return host === 'localhost' || host === '127.0.0.1' || host === '[::1]'
 }
 
 fn trimSlashes(s) {
   let t = s
-  while (t.endsWith("/")) {
+  while (t.endsWith('/')) {
     t = t.slice(0, t.length - 1)
   }
   return t
@@ -67,23 +67,23 @@ export fn providers(cfgProviders, env) {
       }
     }
     if (p === null) {
-      p = provider(c.id, c.id, "", "", false)
+      p = provider(c.id, c.id, '', '', false)
       list.push(p)
     }
-    if (c.title !== "") {
+    if (c.title !== '') {
       p.title = c.title
     }
-    if (c.url !== "") {
+    if (c.url !== '') {
       p.url = trimSlashes(c.url)
       p.local = isLocal(p.url)
     }
-    if (c.keyEnv !== "") {
+    if (c.keyEnv !== '') {
       p.keyEnv = c.keyEnv
     }
-    if (c.clientId !== "") {
+    if (c.clientId !== '') {
       p.clientId = c.clientId
     }
-    if (c.redirectUri !== "") {
+    if (c.redirectUri !== '') {
       p.redirect = c.redirectUri
     }
     p.organization = c.organization
@@ -94,13 +94,13 @@ export fn providers(cfgProviders, env) {
       continue
     }
     let up = p.id.toUpperCase()
-    if (p.clientId === "") {
-      let v = env["MOO_" + up + "_CLIENT_ID"]
-      p.clientId = v ? v : (p.id === "hypery" ? HYPERY_CLIENT_ID : "")
+    if (p.clientId === '') {
+      let v = env['MOO_' + up + '_CLIENT_ID']
+      p.clientId = v ? v : (p.id === 'hypery' ? HYPERY_CLIENT_ID : '')
     }
-    if (p.redirect === "") {
-      let v = env["MOO_" + up + "_REDIRECT"]
-      p.redirect = v ? v : (p.id === "hypery" ? HYPERY_REDIRECT : "")
+    if (p.redirect === '') {
+      let v = env['MOO_' + up + '_REDIRECT']
+      p.redirect = v ? v : (p.id === 'hypery' ? HYPERY_REDIRECT : '')
     }
   }
   return list
@@ -109,17 +109,17 @@ export fn providers(cfgProviders, env) {
 // `provider:model` -> [provider, model]. `apple` (or empty) is Apple's on-device model.
 export fn splitModel(m) {
   let t = m.trim()
-  if (t === "" || t === "apple") {
-    return ["apple", ""]
+  if (t === '' || t === 'apple') {
+    return ['apple', '']
   }
-  let i = t.indexOf(":")
-  return i < 0 ? [t, ""] : [t.slice(0, i), t.slice(i + 1)]
+  let i = t.indexOf(':')
+  return i < 0 ? [t, ''] : [t.slice(0, i), t.slice(i + 1)]
 }
 
 export fn origin(url) {
-  let i = url.indexOf("://")
+  let i = url.indexOf('://')
   let start = i >= 0 ? i + 3 : 0
-  let slash = url.indexOf("/", start)
+  let slash = url.indexOf('/', start)
   return slash < 0 ? url : url.slice(0, slash)
 }
 
@@ -133,16 +133,16 @@ export fn endpoints(p) {
 }
 
 export fn oauthAccount(pid) {
-  return pid + ".oauth"
+  return pid + '.oauth'
 }
 
 export fn noCredential(p) {
-  let how = p.title + " needs an API key: `moo ai key " + p.id + " <key>`"
-  if (p.keyEnv !== "") {
-    how = how + " or $" + p.keyEnv
+  let how = p.title + ' needs an API key: `moo ai key ' + p.id + ' <key>`'
+  if (p.keyEnv !== '') {
+    how = how + ' or $' + p.keyEnv
   }
   if (p.oauth !== null) {
-    how = how + ", or sign in with `moo ai login " + p.id + "`"
+    how = how + ', or sign in with `moo ai login ' + p.id + '`'
   }
   return how
 }
@@ -173,7 +173,7 @@ export fn utf8(bytes) {
     out.push(String.fromCharCode(cp))
     i = i + len
   }
-  return out.join("")
+  return out.join('')
 }
 
 // Split a byte stream into lines: `feed(lines, chunk)` appends each completed line (without its
@@ -207,48 +207,48 @@ export fn feedLines(lines, chunk) {
 // done }. Events are dispatched at the blank line that ends them, and an event's `data:` lines are
 // joined with "\n" (so a JSON payload split over several lines still parses).
 export fn newStream() {
-  return { text: "", calls: [], finish: "", error: "", done: false, data: [] }
+  return { text: '', calls: [], finish: '', error: '', done: false, data: [] }
 }
 
 fn str(v) {
-  if (typeof v === "string") {
+  if (typeof v === 'string') {
     return v
   }
-  if (typeof v === "number") {
-    return "" + v
+  if (typeof v === 'number') {
+    return '' + v
   }
-  return ""
+  return ''
 }
 
 export fn errorText(e) {
-  if (typeof e === "string") {
+  if (typeof e === 'string') {
     return e
   }
-  if (typeof e !== "object" || e === null) {
-    return "unknown error"
+  if (typeof e !== 'object' || e === null) {
+    return 'unknown error'
   }
   let code = str(e.code)
   let msg = str(e.message)
-  if (code !== "" && msg !== "") {
-    return code + ": " + msg
+  if (code !== '' && msg !== '') {
+    return code + ': ' + msg
   }
-  if (msg !== "") {
+  if (msg !== '') {
     return msg
   }
-  return code !== "" ? code : "unknown error"
+  return code !== '' ? code : 'unknown error'
 }
 
 // One event's data; true when the text or tool calls changed.
 fn dispatch(st, data) {
-  if (data === "[DONE]") {
+  if (data === '[DONE]') {
     st.done = true
     return false
   }
   let v = JSON.parse(data)
-  if (typeof v !== "object" || v === null) {
+  if (typeof v !== 'object' || v === null) {
     return false
   }
-  if ("error" in v && v.error !== null) {
+  if ('error' in v && v.error !== null) {
     st.error = errorText(v.error)
     return false
   }
@@ -257,34 +257,34 @@ fn dispatch(st, data) {
   for (let c = 0; c < choices.length; c = c + 1) {
     let choice = choices[c]
     let finish = str(choice.finish_reason)
-    if (finish !== "") {
+    if (finish !== '') {
       st.finish = finish
     }
     let delta = choice.delta
-    if (typeof delta !== "object" || delta === null) {
+    if (typeof delta !== 'object' || delta === null) {
       continue
     }
     let piece = str(delta.content)
-    if (piece !== "") {
+    if (piece !== '') {
       st.text = st.text + piece
       changed = true
     }
     let tcs = Array.isArray(delta.tool_calls) ? delta.tool_calls : []
     for (let t = 0; t < tcs.length; t = t + 1) {
       let tc = tcs[t]
-      let i = typeof tc.index === "number" ? tc.index : Math.max(st.calls.length - 1, 0)
+      let i = typeof tc.index === 'number' ? tc.index : Math.max(st.calls.length - 1, 0)
       while (st.calls.length <= i) {
-        st.calls.push({ id: "", name: "", arguments: "" })
+        st.calls.push({ id: '', name: '', arguments: '' })
       }
       let call = st.calls[i]
-      if (str(tc.id) !== "") {
+      if (str(tc.id) !== '') {
         call.id = str(tc.id)
       }
-      if (typeof tc["function"] === "object" && tc["function"] !== null) {
-        if (str(tc["function"].name) !== "") {
-          call.name = str(tc["function"].name)
+      if (typeof tc['function'] === 'object' && tc['function'] !== null) {
+        if (str(tc['function'].name) !== '') {
+          call.name = str(tc['function'].name)
         }
-        call.arguments = call.arguments + str(tc["function"].arguments)
+        call.arguments = call.arguments + str(tc['function'].arguments)
       }
       changed = true
     }
@@ -295,20 +295,20 @@ fn dispatch(st, data) {
 // Feed one line of the stream; true when the text or tool calls changed. Call `streamLine(st, "")`
 // at the end so a last event without its blank line still counts.
 export fn streamLine(st, line) {
-  if (line === "") {
+  if (line === '') {
     if (st.data.length === 0) {
       return false
     }
-    let data = st.data.join("\n")
+    let data = st.data.join('\n')
     st.data = []
     return dispatch(st, data)
   }
-  if (line.startsWith(":")) {
+  if (line.startsWith(':')) {
     return false
   }
-  if (line.startsWith("data:")) {
+  if (line.startsWith('data:')) {
     let d = line.slice(5)
-    st.data.push(d.startsWith(" ") ? d.slice(1) : d)
+    st.data.push(d.startsWith(' ') ? d.slice(1) : d)
   }
   return false
 }
@@ -316,45 +316,45 @@ export fn streamLine(st, line) {
 // A readable message for a failed response.
 export fn errorMessage(status, body) {
   let v = JSON.parse(body)
-  let detail = ""
-  if (typeof v === "object" && v !== null) {
-    detail = errorText("error" in v ? v.error : v)
+  let detail = ''
+  if (typeof v === 'object' && v !== null) {
+    detail = errorText('error' in v ? v.error : v)
   }
-  if (detail === "" || detail === "unknown error") {
+  if (detail === '' || detail === 'unknown error') {
     detail = body.trim().slice(0, 200)
   }
-  let what = "request failed"
+  let what = 'request failed'
   if (status === 401) {
-    what = "the API key was rejected"
+    what = 'the API key was rejected'
   } else if (status === 402) {
-    what = "out of credit"
+    what = 'out of credit'
   } else if (status === 403) {
-    what = "not allowed"
+    what = 'not allowed'
   } else if (status === 404) {
-    what = "model or endpoint not found"
+    what = 'model or endpoint not found'
   } else if (status === 429) {
-    what = "rate limited"
+    what = 'rate limited'
   } else if (status >= 500 && status < 600) {
-    what = "the server failed"
+    what = 'the server failed'
   }
-  return detail === "" ? "HTTP " + status + ": " + what : "HTTP " + status + ": " + what + " (" + detail + ")"
+  return detail === '' ? 'HTTP ' + status + ': ' + what : 'HTTP ' + status + ': ' + what + ' (' + detail + ')'
 }
 
 // ── Models ──────────────────────────────────────────────────────────────────
 
 fn stripTilde(s) {
-  return s.startsWith("~") ? s.slice(1) : s
+  return s.startsWith('~') ? s.slice(1) : s
 }
 
 // A readable name: the gateway's display name without an "Author: " prefix, else the id's last part.
 export fn displayName(name, mid) {
   let n = name.trim()
-  if (n === "" || n === mid) {
-    let parts = mid.split("/")
+  if (n === '' || n === mid) {
+    let parts = mid.split('/')
     return stripTilde(parts[parts.length - 1])
   }
-  let i = n.indexOf(": ")
-  if (i >= 0 && i <= 24 && n.slice(i + 2).trim() !== "") {
+  let i = n.indexOf(': ')
+  if (i >= 0 && i <= 24 && n.slice(i + 2).trim() !== '') {
     return n.slice(i + 2).trim()
   }
   return n
@@ -364,7 +364,7 @@ export fn displayName(name, mid) {
 // once: [{ id, name, owner, context, tier }].
 export fn parseModels(body) {
   let v = JSON.parse(body)
-  if (typeof v !== "object" || v === null) {
+  if (typeof v !== 'object' || v === null) {
     return []
   }
   let all = (Array.isArray(v.data) ? v.data : []).concat(Array.isArray(v.models) ? v.models : [])
@@ -373,13 +373,13 @@ export fn parseModels(body) {
   for (let i = 0; i < all.length; i = i + 1) {
     let m = all[i]
     let mid = str(m.id)
-    if (mid === "" || seen[mid] === true) {
+    if (mid === '' || seen[mid] === true) {
       continue
     }
     seen[mid] = true
     let owner = str(m.owned_by)
-    if (owner === "" && mid.indexOf("/") >= 0) {
-      owner = stripTilde(mid.split("/")[0])
+    if (owner === '' && mid.indexOf('/') >= 0) {
+      owner = stripTilde(mid.split('/')[0])
     }
     let ctx = Number(str(m.context_length))
     out.push({ id: mid, name: displayName(str(m.name), mid), owner: owner, context: isNaN(ctx) ? 0 : ctx, tier: str(m.pricing_tier_label) })
@@ -392,12 +392,12 @@ export fn parseModels(body) {
 // `GET /api/auth/list_memberships` -> the user's organizations, personal first.
 export fn parseOrgs(body) {
   let v = JSON.parse(body)
-  let ms = typeof v === "object" && v !== null && Array.isArray(v.memberships) ? v.memberships : []
+  let ms = typeof v === 'object' && v !== null && Array.isArray(v.memberships) ? v.memberships : []
   let personal = []
   let others = []
   for (let i = 0; i < ms.length; i = i + 1) {
     let t = ms[i].team
-    if (typeof t !== "object" || t === null || str(t.id) === "") {
+    if (typeof t !== 'object' || t === null || str(t.id) === '') {
       continue
     }
     let o = { id: str(t.id), name: str(t.name), slug: str(t.slug), image: str(t.image), personal: t.isPersonal === true, role: str(t.role) }
@@ -413,7 +413,7 @@ export fn parseOrgs(body) {
 // The chosen organization when the user belongs to it, else the personal one, else null.
 export fn activeOrg(orgs, chosen) {
   for (let i = 0; i < orgs.length; i = i + 1) {
-    if (chosen !== "" && orgs[i].id === chosen) {
+    if (chosen !== '' && orgs[i].id === chosen) {
       return orgs[i]
     }
   }
@@ -428,7 +428,7 @@ export fn activeOrg(orgs, chosen) {
 // Credits as dollars (100 credits = $1); -1 when unknown.
 export fn dollars(credits) {
   let n = Number(str(credits))
-  return str(credits) === "" || isNaN(n) ? -1 : n / 100
+  return str(credits) === '' || isNaN(n) ? -1 : n / 100
 }
 
 // ── OAuth tokens (stored in the Keychain as JSON) ───────────────────────────
@@ -436,10 +436,10 @@ export fn dollars(credits) {
 // { access, refresh, expires } from the Keychain's JSON, or null.
 export fn parseTokens(json) {
   let v = JSON.parse(json)
-  if (typeof v !== "object" || v === null || str(v.access) === "") {
+  if (typeof v !== 'object' || v === null || str(v.access) === '') {
     return null
   }
-  return { access: str(v.access), refresh: str(v.refresh), expires: typeof v.expires === "number" ? v.expires : 0 }
+  return { access: str(v.access), refresh: str(v.refresh), expires: typeof v.expires === 'number' ? v.expires : 0 }
 }
 
 export fn tokensJson(t) {

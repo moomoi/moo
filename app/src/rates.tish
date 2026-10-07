@@ -2,20 +2,20 @@
 // `~/Library/Caches/Moo/rates.txt` (`MOO_RATES`) and refetched in the background when over 12
 // hours old. The file is `date\nfetched\nCODE rate\n…`.
 
-import { macos } from "tish:macos"
-import { fetch } from "tish:http"
-import { readFile, writeFile, mkdir, rename, fileExists } from "tish:fs"
-import { env } from "tish:process"
-import { parseEcb, parseCache, formatCache } from "./calc.tish"
+import { macos } from 'tish:macos'
+import { fetch } from 'tish:http'
+import { readFile, writeFile, mkdir, rename, fileExists } from 'tish:fs'
+import { env } from 'tish:process'
+import { parseEcb, parseCache, formatCache } from './calc.tish'
 
-let URL = "https://www.ecb.europa.eu/stats/eurofxref/eurofxref-daily.xml"
+let URL = 'https://www.ecb.europa.eu/stats/eurofxref/eurofxref-daily.xml'
 let MAX_AGE = 12 * 3600
 
 fn ratesPath() {
   if (env.MOO_RATES) {
     return env.MOO_RATES
   }
-  return env.HOME ? env.HOME + "/Library/Caches/Moo/rates.txt" : ""
+  return env.HOME ? env.HOME + '/Library/Caches/Moo/rates.txt' : ''
 }
 
 let cache = null
@@ -32,9 +32,9 @@ fn load() {
   }
   loaded = true
   let path = ratesPath()
-  if (path !== "" && fileExists(path)) {
+  if (path !== '' && fileExists(path)) {
     let t = readFile(path)
-    if (typeof t === "string") {
+    if (typeof t === 'string') {
       cache = parseCache(t)
     }
   }
@@ -42,12 +42,12 @@ fn load() {
 
 fn save(c) {
   let path = ratesPath()
-  if (path === "") {
+  if (path === '') {
     return
   }
-  mkdir(path.slice(0, path.lastIndexOf("/")), { recursive: true })
-  if (writeFile(path + ".tmp", formatCache(c)) === null) {
-    rename(path + ".tmp", path)
+  mkdir(path.slice(0, path.lastIndexOf('/')), { recursive: true })
+  if (writeFile(path + '.tmp', formatCache(c)) === null) {
+    rename(path + '.tmp', path)
   }
 }
 
@@ -58,13 +58,13 @@ fn refresh() {
   fetching = true
   macos.whenSettled(fetch(URL, { timeout: 15000 }), (res, err) => {
     if (err !== null || !res.ok) {
-      console.log("moo: currency rates: " + (err !== null ? err : (res.error ? res.error : "HTTP " + res.status)))
+      console.log('moo: currency rates: ' + (err !== null ? err : (res.error ? res.error : 'HTTP ' + res.status)))
       fetching = false
       return
     }
     macos.whenSettled(res.text(), (xml, e2) => {
       fetching = false
-      if (e2 !== null || typeof xml !== "string") {
+      if (e2 !== null || typeof xml !== 'string') {
         return
       }
       let p = parseEcb(xml)

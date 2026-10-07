@@ -1,18 +1,18 @@
 // The home page's animated launcher: four queries, each with its results, cycled by CSS.
-import { h } from "lattish"
-import { Icon } from "./icons.tish"
+import { h } from 'lattish'
+import { Icon } from './icons.tish'
 
 fn Query(props) {
   return (
     <div class="q">
-      <div class="field"><Icon name="search" /><span class="type" style={"--n:" + props.text.length}>{props.text}</span><span class="keys"><kbd>⌘</kbd><kbd>Space</kbd></span></div>
+      <div class="field"><Icon name="search" /><span class="type" style={'--n:' + props.text.length}>{props.text}</span><span class="keys"><kbd>⌘</kbd><kbd>Space</kbd></span></div>
       <div class="rows">{props.children}</div>
     </div>
   )
 }
 
 fn Row(props) {
-  return <div class={props.hit ? "row hit" : "row"}><span class="ic">{props.icon}</span><span>{props.children}</span><small>{props.meta}</small></div>
+  return <div class={props.hit ? 'row hit' : 'row'}><span class="ic">{props.icon}</span><span>{props.children}</span><small>{props.meta}</small></div>
 }
 
 export fn Demo() {

@@ -8,10 +8,12 @@
     "build:web": "bash web/build.sh",
     "bundle": "bash scripts/bundle-macos.sh",
     "test": "cd packages/moo-macos && cargo test --lib",
-    "clean": "rm -rf app/dist plugins/dist web/dist dist target packages/moo-macos/target app/node_modules plugins/node_modules"
+    "clean": "rm -rf app/dist plugins/dist web/dist dist target packages/moo-macos/target app/node_modules plugins/node_modules",
+    "lint": "tish-lint --deny-warnings app/src web/site web/src web/render.tish"
   },
   "devDependencies": {
     "@tishlang/tish": "3.15.3",
+    "@tishlang/tish-lint": "^3.15.3",
     "lattish": "4.0.4"
   }
 }

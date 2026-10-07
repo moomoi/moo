@@ -3,17 +3,17 @@
 // `https://example.com/any/path` -> { origin: "https://example.com", host: "example.com" }, or
 // null. Only http(s) URLs with a plain host name.
 export fn splitUrl(url) {
-  let i = url.indexOf("://")
+  let i = url.indexOf('://')
   if (i < 0) {
     return null
   }
   let scheme = url.slice(0, i)
-  if (scheme !== "https" && scheme !== "http") {
+  if (scheme !== 'https' && scheme !== 'http') {
     return null
   }
   let rest = url.slice(i + 3)
   let end = rest.length
-  let stops = ["/", "?", "#"]
+  let stops = ['/', '?', '#']
   for (let k = 0; k < stops.length; k = k + 1) {
     let at = rest.indexOf(stops[k])
     if (at >= 0 && at < end) {
@@ -21,11 +21,11 @@ export fn splitUrl(url) {
     }
   }
   let authority = rest.slice(0, end).toLowerCase()
-  let host = authority.split(":")[0]
-  if (host === "" || !RegExp("^[a-z0-9.-]+$").test(host) || host.startsWith(".") || host.endsWith(".") || host.indexOf("..") >= 0) {
+  let host = authority.split(':')[0]
+  if (host === '' || !RegExp('^[a-z0-9.-]+$').test(host) || host.startsWith('.') || host.endsWith('.') || host.indexOf('..') >= 0) {
     return null
   }
-  return { origin: scheme + "://" + authority, host: host }
+  return { origin: scheme + '://' + authority, host: host }
 }
 
 // FNV-1a (32-bit) as 8 hex digits: a short, stable file name for a URL.
@@ -36,7 +36,7 @@ export fn hashName(s) {
   }
   let hex = (h >>> 0).toString(16)
   while (hex.length < 8) {
-    hex = "0" + hex
+    hex = '0' + hex
   }
   return hex
 }

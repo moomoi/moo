@@ -15,12 +15,12 @@ export fn parseSuggestions(body, query) {
   let seen = {}
   for (let i = 0; i < top[1].length && out.length < MAX; i = i + 1) {
     let v = top[1][i]
-    if (typeof v !== "string") {
+    if (typeof v !== 'string') {
       continue
     }
     let s = v.trim()
     let key = s.toLowerCase()
-    if (s !== "" && key !== q && seen[key] !== true) {
+    if (s !== '' && key !== q && seen[key] !== true) {
       seen[key] = true
       out.push(s)
     }

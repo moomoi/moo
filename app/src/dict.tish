@@ -4,19 +4,19 @@
 // The lookup itself is native (`dictionaryEntries(word)`, one text per homograph).
 
 // Longer names first, so "plural noun" wins over "noun".
-let PARTS = ["plural noun", "proper noun", "auxiliary verb", "modal verb", "combining form", "noun", "verb", "adjective",
-  "adverb", "pronoun", "preposition", "conjunction", "exclamation", "abbreviation", "determiner",
-  "predeterminer", "prefix", "suffix", "symbol", "contraction", "interjection", "article"]
-let SECTIONS = [" PHRASES ", " PHRASAL VERBS ", " DERIVATIVES ", " USAGE ", " ORIGIN "]
-let SENTENCE_ENDS = [".", "!", "?", ")", "”", "’"]
+let PARTS = ['plural noun', 'proper noun', 'auxiliary verb', 'modal verb', 'combining form', 'noun', 'verb', 'adjective',
+  'adverb', 'pronoun', 'preposition', 'conjunction', 'exclamation', 'abbreviation', 'determiner',
+  'predeterminer', 'prefix', 'suffix', 'symbol', 'contraction', 'interjection', 'article']
+let SECTIONS = [' PHRASES ', ' PHRASAL VERBS ', ' DERIVATIVES ', ' USAGE ', ' ORIGIN ']
+let SENTENCE_ENDS = ['.', '!', '?', ')', '”', '’']
 
 fn endsSentence(s) {
-  return s === "" || SENTENCE_ENDS.indexOf(s[s.length - 1]) >= 0
+  return s === '' || SENTENCE_ENDS.indexOf(s[s.length - 1]) >= 0
 }
 
 fn trimEnd(s) {
   let e = s.length
-  while (e > 0 && (s[e - 1] === " " || s[e - 1] === "\n" || s[e - 1] === "\t")) {
+  while (e > 0 && (s[e - 1] === ' ' || s[e - 1] === '\n' || s[e - 1] === '\t')) {
     e = e - 1
   }
   return s.slice(0, e)
@@ -29,14 +29,14 @@ fn isUpper(c) {
 // "serendipity ser·en·dip·i·ty" → "serendipity"; "Paris 1 Par·is" → "Paris".
 export fn headword(head, asked) {
   let words = []
-  let all = head.split(" ").filter((w) => w !== "")
+  let all = head.split(' ').filter((w) => w !== '')
   for (let i = 0; i < all.length; i = i + 1) {
-    if (all[i].indexOf("·") >= 0 || RegExp("^[0-9]+$").test(all[i])) {
+    if (all[i].indexOf('·') >= 0 || RegExp('^[0-9]+$').test(all[i])) {
       break
     }
     words.push(all[i])
   }
-  return words.length === 0 ? asked : words.join(" ")
+  return words.length === 0 ? asked : words.join(' ')
 }
 
 // Where a part of speech starts at `i`: the body's start or after a sentence, a whole word.
@@ -47,7 +47,7 @@ fn partAt(body, i) {
   let rest = body.slice(i)
   for (let k = 0; k < PARTS.length; k = k + 1) {
     let p = PARTS[k]
-    if (rest.startsWith(p) && (rest.length === p.length || rest[p.length] === " ")) {
+    if (rest.startsWith(p) && (rest.length === p.length || rest[p.length] === ' ')) {
       return p
     }
   }
@@ -59,7 +59,7 @@ fn splitParts(body) {
   let starts = []
   for (let i = 0; i < body.length; i = i + 1) {
     let last = starts.length > 0 ? starts[starts.length - 1] : null
-    if ((i === 0 || body[i - 1] === " ") && (last === null || i >= last[0] + last[1].length)) {
+    if ((i === 0 || body[i - 1] === ' ') && (last === null || i >= last[0] + last[1].length)) {
       let p = partAt(body, i)
       if (p !== null) {
         starts.push([i, p])
@@ -67,13 +67,13 @@ fn splitParts(body) {
     }
   }
   if (starts.length === 0 || starts[0][0] > 0) {
-    starts = [[0, ""]].concat(starts)
+    starts = [[0, '']].concat(starts)
   }
   let out = []
   for (let k = 0; k < starts.length; k = k + 1) {
     let end = k + 1 < starts.length ? starts[k + 1][0] : body.length
     let section = body.slice(starts[k][0] + starts[k][1].length, end).trim()
-    if (section !== "") {
+    if (section !== '') {
       out.push([starts[k][1], section])
     }
   }
@@ -88,12 +88,12 @@ fn numbered(section) {
   let n = 1
   let from = 0
   while (true) {
-    let needle = n + " "
+    let needle = n + ' '
     let found = -1
     let at = section.indexOf(needle, from)
     while (at >= 0) {
-      let edge = at === 0 || section[at - 1] === " "
-      let label = section.slice(at + needle.length).startsWith("[")
+      let edge = at === 0 || section[at - 1] === ' '
+      let label = section.slice(at + needle.length).startsWith('[')
       if (edge && (n === 1 || label || endsSentence(trimEnd(section.slice(0, at))) && at > 0)) {
         found = at
         break
@@ -122,16 +122,16 @@ fn numbered(section) {
 // end with ("…; population 2,203,817 (2006). Paris was held by the Romans…") and keeps "e.g. birth".
 fn firstSentence(s) {
   let end = s.length
-  let i = s.indexOf(". ")
+  let i = s.indexOf('. ')
   while (i >= 0) {
     if (i + 2 < s.length && isUpper(s[i + 2])) {
       end = i
       break
     }
-    i = s.indexOf(". ", i + 1)
+    i = s.indexOf('. ', i + 1)
   }
   let t = s.slice(0, end).trim()
-  while (t.endsWith(".")) {
+  while (t.endsWith('.')) {
     t = t.slice(0, t.length - 1)
   }
   return t.trim()
@@ -142,11 +142,11 @@ fn exampleColon(s) {
   let depth = 0
   for (let i = 0; i < s.length; i = i + 1) {
     let c = s[i]
-    if (c === "(") {
+    if (c === '(') {
       depth = depth + 1
-    } else if (c === ")") {
+    } else if (c === ')') {
       depth = depth - 1
-    } else if (c === ":" && depth <= 0 && s[i + 1] === " ") {
+    } else if (c === ':' && depth <= 0 && s[i + 1] === ' ') {
       return i
     }
   }
@@ -157,9 +157,9 @@ fn exampleColon(s) {
 fn closingParen(s) {
   let depth = 0
   for (let i = 0; i < s.length; i = i + 1) {
-    if (s[i] === "(") {
+    if (s[i] === '(') {
       depth = depth + 1
-    } else if (s[i] === ")") {
+    } else if (s[i] === ')') {
       depth = depth - 1
       if (depth === 0) {
         return i
@@ -170,21 +170,21 @@ fn closingParen(s) {
 }
 
 fn isInflection(inner) {
-  if (inner.indexOf("|") >= 0 || inner.indexOf(";") >= 0 || inner.startsWith(",")) {
+  if (inner.indexOf('|') >= 0 || inner.indexOf(';') >= 0 || inner.startsWith(',')) {
     return true
   }
-  let prefixes = ["plural ", "past ", "comparative ", "superlative "]
+  let prefixes = ['plural ', 'past ', 'comparative ', 'superlative ']
   for (let i = 0; i < prefixes.length; i = i + 1) {
     if (inner.startsWith(prefixes[i])) {
       return true
     }
   }
-  return inner.split(",").every((w) => w.trim() !== "" && w.trim().indexOf(" ") < 0)
+  return inner.split(',').every((w) => w.trim() !== '' && w.trim().indexOf(' ') < 0)
 }
 
 fn trimColons(s) {
   let t = s
-  while (t.startsWith(":")) {
+  while (t.startsWith(':')) {
     t = t.slice(1)
   }
   return t.trim()
@@ -197,12 +197,12 @@ fn withoutLabels(s) {
   let t = s.trim()
   while (true) {
     let before = t
-    if (t.startsWith("[")) {
-      let e = t.indexOf("]")
+    if (t.startsWith('[')) {
+      let e = t.indexOf(']')
       if (e >= 0) {
         t = t.slice(e + 1).trim()
       }
-    } else if (t.startsWith("(")) {
+    } else if (t.startsWith('(')) {
       let e = closingParen(t)
       if (e >= 0 && isInflection(t.slice(1, e))) {
         t = t.slice(e + 1).trim()
@@ -217,24 +217,24 @@ fn withoutLabels(s) {
 
 // The main sense (before any `•` sub-sense) as [definition, first example].
 export fn senseText(s) {
-  let t = withoutLabels(s.split(" • ")[0])
+  let t = withoutLabels(s.split(' • ')[0])
   let i = exampleColon(t)
   let def = i >= 0 ? t.slice(0, i) : t
-  let example = i >= 0 ? t.slice(i + 2) : ""
-  return [firstSentence(def), firstSentence(withoutLabels(example.split(" | ")[0]))]
+  let example = i >= 0 ? t.slice(i + 2) : ''
+  return [firstSentence(def), firstSentence(withoutLabels(example.split(' | ')[0]))]
 }
 
 // One homograph's plain text as an entry.
 export fn parse(text, asked) {
   let t = text.trim()
   let head = asked
-  let pronunciation = ""
+  let pronunciation = ''
   let body = t.startsWith(asked) ? t.slice(asked.length).trim() : t
-  let bar = t.indexOf(" | ")
+  let bar = t.indexOf(' | ')
   if (bar >= 0) {
     head = t.slice(0, bar)
     let rest = t.slice(bar + 3)
-    let close = rest.indexOf(" |")
+    let close = rest.indexOf(' |')
     if (close >= 0) {
       pronunciation = rest.slice(0, close).trim()
       body = rest.slice(close + 2).trim()
@@ -249,21 +249,21 @@ export fn parse(text, asked) {
       cut = at
     }
   }
-  let o = body.indexOf(" ORIGIN ")
-  let origin = o >= 0 ? body.slice(o + 8).trim() : ""
+  let o = body.indexOf(' ORIGIN ')
+  let origin = o >= 0 ? body.slice(o + 8).trim() : ''
   let parts = splitParts(body.slice(0, cut))
   // Text before the first part of speech is a spelling note: "(mainly British English hullo)".
-  let named = parts.some((p) => p[0] !== "")
+  let named = parts.some((p) => p[0] !== '')
   let senses = []
   for (let i = 0; i < parts.length; i = i + 1) {
-    if (named && parts[i][0] === "") {
+    if (named && parts[i][0] === '') {
       continue
     }
     let list = numbered(parts[i][1])
     for (let j = 0; j < list.length; j = j + 1) {
       let st = senseText(list[j])
-      if (st[0] !== "") {
-        senses.push({ part: parts[i][0], pronunciation: "", definition: st[0], example: st[1] })
+      if (st[0] !== '') {
+        senses.push({ part: parts[i][0], pronunciation: '', definition: st[0], example: st[1] })
       }
     }
   }
@@ -274,12 +274,12 @@ export fn parse(text, asked) {
 // ran | ran |)", "children" in "(plural children …)"), or a regular inflection ("notes").
 fn namesWord(text, asked) {
   let a = asked.toLowerCase()
-  let word = headword(text.split(" | ")[0], asked).toLowerCase()
+  let word = headword(text.split(' | ')[0], asked).toLowerCase()
   if (word === a || (a.startsWith(word) && a.length <= word.length + 3)) {
     return true
   }
   let head = text.slice(0, 400).toLowerCase()
-  return head.split(RegExp("[^\\p{L}\\p{N}\\-'.]", "u")).some((w) => w === a)
+  return head.split(RegExp("[^\\p{L}\\p{N}\\-'.]", 'u')).some((w) => w === a)
 }
 
 // The entry for `asked` from its homographs' texts, or null when there are none, or only one for
@@ -292,7 +292,7 @@ export fn define(asked, texts) {
   let entry = parse(texts[0], w)
   for (let i = 1; i < texts.length; i = i + 1) {
     let more = parse(texts[i], w)
-    let say = more.pronunciation !== entry.pronunciation ? more.pronunciation : ""
+    let say = more.pronunciation !== entry.pronunciation ? more.pronunciation : ''
     for (let j = 0; j < more.senses.length; j = j + 1) {
       let s = more.senses[j]
       entry.senses.push({ part: s.part, pronunciation: say, definition: s.definition, example: s.example })

@@ -1,6 +1,6 @@
-import { h } from "lattish"
-import { Bare } from "../components/layout.tish"
-import { ICON_PNG } from "../icon.tish"
+import { h } from 'lattish'
+import { Bare } from '../components/layout.tish'
+import { ICON_PNG } from '../icon.tish'
 
 // /callback with a state that isn't Moo's.
 export fn SignInFailed() {
@@ -9,7 +9,7 @@ export fn SignInFailed() {
       <img class="mark" src={ICON_PNG} alt="Moo" />
       <h1>This sign-in link isn't from moo</h1>
       <p>We couldn't find moo waiting for this sign-in. No harm done — just start again from the app.</p>
-      <ol><li>Open moo</li><li>Go to <b>{" Settings → Account"}</b></li><li>Choose <b>{" Sign in"}</b></li></ol>
+      <ol><li>Open moo</li><li>Go to <b>{' Settings → Account'}</b></li><li>Choose <b>{' Sign in'}</b></li></ol>
       <a class="btn go" href="/">Back to moo.moi</a>
     </Bare>
   )

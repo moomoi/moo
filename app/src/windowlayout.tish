@@ -4,13 +4,13 @@
 // [id, title] for every layout, in menu order. next-display, previous-display and restore need
 // more than one screen's geometry and are handled by the caller.
 export let LAYOUTS = [
-  ["left-half", "Left Half"], ["right-half", "Right Half"], ["top-half", "Top Half"], ["bottom-half", "Bottom Half"],
-  ["top-left", "Top Left Quarter"], ["top-right", "Top Right Quarter"], ["bottom-left", "Bottom Left Quarter"],
-  ["bottom-right", "Bottom Right Quarter"], ["left-third", "First Third"], ["center-third", "Center Third"],
-  ["right-third", "Last Third"], ["left-two-thirds", "First Two Thirds"], ["right-two-thirds", "Last Two Thirds"],
-  ["maximize", "Maximize"], ["almost-maximize", "Almost Maximize"], ["maximize-height", "Maximize Height"],
-  ["center", "Center"], ["reasonable-size", "Reasonable Size"], ["next-display", "Next Display"],
-  ["previous-display", "Previous Display"], ["restore", "Restore"]
+  ['left-half', 'Left Half'], ['right-half', 'Right Half'], ['top-half', 'Top Half'], ['bottom-half', 'Bottom Half'],
+  ['top-left', 'Top Left Quarter'], ['top-right', 'Top Right Quarter'], ['bottom-left', 'Bottom Left Quarter'],
+  ['bottom-right', 'Bottom Right Quarter'], ['left-third', 'First Third'], ['center-third', 'Center Third'],
+  ['right-third', 'Last Third'], ['left-two-thirds', 'First Two Thirds'], ['right-two-thirds', 'Last Two Thirds'],
+  ['maximize', 'Maximize'], ['almost-maximize', 'Almost Maximize'], ['maximize-height', 'Maximize Height'],
+  ['center', 'Center'], ['reasonable-size', 'Reasonable Size'], ['next-display', 'Next Display'],
+  ['previous-display', 'Previous Display'], ['restore', 'Restore']
 ]
 
 export fn layoutTitle(lid) {
@@ -49,27 +49,27 @@ export fn layoutFrame(layout, v, cur) {
   let hh = v.h / 2
   let t = v.w / 3
   let r = null
-  if (layout === "left-half") { r = rect(v.x, v.y, hw, v.h) }
-  else if (layout === "right-half") { r = rect(v.x + hw, v.y, v.w - hw, v.h) }
-  else if (layout === "top-half") { r = rect(v.x, v.y, v.w, hh) }
-  else if (layout === "bottom-half") { r = rect(v.x, v.y + hh, v.w, v.h - hh) }
-  else if (layout === "top-left") { r = rect(v.x, v.y, hw, hh) }
-  else if (layout === "top-right") { r = rect(v.x + hw, v.y, v.w - hw, hh) }
-  else if (layout === "bottom-left") { r = rect(v.x, v.y + hh, hw, v.h - hh) }
-  else if (layout === "bottom-right") { r = rect(v.x + hw, v.y + hh, v.w - hw, v.h - hh) }
-  else if (layout === "left-third") { r = rect(v.x, v.y, t, v.h) }
-  else if (layout === "center-third") { r = rect(v.x + t, v.y, t, v.h) }
-  else if (layout === "right-third") { r = rect(v.x + 2 * t, v.y, v.w - 2 * t, v.h) }
-  else if (layout === "left-two-thirds") { r = rect(v.x, v.y, 2 * t, v.h) }
-  else if (layout === "right-two-thirds") { r = rect(v.x + t, v.y, v.w - t, v.h) }
-  else if (layout === "maximize") { r = rect(v.x, v.y, v.w, v.h) }
-  else if (layout === "almost-maximize") { r = centered(v, v.w * 0.9, v.h * 0.9) }
-  else if (layout === "maximize-height") {
+  if (layout === 'left-half') { r = rect(v.x, v.y, hw, v.h) }
+  else if (layout === 'right-half') { r = rect(v.x + hw, v.y, v.w - hw, v.h) }
+  else if (layout === 'top-half') { r = rect(v.x, v.y, v.w, hh) }
+  else if (layout === 'bottom-half') { r = rect(v.x, v.y + hh, v.w, v.h - hh) }
+  else if (layout === 'top-left') { r = rect(v.x, v.y, hw, hh) }
+  else if (layout === 'top-right') { r = rect(v.x + hw, v.y, v.w - hw, hh) }
+  else if (layout === 'bottom-left') { r = rect(v.x, v.y + hh, hw, v.h - hh) }
+  else if (layout === 'bottom-right') { r = rect(v.x + hw, v.y + hh, v.w - hw, v.h - hh) }
+  else if (layout === 'left-third') { r = rect(v.x, v.y, t, v.h) }
+  else if (layout === 'center-third') { r = rect(v.x + t, v.y, t, v.h) }
+  else if (layout === 'right-third') { r = rect(v.x + 2 * t, v.y, v.w - 2 * t, v.h) }
+  else if (layout === 'left-two-thirds') { r = rect(v.x, v.y, 2 * t, v.h) }
+  else if (layout === 'right-two-thirds') { r = rect(v.x + t, v.y, v.w - t, v.h) }
+  else if (layout === 'maximize') { r = rect(v.x, v.y, v.w, v.h) }
+  else if (layout === 'almost-maximize') { r = centered(v, v.w * 0.9, v.h * 0.9) }
+  else if (layout === 'maximize-height') {
     let w = Math.min(cur.w, v.w)
     r = rect(clamp(cur.x, v.x, Math.max(v.x + v.w - w, v.x)), v.y, w, v.h)
   }
-  else if (layout === "center") { r = centered(v, Math.min(cur.w, v.w), Math.min(cur.h, v.h)) }
-  else if (layout === "reasonable-size") { r = centered(v, Math.max(v.w * 0.6, Math.min(cur.w, v.w * 0.6)), v.h * 0.7) }
+  else if (layout === 'center') { r = centered(v, Math.min(cur.w, v.w), Math.min(cur.h, v.h)) }
+  else if (layout === 'reasonable-size') { r = centered(v, Math.max(v.w * 0.6, Math.min(cur.w, v.w * 0.6)), v.h * 0.7) }
   return r === null ? null : rounded(r)
 }
 

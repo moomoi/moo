@@ -1,5 +1,5 @@
 // Inline SVG icons (the CSP allows images only as data: URIs, so they are drawn in the page).
-import { h } from "lattish"
+import { h } from 'lattish'
 
 let SVG = {
   search: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>`,

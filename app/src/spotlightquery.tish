@@ -3,11 +3,11 @@
 
 // Escape a token for an MDQuery string literal, where `*` and `?` are wildcards.
 export fn escapeToken(token) {
-  let out = ""
+  let out = ''
   for (let i = 0; i < token.length; i = i + 1) {
     let c = token[i]
-    if (c === "\\" || c === "\"" || c === "*" || c === "?" || c === "'") {
-      out = out + "\\"
+    if (c === '\\' || c === '"' || c === '*' || c === '?' || c === "'") {
+      out = out + '\\'
     }
     out = out + c
   }
@@ -15,10 +15,10 @@ export fn escapeToken(token) {
 }
 
 fn words(text) {
-  return text.split(RegExp("\\s+", "u")).filter((w) => w !== "")
+  return text.split(RegExp('\\s+', 'u')).filter((w) => w !== '')
 }
 
-let NOT_APPS = "(kMDItemContentType != \"com.apple.application-bundle\")"
+let NOT_APPS = '(kMDItemContentType != "com.apple.application-bundle")'
 
 // File names containing every word (apps come from the app index), or null for no words.
 export fn nameQuery(query) {
@@ -26,86 +26,86 @@ export fn nameQuery(query) {
   if (w.length === 0) {
     return null
   }
-  return w.map((t) => "(kMDItemFSName == \"*" + escapeToken(t) + "*\"cd)").join(" && ") + " && " + NOT_APPS
+  return w.map((t) => '(kMDItemFSName == "*' + escapeToken(t) + '*"cd)').join(' && ') + ' && ' + NOT_APPS
 }
 
 let KINDS = {
-  image: "kMDItemContentTypeTree == \"public.image\"",
-  video: "kMDItemContentTypeTree == \"public.movie\"",
-  audio: "kMDItemContentTypeTree == \"public.audio\"",
-  pdf: "kMDItemContentTypeTree == \"com.adobe.pdf\"",
-  document: "(kMDItemContentTypeTree == \"public.composite-content\" || kMDItemContentTypeTree == \"public.text\")",
-  text: "kMDItemContentTypeTree == \"public.text\"",
-  spreadsheet: "kMDItemContentTypeTree == \"public.spreadsheet\"",
-  presentation: "kMDItemContentTypeTree == \"public.presentation\"",
-  archive: "kMDItemContentTypeTree == \"public.archive\"",
-  diskimage: "kMDItemContentTypeTree == \"public.disk-image\"",
-  folder: "kMDItemContentType == \"public.folder\""
+  image: 'kMDItemContentTypeTree == "public.image"',
+  video: 'kMDItemContentTypeTree == "public.movie"',
+  audio: 'kMDItemContentTypeTree == "public.audio"',
+  pdf: 'kMDItemContentTypeTree == "com.adobe.pdf"',
+  document: '(kMDItemContentTypeTree == "public.composite-content" || kMDItemContentTypeTree == "public.text")',
+  text: 'kMDItemContentTypeTree == "public.text"',
+  spreadsheet: 'kMDItemContentTypeTree == "public.spreadsheet"',
+  presentation: 'kMDItemContentTypeTree == "public.presentation"',
+  archive: 'kMDItemContentTypeTree == "public.archive"',
+  diskimage: 'kMDItemContentTypeTree == "public.disk-image"',
+  folder: 'kMDItemContentType == "public.folder"'
 }
 
 export fn dateAttr(sort) {
-  if (sort === "created") {
-    return "kMDItemFSCreationDate"
+  if (sort === 'created') {
+    return 'kMDItemFSCreationDate'
   }
-  return sort === "opened" ? "kMDItemLastUsedDate" : "kMDItemFSContentChangeDate"
+  return sort === 'opened' ? 'kMDItemLastUsedDate' : 'kMDItemFSContentChangeDate'
 }
 
 // The query for a filter `{ name, contains, kind, minBytes, maxBytes, createdSecs, modifiedSecs,
 // openedSecs }` with `minBytes` and an extra `[attr, secs]` age clause (or null) applied.
 export fn filterQuery(f, minBytes, age) {
-  let c = words(f.name).map((t) => "(kMDItemFSName == \"*" + escapeToken(t) + "*\"cd)")
-  let contents = words(f.contains).map((t) => "(kMDItemTextContent == \"" + escapeToken(t) + "*\"cdw)")
+  let c = words(f.name).map((t) => '(kMDItemFSName == "*' + escapeToken(t) + '*"cd)')
+  let contents = words(f.contains).map((t) => '(kMDItemTextContent == "' + escapeToken(t) + '*"cdw)')
   c = c.concat(contents)
   if (f.kind in KINDS) {
-    c.push("(" + KINDS[f.kind] + ")")
+    c.push('(' + KINDS[f.kind] + ')')
   }
   if (minBytes > 0) {
-    c.push("(kMDItemFSSize >= " + minBytes + ")")
+    c.push('(kMDItemFSSize >= ' + minBytes + ')')
   }
   if (f.maxBytes > 0) {
-    c.push("(kMDItemFSSize <= " + f.maxBytes + ")")
+    c.push('(kMDItemFSSize <= ' + f.maxBytes + ')')
   }
-  let dates = [["kMDItemFSCreationDate", f.createdSecs], ["kMDItemFSContentChangeDate", f.modifiedSecs], ["kMDItemLastUsedDate", f.openedSecs]]
+  let dates = [['kMDItemFSCreationDate', f.createdSecs], ['kMDItemFSContentChangeDate', f.modifiedSecs], ['kMDItemLastUsedDate', f.openedSecs]]
   if (age !== null) {
     dates.push(age)
   }
   for (let i = 0; i < dates.length; i = i + 1) {
     if (dates[i][1] > 0) {
-      c.push("(" + dates[i][0] + " >= $time.now(-" + Math.round(dates[i][1]) + "))")
+      c.push('(' + dates[i][0] + ' >= $time.now(-' + Math.round(dates[i][1]) + '))')
     }
   }
   c.push(NOT_APPS)
-  return c.join(" && ")
+  return c.join(' && ')
 }
 
 // Places a launcher shouldn't surface: dot-folders, dependency trees, bundle insides, ~/Library.
 export fn wanted(path, home) {
-  if (home !== "" && path.startsWith(home + "/Library/")) {
+  if (home !== '' && path.startsWith(home + '/Library/')) {
     return false
   }
-  if (path.indexOf(".app/") >= 0) {
+  if (path.indexOf('.app/') >= 0) {
     return false
   }
-  return !path.split("/").some((part) => part.startsWith(".") || part === "node_modules" || part === "target")
+  return !path.split('/').some((part) => part.startsWith('.') || part === 'node_modules' || part === 'target')
 }
 
 // For questions like "what is taking up space": only the insides of app bundles are skipped.
 export fn wantedIn(path, folder) {
-  let rest = folder !== "" && path.startsWith(folder) ? path.slice(folder.length) : path
-  return rest.indexOf(".app/") < 0
+  let rest = folder !== '' && path.startsWith(folder) ? path.slice(folder.length) : path
+  return rest.indexOf('.app/') < 0
 }
 
 let DETAIL_CHARS = 34
 
 // The parent folder, `~`-relative and left-truncated for display.
 export fn detailFor(path, home) {
-  let slash = path.lastIndexOf("/")
-  let parent = slash > 0 ? path.slice(0, slash) : (slash === 0 ? "/" : "")
-  let short = home !== "" && parent.startsWith(home) ? "~" + parent.slice(home.length) : parent
-  return short.length <= DETAIL_CHARS ? short : "…" + short.slice(short.length - (DETAIL_CHARS - 1))
+  let slash = path.lastIndexOf('/')
+  let parent = slash > 0 ? path.slice(0, slash) : (slash === 0 ? '/' : '')
+  let short = home !== '' && parent.startsWith(home) ? '~' + parent.slice(home.length) : parent
+  return short.length <= DETAIL_CHARS ? short : '…' + short.slice(short.length - (DETAIL_CHARS - 1))
 }
 
 export fn fileName(path) {
-  let parts = path.split("/")
+  let parts = path.split('/')
   return parts[parts.length - 1]
 }

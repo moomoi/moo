@@ -30,29 +30,29 @@
 // Pure: no file or native access, so `tish test` can run it. Reading and writing the file is in
 // shortcutsfile.tish.
 
-export let KINDS = ["url", "open", "command", "shell", "text", "ai"]
-export let OUTPUTS = ["show", "copy", "none"]
+export let KINDS = ['url', 'open', 'command', 'shell', 'text', 'ai']
+export let OUTPUTS = ['show', 'copy', 'none']
 let MAX_KEYWORD = 32
 // Top-level keys this file understands; others are kept as they are when it is rewritten.
-let KNOWN = ["launcher", "shortcuts", "hotkeys", "aliases", "disabled", "keys", "search", "ai"]
-let PROVIDER_FIELDS = ["title", "url", "keyEnv", "clientId", "redirectUri", "organization"]
+let KNOWN = ['launcher', 'shortcuts', 'hotkeys', 'aliases', 'disabled', 'keys', 'search', 'ai']
+let PROVIDER_FIELDS = ['title', 'url', 'keyEnv', 'clientId', 'redirectUri', 'organization']
 
 fn str(v) {
-  if (typeof v === "string") {
+  if (typeof v === 'string') {
     return v
   }
-  if (typeof v === "number") {
-    return "" + v
+  if (typeof v === 'number') {
+    return '' + v
   }
-  return ""
+  return ''
 }
 
 fn isObject(v) {
-  return typeof v === "object" && v !== null && !Array.isArray(v)
+  return typeof v === 'object' && v !== null && !Array.isArray(v)
 }
 
 fn hasSpace(s) {
-  return RegExp("\\s", "u").test(s)
+  return RegExp('\\s', 'u').test(s)
 }
 
 fn same(a, b) {
@@ -64,8 +64,8 @@ fn byFirst(a, b) {
 }
 
 export fn emptyConfig() {
-  return { launcher: "", shortcuts: [], hotkeys: [], aliases: [], disabled: [], keys: [], search: "",
-    ai: { model: "", providers: [] }, extra: {} }
+  return { launcher: '', shortcuts: [], hotkeys: [], aliases: [], disabled: [], keys: [], search: '',
+    ai: { model: '', providers: [] }, extra: {} }
 }
 
 export fn shortcut(v) {
@@ -77,14 +77,14 @@ export fn shortcut(v) {
 
 fn normalize(s) {
   s.keyword = s.keyword.trim()
-  if (s.name.trim() === "") {
+  if (s.name.trim() === '') {
     s.name = s.keyword
   }
-  if (s.kind === "command" && s.input === "") {
-    s.input = "{query}"
+  if (s.kind === 'command' && s.input === '') {
+    s.input = '{query}'
   }
-  if (s.kind === "shell" && s.output === "") {
-    s.output = "show"
+  if (s.kind === 'shell' && s.output === '') {
+    s.output = 'show'
   }
   return s
 }
@@ -92,24 +92,24 @@ fn normalize(s) {
 // null when `keyword` can be used; `replacing` is the keyword of the shortcut being edited.
 export fn checkKeyword(cfg, keyword, replacing) {
   let k = keyword.trim()
-  if (k === "") {
-    return "needs a keyword"
+  if (k === '') {
+    return 'needs a keyword'
   }
   if (hasSpace(k)) {
-    return "keyword `" + k + "` cannot contain spaces"
+    return 'keyword `' + k + '` cannot contain spaces'
   }
   if (k.length > MAX_KEYWORD) {
-    return "keyword `" + k + "` is longer than " + MAX_KEYWORD + " characters"
+    return 'keyword `' + k + '` is longer than ' + MAX_KEYWORD + ' characters'
   }
-  let editing = typeof replacing === "string" && replacing !== "" && same(replacing, k)
+  let editing = typeof replacing === 'string' && replacing !== '' && same(replacing, k)
   for (let i = 0; i < cfg.shortcuts.length; i = i + 1) {
     if (same(cfg.shortcuts[i].keyword, k) && !editing) {
-      return "keyword `" + k + "` is already used by \"" + cfg.shortcuts[i].name + "\""
+      return 'keyword `' + k + '` is already used by "' + cfg.shortcuts[i].name + '"'
     }
   }
   for (let i = 0; i < cfg.aliases.length; i = i + 1) {
     if (same(cfg.aliases[i][1], k)) {
-      return "`" + k + "` is already the alias of " + cfg.aliases[i][0]
+      return '`' + k + '` is already the alias of ' + cfg.aliases[i][0]
     }
   }
   return null
@@ -118,17 +118,17 @@ export fn checkKeyword(cfg, keyword, replacing) {
 // null when `s` can be added to `cfg`.
 export fn check(cfg, s, replacing) {
   if (KINDS.indexOf(s.kind) < 0) {
-    return "unknown kind `" + s.kind + "` (url, open, command, shell, text, ai)"
+    return 'unknown kind `' + s.kind + '` (url, open, command, shell, text, ai)'
   }
   let e = checkKeyword(cfg, s.keyword, replacing)
   if (e !== null) {
     return e
   }
-  if (s.target.trim() === "") {
-    return "needs a target"
+  if (s.target.trim() === '') {
+    return 'needs a target'
   }
-  if (s.kind === "shell" && s.output !== "" && OUTPUTS.indexOf(s.output) < 0) {
-    return "output must be show, copy or none, not `" + s.output + "`"
+  if (s.kind === 'shell' && s.output !== '' && OUTPUTS.indexOf(s.output) < 0) {
+    return 'output must be show, copy or none, not `' + s.output + '`'
   }
   return null
 }
@@ -136,27 +136,27 @@ export fn check(cfg, s, replacing) {
 // null when `alias` can name `run`: one word, not a shortcut keyword or another alias.
 export fn checkAlias(cfg, alias, run) {
   let a = alias.trim()
-  if (run.trim() === "") {
-    return "needs something to run"
+  if (run.trim() === '') {
+    return 'needs something to run'
   }
-  if (a === "") {
-    return "needs an alias"
+  if (a === '') {
+    return 'needs an alias'
   }
   if (hasSpace(a)) {
-    return "alias `" + a + "` cannot contain spaces"
+    return 'alias `' + a + '` cannot contain spaces'
   }
   if (a.length > MAX_KEYWORD) {
-    return "alias `" + a + "` is longer than " + MAX_KEYWORD + " characters"
+    return 'alias `' + a + '` is longer than ' + MAX_KEYWORD + ' characters'
   }
   for (let i = 0; i < cfg.shortcuts.length; i = i + 1) {
     if (same(cfg.shortcuts[i].keyword, a)) {
-      return "`" + a + "` is the keyword of \"" + cfg.shortcuts[i].name + "\""
+      return '`' + a + '` is the keyword of "' + cfg.shortcuts[i].name + '"'
     }
   }
   for (let i = 0; i < cfg.aliases.length; i = i + 1) {
     let p = cfg.aliases[i]
     if (same(p[1], a) && p[0] !== run.trim()) {
-      return "`" + a + "` is already the alias of " + p[0]
+      return '`' + a + '` is already the alias of ' + p[0]
     }
   }
   return null
@@ -167,15 +167,15 @@ export fn checkAlias(cfg, alias, run) {
 // spec doesn't parse.
 export fn parse(json, keysError) {
   let cfg = emptyConfig()
-  if (json.trim() === "") {
+  if (json.trim() === '') {
     return { cfg: cfg, warnings: [] }
   }
   let root = JSON.parse(json)
   if (root === null) {
-    return { error: "the file is not valid JSON" }
+    return { error: 'the file is not valid JSON' }
   }
   if (!isObject(root)) {
-    return { error: "the file must contain a JSON object" }
+    return { error: 'the file must contain a JSON object' }
   }
   let rootKeys = Object.keys(root)
   for (let i = 0; i < rootKeys.length; i = i + 1) {
@@ -208,17 +208,17 @@ export fn parse(json, keysError) {
     if (e === null) {
       cfg.shortcuts.push(normalize(s))
     } else if (KINDS.indexOf(s.kind) < 0) {
-      warnings.push("shortcut " + (i + 1) + ": " + e)
+      warnings.push('shortcut ' + (i + 1) + ': ' + e)
     } else {
-      warnings.push("shortcut " + (i + 1) + " (" + s.keyword + "): " + e)
+      warnings.push('shortcut ' + (i + 1) + ' (' + s.keyword + '): ' + e)
     }
   }
   let hk = Array.isArray(root.hotkeys) ? root.hotkeys : []
   for (let i = 0; i < hk.length; i = i + 1) {
     let h = isObject(hk[i]) ? hk[i] : {}
     let b = { keys: str(h.keys), run: str(h.run), query: str(h.query) }
-    if (b.keys.trim() === "" || b.run.trim() === "") {
-      warnings.push("hotkey " + (i + 1) + ": needs `keys` and `run`")
+    if (b.keys.trim() === '' || b.run.trim() === '') {
+      warnings.push('hotkey ' + (i + 1) + ': needs `keys` and `run`')
     } else {
       cfg.hotkeys.push(b)
     }
@@ -235,13 +235,13 @@ export fn parse(json, keysError) {
       if (e === null) {
         cfg.aliases.push(pairs[i])
       } else {
-        warnings.push("alias of " + pairs[i][0] + ": " + e)
+        warnings.push('alias of ' + pairs[i][0] + ': ' + e)
       }
     }
   }
   if (Array.isArray(root.disabled)) {
     for (let i = 0; i < root.disabled.length; i = i + 1) {
-      if (typeof root.disabled[i] === "string") {
+      if (typeof root.disabled[i] === 'string') {
         setDisabled(cfg, root.disabled[i], true)
       }
     }
@@ -250,9 +250,9 @@ export fn parse(json, keysError) {
     let actions = Object.keys(root.keys)
     for (let i = 0; i < actions.length; i = i + 1) {
       let keys = str(root.keys[actions[i]]).trim()
-      let e = keys === "none" ? null : keysError(keys)
+      let e = keys === 'none' ? null : keysError(keys)
       if (e !== null) {
-        warnings.push("key for " + actions[i] + ": " + e)
+        warnings.push('key for ' + actions[i] + ': ' + e)
       } else {
         setPanelKey(cfg, actions[i], keys)
       }
@@ -271,7 +271,7 @@ export fn upsert(cfg, s, replacing) {
     return e
   }
   normalize(s)
-  if (typeof replacing === "string" && replacing !== "") {
+  if (typeof replacing === 'string' && replacing !== '') {
     for (let i = 0; i < cfg.shortcuts.length; i = i + 1) {
       if (same(cfg.shortcuts[i].keyword, replacing)) {
         cfg.shortcuts[i] = s
@@ -286,7 +286,7 @@ export fn upsert(cfg, s, replacing) {
 export fn remove(cfg, keyword) {
   let before = cfg.shortcuts.length
   cfg.shortcuts = cfg.shortcuts.filter((s) => !same(s.keyword, keyword.trim()))
-  return cfg.shortcuts.length !== before ? null : "no shortcut `" + keyword + "`"
+  return cfg.shortcuts.length !== before ? null : 'no shortcut `' + keyword + '`'
 }
 
 // Add binding `h` ({ keys, run, query }), replacing an existing binding of the same keys. (One
@@ -311,25 +311,25 @@ export fn unbind(cfg, keys) {
   let changed = cfg.hotkeys.length !== before
   for (let i = 0; i < cfg.shortcuts.length; i = i + 1) {
     if (same(cfg.shortcuts[i].hotkey, k)) {
-      cfg.shortcuts[i].hotkey = ""
+      cfg.shortcuts[i].hotkey = ''
       changed = true
     }
   }
-  return changed ? null : "no hotkey `" + keys + "`"
+  return changed ? null : 'no hotkey `' + keys + '`'
 }
 
 // Give `run` the alias `alias`, or none when `alias` is empty.
 export fn setAlias(cfg, run, alias) {
   let r = run.trim()
   let a = alias.trim()
-  if (a !== "") {
+  if (a !== '') {
     let e = checkAlias(cfg, a, r)
     if (e !== null) {
       return e
     }
   }
   cfg.aliases = cfg.aliases.filter((p) => p[0] !== r)
-  if (a !== "") {
+  if (a !== '') {
     cfg.aliases.push([r, a])
     cfg.aliases.sort(byFirst)
   }
@@ -339,7 +339,7 @@ export fn setAlias(cfg, run, alias) {
 export fn setDisabled(cfg, run, disabled) {
   let r = run.trim()
   cfg.disabled = cfg.disabled.filter((x) => x !== r)
-  if (disabled && r !== "") {
+  if (disabled && r !== '') {
     cfg.disabled.push(r)
     cfg.disabled.sort()
   }
@@ -350,7 +350,7 @@ export fn setDisabled(cfg, run, disabled) {
 export fn setPanelKey(cfg, action, keys) {
   let a = action.trim()
   cfg.keys = cfg.keys.filter((p) => p[0] !== a)
-  if (keys.trim() !== "" && a !== "") {
+  if (keys.trim() !== '' && a !== '') {
     cfg.keys.push([a, keys.trim()])
     cfg.keys.sort(byFirst)
   }
@@ -368,7 +368,7 @@ export fn setProvider(cfg, id, field, value) {
   if (p === null) {
     p = { id: id }
     for (let j = 0; j < PROVIDER_FIELDS.length; j = j + 1) {
-      p[PROVIDER_FIELDS[j]] = ""
+      p[PROVIDER_FIELDS[j]] = ''
     }
     cfg.ai.providers.push(p)
     cfg.ai.providers.sort((a, b) => a.id < b.id ? -1 : (a.id > b.id ? 1 : 0))
@@ -385,109 +385,109 @@ fn q(s) {
 
 fn pairsJson(key, list) {
   if (list.length === 0) {
-    return ""
+    return ''
   }
-  let out = ",\n  " + q(key) + ": {"
+  let out = ',\n  ' + q(key) + ': {'
   for (let i = 0; i < list.length; i = i + 1) {
-    out = out + (i === 0 ? "\n    " : ",\n    ") + q(list[i][0]) + ": " + q(list[i][1])
+    out = out + (i === 0 ? '\n    ' : ',\n    ') + q(list[i][0]) + ': ' + q(list[i][1])
   }
-  return out + "\n  }"
+  return out + '\n  }'
 }
 
 // The file as written: two-space indent, one shortcut per line, fields in a fixed order, empty
 // optional fields left out, and keys this version doesn't know kept at the end.
 export fn toJson(cfg) {
-  let out = "{\n"
-  if (cfg.launcher !== "") {
-    out = out + "  \"launcher\": " + q(cfg.launcher) + ",\n"
+  let out = '{\n'
+  if (cfg.launcher !== '') {
+    out = out + '  "launcher": ' + q(cfg.launcher) + ',\n'
   }
-  out = out + "  \"shortcuts\": ["
+  out = out + '  "shortcuts": ['
   for (let i = 0; i < cfg.shortcuts.length; i = i + 1) {
     let s = cfg.shortcuts[i]
-    let fields = [["keyword", s.keyword], ["name", s.name], ["kind", s.kind], ["target", s.target]]
-    if (s.kind === "command" && s.input !== "{query}") {
-      fields.push(["input", s.input])
+    let fields = [['keyword', s.keyword], ['name', s.name], ['kind', s.kind], ['target', s.target]]
+    if (s.kind === 'command' && s.input !== '{query}') {
+      fields.push(['input', s.input])
     }
-    if (s.kind === "shell" && s.output !== "show") {
-      fields.push(["output", s.output])
+    if (s.kind === 'shell' && s.output !== 'show') {
+      fields.push(['output', s.output])
     }
-    if (s.hotkey !== "") {
-      fields.push(["hotkey", s.hotkey])
+    if (s.hotkey !== '') {
+      fields.push(['hotkey', s.hotkey])
     }
-    if (s.kind === "ai" && s.model !== "") {
-      fields.push(["model", s.model])
+    if (s.kind === 'ai' && s.model !== '') {
+      fields.push(['model', s.model])
     }
-    out = out + (i === 0 ? "\n    { " : ",\n    { ") + fields.map((f) => q(f[0]) + ": " + q(f[1])).join(", ")
-    if (s.kind === "text" && s.expand) {
-      out = out + ", \"expand\": true"
+    out = out + (i === 0 ? '\n    { ' : ',\n    { ') + fields.map((f) => q(f[0]) + ': ' + q(f[1])).join(', ')
+    if (s.kind === 'text' && s.expand) {
+      out = out + ', "expand": true'
     }
-    out = out + " }"
+    out = out + ' }'
   }
-  out = out + (cfg.shortcuts.length === 0 ? "],\n" : "\n  ],\n")
-  out = out + "  \"hotkeys\": ["
+  out = out + (cfg.shortcuts.length === 0 ? '],\n' : '\n  ],\n')
+  out = out + '  "hotkeys": ['
   for (let i = 0; i < cfg.hotkeys.length; i = i + 1) {
     let h = cfg.hotkeys[i]
-    out = out + (i === 0 ? "\n    { \"keys\": " : ",\n    { \"keys\": ") + q(h.keys) + ", \"run\": " + q(h.run)
-    if (h.query !== "") {
-      out = out + ", \"query\": " + q(h.query)
+    out = out + (i === 0 ? '\n    { "keys": ' : ',\n    { "keys": ') + q(h.keys) + ', "run": ' + q(h.run)
+    if (h.query !== '') {
+      out = out + ', "query": ' + q(h.query)
     }
-    out = out + " }"
+    out = out + ' }'
   }
-  out = out + (cfg.hotkeys.length === 0 ? "]" : "\n  ]")
-  out = out + pairsJson("aliases", cfg.aliases)
+  out = out + (cfg.hotkeys.length === 0 ? ']' : '\n  ]')
+  out = out + pairsJson('aliases', cfg.aliases)
   if (cfg.disabled.length > 0) {
-    out = out + ",\n  \"disabled\": [" + cfg.disabled.map((r) => "\n    " + q(r)).join(",") + "\n  ]"
+    out = out + ',\n  "disabled": [' + cfg.disabled.map((r) => '\n    ' + q(r)).join(',') + '\n  ]'
   }
-  out = out + pairsJson("keys", cfg.keys)
-  if (cfg.search !== "") {
-    out = out + ",\n  \"search\": " + q(cfg.search)
+  out = out + pairsJson('keys', cfg.keys)
+  if (cfg.search !== '') {
+    out = out + ',\n  "search": ' + q(cfg.search)
   }
-  if (cfg.ai.model !== "" || cfg.ai.providers.length > 0) {
-    out = out + ",\n  \"ai\": { \"model\": " + q(cfg.ai.model)
+  if (cfg.ai.model !== '' || cfg.ai.providers.length > 0) {
+    out = out + ',\n  "ai": { "model": ' + q(cfg.ai.model)
     if (cfg.ai.providers.length > 0) {
-      out = out + ", \"providers\": {"
+      out = out + ', "providers": {'
       for (let i = 0; i < cfg.ai.providers.length; i = i + 1) {
         let p = cfg.ai.providers[i]
-        let fields = PROVIDER_FIELDS.filter((f) => p[f] !== "").map((f) => " " + q(f) + ": " + q(p[f]))
-        out = out + (i === 0 ? "\n    " : ",\n    ") + q(p.id) + ": {" + fields.join(",") + " }"
+        let fields = PROVIDER_FIELDS.filter((f) => p[f] !== '').map((f) => ' ' + q(f) + ': ' + q(p[f]))
+        out = out + (i === 0 ? '\n    ' : ',\n    ') + q(p.id) + ': {' + fields.join(',') + ' }'
       }
-      out = out + "\n  }"
+      out = out + '\n  }'
     }
-    out = out + " }"
+    out = out + ' }'
   }
   let extra = Object.keys(cfg.extra)
   for (let i = 0; i < extra.length; i = i + 1) {
-    out = out + ",\n  " + q(extra[i]) + ": " + JSON.stringify(cfg.extra[extra[i]])
+    out = out + ',\n  ' + q(extra[i]) + ': ' + JSON.stringify(cfg.extra[extra[i]])
   }
-  return out + "\n}\n"
+  return out + '\n}\n'
 }
 
 // ── Templates ───────────────────────────────────────────────────────────────
 
 export fn needsQuery(template) {
-  return template.indexOf("{query}") >= 0 || template.indexOf("{}") >= 0
+  return template.indexOf('{query}') >= 0 || template.indexOf('{}') >= 0
 }
 
 // Percent-encode everything but A-Z a-z 0-9 - _ . ~ (UTF-8 bytes).
 export fn percentEncode(s) {
-  return encodeURIComponent(s).split("!").join("%21").split("'").join("%27").split("(").join("%28")
-    .split(")").join("%29").split("*").join("%2A")
+  return encodeURIComponent(s).split('!').join('%21').split("'").join('%27').split('(').join('%28')
+    .split(')').join('%29').split('*').join('%2A')
 }
 
 // How each kind inserts values: `url` percent-encodes; `shell` writes `"$1"`, `"$2"`, `"$3"` for
 // query, clipboard and selection, whose values are passed as the script's arguments (see
 // `shellValues`) and never spliced in, so quoting a placeholder can't run code.
-let SHELL_ARGS = { query: "\"$1\"", clipboard: "\"$2\"", selection: "\"$3\"" }
+let SHELL_ARGS = { query: '"$1"', clipboard: '"$2"', selection: '"$3"' }
 
 // `vars`: { query, clipboard, selection, date, time }.
 export fn expand(template, vars, kind) {
-  let put = (name, v) => kind === "url" ? percentEncode(v) : (kind === "shell" ? SHELL_ARGS[name] : v)
-  let tokens = [["{query}", "query"], ["{}", "query"], ["{clipboard}", "clipboard"], ["{selection}", "selection"],
-    ["{date}", "date"], ["{time}", "time"]]
-  let out = ""
+  let put = (name, v) => kind === 'url' ? percentEncode(v) : (kind === 'shell' ? SHELL_ARGS[name] : v)
+  let tokens = [['{query}', 'query'], ['{}', 'query'], ['{clipboard}', 'clipboard'], ['{selection}', 'selection'],
+    ['{date}', 'date'], ['{time}', 'time']]
+  let out = ''
   let rest = template
   while (true) {
-    let i = rest.indexOf("{")
+    let i = rest.indexOf('{')
     if (i < 0) {
       break
     }
@@ -501,11 +501,11 @@ export fn expand(template, vars, kind) {
       }
     }
     if (hit === null) {
-      out = out + "{"
+      out = out + '{'
       rest = tail.slice(1)
     } else {
       let name = hit[1]
-      out = out + (name === "date" || name === "time" ? vars[name] : put(name, vars[name]))
+      out = out + (name === 'date' || name === 'time' ? vars[name] : put(name, vars[name]))
       rest = tail.slice(hit[0].length)
     }
   }

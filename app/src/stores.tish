@@ -2,8 +2,8 @@
 // view preferences (prefs.tsv, `key<TAB>value` per line; `MOO_PREFS`) and search history
 // (history.txt, queries the user opened something from, newest first; `MOO_HISTORY`).
 
-import { readFile, writeFile, mkdir, rename, fileExists } from "tish:fs"
-import { env } from "tish:process"
+import { readFile, writeFile, mkdir, rename, fileExists } from 'tish:fs'
+import { env } from 'tish:process'
 
 let MAX_HISTORY = 50
 
@@ -11,28 +11,28 @@ fn dataPath(override, name) {
   if (override) {
     return override
   }
-  return env.HOME ? env.HOME + "/Library/Application Support/Moo/" + name : ""
+  return env.HOME ? env.HOME + '/Library/Application Support/Moo/' + name : ''
 }
 
 fn readText(path) {
-  if (path === "" || !fileExists(path)) {
-    return ""
+  if (path === '' || !fileExists(path)) {
+    return ''
   }
   let t = readFile(path)
-  return typeof t === "string" ? t : ""
+  return typeof t === 'string' ? t : ''
 }
 
 // Write atomically (temp file, then rename), creating the folder.
 fn writeText(path, text) {
-  if (path === "") {
+  if (path === '') {
     return
   }
-  let dir = path.slice(0, path.lastIndexOf("/"))
+  let dir = path.slice(0, path.lastIndexOf('/'))
   mkdir(dir, { recursive: true })
-  let w = writeFile(path + ".tmp", text)
-  let r = w === null ? rename(path + ".tmp", path) : w
+  let w = writeFile(path + '.tmp', text)
+  let r = w === null ? rename(path + '.tmp', path) : w
   if (r !== null) {
-    console.error("moo: saving " + path + " failed: " + r.error)
+    console.error('moo: saving ' + path + ' failed: ' + r.error)
   }
 }
 
@@ -40,9 +40,9 @@ fn writeText(path, text) {
 
 export fn parsePrefs(text) {
   let out = []
-  let lines = text.split("\n")
+  let lines = text.split('\n')
   for (let i = 0; i < lines.length; i = i + 1) {
-    let tab = lines[i].indexOf("\t")
+    let tab = lines[i].indexOf('\t')
     if (tab >= 0) {
       out.push([lines[i].slice(0, tab), lines[i].slice(tab + 1)])
     }
@@ -51,17 +51,17 @@ export fn parsePrefs(text) {
 }
 
 export fn formatPrefs(items) {
-  return items.map((p) => p[0] + "\t" + p[1] + "\n").join("")
+  return items.map((p) => p[0] + '\t' + p[1] + '\n').join('')
 }
 
 fn clean(s) {
-  return s.split("\t").join(" ").split("\n").join(" ")
+  return s.split('\t').join(' ').split('\n').join(' ')
 }
 
 // Set `key` in `items` (tabs and newlines become spaces); false when the key is empty.
 export fn putPref(items, key, value) {
   let k = clean(key.trim())
-  if (k === "") {
+  if (k === '') {
     return false
   }
   for (let i = 0; i < items.length; i = i + 1) {
@@ -75,13 +75,13 @@ export fn putPref(items, key, value) {
 }
 
 export fn parseHistory(text) {
-  return text.split("\n").filter((l) => l.trim() !== "").slice(0, MAX_HISTORY)
+  return text.split('\n').filter((l) => l.trim() !== '').slice(0, MAX_HISTORY)
 }
 
 // `items` with `query` moved to the top, or null when it's blank.
 export fn pushHistory(items, query) {
-  let q = query.trim().split("\n").join(" ")
-  if (q === "") {
+  let q = query.trim().split('\n').join(' ')
+  if (q === '') {
     return null
   }
   return [q].concat(items.filter((i) => i !== q)).slice(0, MAX_HISTORY)
@@ -92,7 +92,7 @@ export fn pushHistory(items, query) {
 let prefs = null
 
 fn prefsPath() {
-  return dataPath(env.MOO_PREFS, "prefs.tsv")
+  return dataPath(env.MOO_PREFS, 'prefs.tsv')
 }
 
 fn loadedPrefs() {
@@ -110,7 +110,7 @@ export fn getPref(key) {
       return items[i][1]
     }
   }
-  return ""
+  return ''
 }
 
 export fn setPref(key, value) {
@@ -124,7 +124,7 @@ export fn setPref(key, value) {
 let history = null
 
 fn historyPath() {
-  return dataPath(env.MOO_HISTORY, "history.txt")
+  return dataPath(env.MOO_HISTORY, 'history.txt')
 }
 
 fn loadedHistory() {
@@ -143,11 +143,11 @@ export fn addSearchHistory(query) {
   let next = pushHistory(loadedHistory(), query)
   if (next !== null) {
     history = next
-    writeText(historyPath(), history.join("\n") + "\n")
+    writeText(historyPath(), history.join('\n') + '\n')
   }
 }
 
 export fn clearSearchHistory() {
   history = []
-  writeText(historyPath(), "\n")
+  writeText(historyPath(), '\n')
 }

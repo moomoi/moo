@@ -32,6 +32,9 @@ jobs:
 
       - uses: ./.github/actions/toolchain
 
+      - name: Lint
+        run: npm run lint
+
       - name: Plugins
         run: bash plugins/build.sh
 

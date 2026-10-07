@@ -1,20 +1,20 @@
 // Docs pages. `docs` is the list markdown.tish builds from web/docs/: { slug, section, title,
 // summary, html, toc } in reading order.
-import { h } from "lattish"
-import { Page, Hero } from "../components/layout.tish"
+import { h } from 'lattish'
+import { Page, Hero } from '../components/layout.tish'
 
 // The section list. <details> stays open on wide screens (its summary is hidden there) and folds
 // into a menu on phones.
 fn Sidebar(props) {
   let items = []
-  let section = ""
+  let section = ''
   for (let i = 0; i < props.docs.length; i = i + 1) {
     let d = props.docs[i]
     if (d.section !== section) {
       section = d.section
       items.push(<h4>{section}</h4>)
     }
-    items.push(<a href={"/docs/" + d.slug} class={d.slug === props.current ? "on" : null}>{d.title}</a>)
+    items.push(<a href={'/docs/' + d.slug} class={d.slug === props.current ? 'on' : null}>{d.title}</a>)
   }
   return <details class="side" open={true}><summary>Docs menu</summary><div>{items}</div></details>
 }
@@ -26,7 +26,7 @@ fn Toc(props) {
   return (
     <aside class="toc">
       <b>On this page</b>
-      {props.toc.map((t) => <a class={"l" + t.level} href={"#" + t.id}>{t.text}</a>)}
+      {props.toc.map((t) => <a class={'l' + t.level} href={'#' + t.id}>{t.text}</a>)}
     </aside>
   )
 }
@@ -38,7 +38,7 @@ export fn DocPage(props) {
   let prev = i > 0 ? docs[i - 1] : null
   let next = i + 1 < docs.length ? docs[i + 1] : null
   return (
-    <Page title={d.title + " · Moo Docs"} active="docs">
+    <Page title={d.title + ' · Moo Docs'} active="docs">
       <div class="wrap docs">
         <Sidebar docs={docs} current={d.slug} />
         <article class="article up">
@@ -47,8 +47,8 @@ export fn DocPage(props) {
           <p class="sum">{d.summary}</p>
           <div class="md"><raw html={d.html} /></div>
           <div class="pn">
-            {prev !== null ? <a href={"/docs/" + prev.slug}><span>← Previous</span><b>{prev.title}</b></a> : null}
-            {next !== null ? <a class="next" href={"/docs/" + next.slug}><span>Next →</span><b>{next.title}</b></a> : null}
+            {prev !== null ? <a href={'/docs/' + prev.slug}><span>← Previous</span><b>{prev.title}</b></a> : null}
+            {next !== null ? <a class="next" href={'/docs/' + next.slug}><span>Next →</span><b>{next.title}</b></a> : null}
           </div>
         </article>
         <Toc toc={d.toc} />
@@ -60,12 +60,12 @@ export fn DocPage(props) {
 // One card per section, listing its pages.
 fn SectionCards(props) {
   let cards = []
-  let section = ""
+  let section = ''
   let links = []
   let docs = props.docs
   for (let i = 0; i <= docs.length; i = i + 1) {
     if (i === docs.length || docs[i].section !== section) {
-      if (section !== "") {
+      if (section !== '') {
         cards.push(<div class="card"><h3>{section}</h3><ul>{links}</ul></div>)
       }
       if (i === docs.length) {
@@ -74,7 +74,7 @@ fn SectionCards(props) {
       section = docs[i].section
       links = []
     }
-    links.push(<li><a href={"/docs/" + docs[i].slug}>{docs[i].title}</a></li>)
+    links.push(<li><a href={'/docs/' + docs[i].slug}>{docs[i].title}</a></li>)
   }
   return cards
 }
@@ -85,7 +85,7 @@ export fn DocsHome(props) {
       <Hero eyebrow="Documentation" style="padding-bottom:56px">
         <h2 class="t up d1" style="font-size:clamp(48px,9vw,104px)">Learn <span class="grad">moo</span>.</h2>
         <p class="lede up d2">From your first hotkey to writing plugins. Everything moo does, on a few short pages.</p>
-        <div class="ctas up d3"><a class="btn go" href={"/docs/" + props.docs[0].slug}>Get started →</a><a class="chip" style="text-decoration:none" href="/docs/plugin-api">Plugin API</a></div>
+        <div class="ctas up d3"><a class="btn go" href={'/docs/' + props.docs[0].slug}>Get started →</a><a class="chip" style="text-decoration:none" href="/docs/plugin-api">Plugin API</a></div>
       </Hero>
       <div class="wrap dhome up d4"><SectionCards docs={props.docs} /></div>
     </Page>

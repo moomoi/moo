@@ -1,6 +1,6 @@
-import { test } from "tish:test"
-import assert from "node:assert/strict"
-import { providers, splitModel, origin, isLocal, endpoints, newStream, streamLine, errorMessage, parseModels, displayName, parseOrgs, activeOrg, dollars, parseTokens, tokensJson, staleTokens, utf8, newLines, feedLines } from "./aicore.tish"
+import { test } from 'tish:test'
+import assert from 'node:assert/strict'
+import { providers, splitModel, origin, isLocal, endpoints, newStream, streamLine, errorMessage, parseModels, displayName, parseOrgs, activeOrg, dollars, parseTokens, tokensJson, staleTokens, utf8, newLines, feedLines } from './aicore.tish'
 
 fn same(a, b) {
   assert.equal(JSON.stringify(a), JSON.stringify(b))
@@ -16,92 +16,92 @@ fn feed(st, lines) {
   return changed
 }
 
-test("streams text and tool calls", () => {
+test('streams text and tool calls', () => {
   let st = newStream()
-  assert.equal(feed(st, [": keep-alive", ""]), false)
-  assert.ok(feed(st, ["data: {\"choices\":[{\"delta\":{\"role\":\"assistant\",\"content\":\"Hel\"}}]}", ""]))
-  assert.ok(feed(st, ["data: {\"choices\":[{\"delta\":{\"content\":\"lo\"}}]}", ""]))
-  assert.ok(feed(st, ["data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call_1\",\"type\":\"function\",\"function\":{\"name\":\"open_app\",\"arguments\":\"{\\\"na\"}}]}}]}", ""]))
-  assert.ok(feed(st, ["data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"function\":{\"arguments\":\"me\\\":\\\"Notes\\\"}\"}}]}}]}", ""]))
-  assert.equal(feed(st, ["data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"tool_calls\"}]}", ""]), false)
-  feed(st, ["data: [DONE]", ""])
-  assert.equal(st.text, "Hello")
-  same(st.calls, [{ id: "call_1", name: "open_app", arguments: "{\"name\":\"Notes\"}" }])
-  assert.equal(st.finish, "tool_calls")
+  assert.equal(feed(st, [': keep-alive', '']), false)
+  assert.ok(feed(st, ['data: {"choices":[{"delta":{"role":"assistant","content":"Hel"}}]}', '']))
+  assert.ok(feed(st, ['data: {"choices":[{"delta":{"content":"lo"}}]}', '']))
+  assert.ok(feed(st, ['data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":"open_app","arguments":"{\\"na"}}]}}]}', '']))
+  assert.ok(feed(st, ['data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"me\\":\\"Notes\\"}"}}]}}]}', '']))
+  assert.equal(feed(st, ['data: {"choices":[{"delta":{},"finish_reason":"tool_calls"}]}', '']), false)
+  feed(st, ['data: [DONE]', ''])
+  assert.equal(st.text, 'Hello')
+  same(st.calls, [{ id: 'call_1', name: 'open_app', arguments: '{"name":"Notes"}' }])
+  assert.equal(st.finish, 'tool_calls')
   assert.ok(st.done)
   let bad = newStream()
-  feed(bad, ["data: {\"error\":{\"code\":\"INSUFFICIENT_CREDITS\",\"message\":\"Top up\"}}", ""])
-  assert.equal(bad.error, "INSUFFICIENT_CREDITS: Top up")
+  feed(bad, ['data: {"error":{"code":"INSUFFICIENT_CREDITS","message":"Top up"}}', ''])
+  assert.equal(bad.error, 'INSUFFICIENT_CREDITS: Top up')
 })
 
 test("an event's data lines are joined; the last event needs no blank line", () => {
   let st = newStream()
-  feed(st, ["data: {\"choices\":", "data: [{\"delta\":{\"content\":\"two lines\"}}]}", ""])
-  assert.equal(st.text, "two lines")
-  feed(st, ["data:{\"choices\":[{\"delta\":{\"content\":\"!\"}}]}"])
-  assert.equal(st.text, "two lines")
-  assert.ok(streamLine(st, ""))
-  assert.equal(st.text, "two lines!")
+  feed(st, ['data: {"choices":', 'data: [{"delta":{"content":"two lines"}}]}', ''])
+  assert.equal(st.text, 'two lines')
+  feed(st, ['data:{"choices":[{"delta":{"content":"!"}}]}'])
+  assert.equal(st.text, 'two lines')
+  assert.ok(streamLine(st, ''))
+  assert.equal(st.text, 'two lines!')
 })
 
-test("lines from byte chunks, UTF-8 split across chunks", () => {
+test('lines from byte chunks, UTF-8 split across chunks', () => {
   let lines = newLines()
   // "héllo\r\n" + "😀\n" with the é and the emoji split between chunks.
   feedLines(lines, [104, 195])
   feedLines(lines, [169, 108, 108, 111, 13, 10, 240, 159])
   feedLines(lines, [152, 128, 10, 120])
-  same(lines.done, ["héllo", "😀"])
+  same(lines.done, ['héllo', '😀'])
   same(lines.rest, [120])
-  assert.equal(utf8([255, 65]), "�A")
+  assert.equal(utf8([255, 65]), '�A')
 })
 
-test("errors, models and names", () => {
-  assert.equal(errorMessage(401, "{\"error\":{\"message\":\"Invalid key\"}}"), "HTTP 401: the API key was rejected (Invalid key)")
-  assert.equal(errorMessage(429, "{\"error\":{\"code\":\"RATE_LIMITED\",\"message\":\"slow down\"}}"), "HTTP 429: rate limited (RATE_LIMITED: slow down)")
-  assert.equal(errorMessage(502, "Bad Gateway"), "HTTP 502: the server failed (Bad Gateway)")
-  same(parseModels("{\"object\":\"list\",\"data\":[{\"id\":\"b\"},{\"id\":\"a\"},{\"id\":\"b\"}]}").map((m) => m.id), ["b", "a"])
-  same(splitModel("hypery:openai/gpt-5"), ["hypery", "openai/gpt-5"])
-  same(splitModel("ollama:llama3.2:3b"), ["ollama", "llama3.2:3b"])
-  same(splitModel(""), ["apple", ""])
-  assert.equal(origin("https://hypery.ai/v1"), "https://hypery.ai")
-  assert.ok(isLocal("http://127.0.0.1:8080/v1") && isLocal("http://localhost:11434/v1") && !isLocal("https://hypery.ai/v1"))
+test('errors, models and names', () => {
+  assert.equal(errorMessage(401, '{"error":{"message":"Invalid key"}}'), 'HTTP 401: the API key was rejected (Invalid key)')
+  assert.equal(errorMessage(429, '{"error":{"code":"RATE_LIMITED","message":"slow down"}}'), 'HTTP 429: rate limited (RATE_LIMITED: slow down)')
+  assert.equal(errorMessage(502, 'Bad Gateway'), 'HTTP 502: the server failed (Bad Gateway)')
+  same(parseModels('{"object":"list","data":[{"id":"b"},{"id":"a"},{"id":"b"}]}').map((m) => m.id), ['b', 'a'])
+  same(splitModel('hypery:openai/gpt-5'), ['hypery', 'openai/gpt-5'])
+  same(splitModel('ollama:llama3.2:3b'), ['ollama', 'llama3.2:3b'])
+  same(splitModel(''), ['apple', ''])
+  assert.equal(origin('https://hypery.ai/v1'), 'https://hypery.ai')
+  assert.ok(isLocal('http://127.0.0.1:8080/v1') && isLocal('http://localhost:11434/v1') && !isLocal('https://hypery.ai/v1'))
 })
 
-test("config overrides and adds providers", () => {
+test('config overrides and adds providers', () => {
   let ps = providers([
-    { id: "hypery", title: "", url: "http://127.0.0.1:9/v1/", keyEnv: "", clientId: "cid", redirectUri: "", organization: "" },
-    { id: "work", title: "", url: "https://llm.example/v1", keyEnv: "WORK_KEY", clientId: "", redirectUri: "", organization: "" }
+    { id: 'hypery', title: '', url: 'http://127.0.0.1:9/v1/', keyEnv: '', clientId: 'cid', redirectUri: '', organization: '' },
+    { id: 'work', title: '', url: 'https://llm.example/v1', keyEnv: 'WORK_KEY', clientId: '', redirectUri: '', organization: '' }
   ], {})
-  let h = ps.filter((p) => p.id === "hypery")[0]
-  same([h.url, h.local, h.clientId, h.redirect], ["http://127.0.0.1:9/v1", true, "cid", "https://moo.moi/callback"])
+  let h = ps.filter((p) => p.id === 'hypery')[0]
+  same([h.url, h.local, h.clientId, h.redirect], ['http://127.0.0.1:9/v1', true, 'cid', 'https://moo.moi/callback'])
   let ep = endpoints(h)
-  assert.equal(ep.token, "http://127.0.0.1:9/api/oauth/token")
-  assert.equal(ep.scope, "ai:chat ai:models billing:read")
-  let w = ps.filter((p) => p.id === "work")[0]
-  same([w.title, w.keyEnv, w.local], ["work", "WORK_KEY", false])
-  assert.equal(providers([], { MOO_HYPERY_CLIENT_ID: "env-id" })[0].clientId, "env-id")
+  assert.equal(ep.token, 'http://127.0.0.1:9/api/oauth/token')
+  assert.equal(ep.scope, 'ai:chat ai:models billing:read')
+  let w = ps.filter((p) => p.id === 'work')[0]
+  same([w.title, w.keyEnv, w.local], ['work', 'WORK_KEY', false])
+  assert.equal(providers([], { MOO_HYPERY_CLIENT_ID: 'env-id' })[0].clientId, 'env-id')
 })
 
-test("model details from Hypery", () => {
-  let m = parseModels("{\"object\":\"list\",\"data\":[{\"id\":\"~anthropic/claude-sonnet-latest\",\"owned_by\":\"anthropic\",\"name\":\"Anthropic: Claude Sonnet Latest\",\"pricing_tier_label\":\"Standard\",\"context_length\":1000000},{\"id\":\"x-ai/grok-4.3\",\"owned_by\":\"x-ai\",\"name\":\"SpaceXAI: Grok 4.3\",\"pricing_tier_label\":\"Standard\",\"context_length\":1000000},{\"id\":\"x-ai/grok-4.3\",\"owned_by\":\"x-ai\",\"name\":\"Grok 4.3 (again)\"},{\"id\":\"google/gemma-3-12b-it\",\"owned_by\":\"google\",\"name\":\"google/gemma-3-12b-it\",\"pricing_tier_label\":\"Budget\"},{\"id\":\"anthropic/claude-sonnet-5\",\"name\":\"Claude Sonnet 5\"}],\"has_more\":false}")
-  same(m.map((x) => x.name), ["Claude Sonnet Latest", "Grok 4.3", "gemma-3-12b-it", "Claude Sonnet 5"])
-  same([m[0].owner, m[0].context, m[0].tier], ["anthropic", 1000000, "Standard"])
-  assert.equal(m[3].owner, "anthropic")
-  assert.equal(displayName("Ratio: 1:2 Mixer Deluxe Model Name Long", "x/y"), "1:2 Mixer Deluxe Model Name Long")
-  assert.equal(displayName("A very long model name that is long: with colon", "x/y"), "A very long model name that is long: with colon")
+test('model details from Hypery', () => {
+  let m = parseModels('{"object":"list","data":[{"id":"~anthropic/claude-sonnet-latest","owned_by":"anthropic","name":"Anthropic: Claude Sonnet Latest","pricing_tier_label":"Standard","context_length":1000000},{"id":"x-ai/grok-4.3","owned_by":"x-ai","name":"SpaceXAI: Grok 4.3","pricing_tier_label":"Standard","context_length":1000000},{"id":"x-ai/grok-4.3","owned_by":"x-ai","name":"Grok 4.3 (again)"},{"id":"google/gemma-3-12b-it","owned_by":"google","name":"google/gemma-3-12b-it","pricing_tier_label":"Budget"},{"id":"anthropic/claude-sonnet-5","name":"Claude Sonnet 5"}],"has_more":false}')
+  same(m.map((x) => x.name), ['Claude Sonnet Latest', 'Grok 4.3', 'gemma-3-12b-it', 'Claude Sonnet 5'])
+  same([m[0].owner, m[0].context, m[0].tier], ['anthropic', 1000000, 'Standard'])
+  assert.equal(m[3].owner, 'anthropic')
+  assert.equal(displayName('Ratio: 1:2 Mixer Deluxe Model Name Long', 'x/y'), '1:2 Mixer Deluxe Model Name Long')
+  assert.equal(displayName('A very long model name that is long: with colon', 'x/y'), 'A very long model name that is long: with colon')
 })
 
-test("organizations, balances and tokens", () => {
-  let orgs = parseOrgs("{\"memberships\":[{\"team\":{\"id\":\"t2\",\"name\":\"Acme\",\"slug\":\"acme\",\"image\":\"https://cdn.example/acme.png\",\"isPersonal\":false,\"role\":\"admin\"}},{\"team\":{\"id\":\"t1\",\"name\":\"Me\",\"slug\":\"me\",\"image\":null,\"isPersonal\":true,\"role\":\"owner\"}}]}")
-  same(orgs.map((o) => o.name), ["Me", "Acme"])
-  assert.equal(orgs[1].image, "https://cdn.example/acme.png")
-  assert.equal(activeOrg(orgs, "t2").slug, "acme")
-  assert.equal(activeOrg(orgs, "nope").id, "t1")
+test('organizations, balances and tokens', () => {
+  let orgs = parseOrgs('{"memberships":[{"team":{"id":"t2","name":"Acme","slug":"acme","image":"https://cdn.example/acme.png","isPersonal":false,"role":"admin"}},{"team":{"id":"t1","name":"Me","slug":"me","image":null,"isPersonal":true,"role":"owner"}}]}')
+  same(orgs.map((o) => o.name), ['Me', 'Acme'])
+  assert.equal(orgs[1].image, 'https://cdn.example/acme.png')
+  assert.equal(activeOrg(orgs, 't2').slug, 'acme')
+  assert.equal(activeOrg(orgs, 'nope').id, 't1')
   assert.equal(dollars(1234), 12.34)
-  assert.equal(dollars(""), -1)
-  let t = parseTokens(tokensJson({ access: "at", refresh: "rt", expires: 2000 }))
-  same([t.access, t.refresh, t.expires], ["at", "rt", 2000])
+  assert.equal(dollars(''), -1)
+  let t = parseTokens(tokensJson({ access: 'at', refresh: 'rt', expires: 2000 }))
+  same([t.access, t.refresh, t.expires], ['at', 'rt', 2000])
   assert.ok(staleTokens(t, 1950) && !staleTokens(t, 1000))
-  assert.ok(!staleTokens({ access: "a", refresh: "", expires: 0 }, 5))
-  assert.equal(parseTokens("{}"), null)
+  assert.ok(!staleTokens({ access: 'a', refresh: '', expires: 0 }, 5))
+  assert.equal(parseTokens('{}'), null)
 })

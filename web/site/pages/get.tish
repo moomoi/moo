@@ -1,7 +1,7 @@
-import { h } from "lattish"
-import { Page, Hero } from "../components/layout.tish"
-import { Icon } from "../components/icons.tish"
-import { BREW } from "../links.tish"
+import { h } from 'lattish'
+import { Page, Hero } from '../components/layout.tish'
+import { Icon } from '../components/icons.tish'
+import { BREW } from '../links.tish'
 
 fn Step(props) {
   return <div><h3>{props.title}</h3><p>{props.children}</p></div>
