@@ -1,0 +1,29 @@
+// Search suggestions in the OpenSearch format Google, DuckDuckGo, Bing and Brave all answer with:
+// `["query", ["suggestion", …], …]`. Which engine and URL is decided by the caller.
+
+// Most suggestions kept from one answer.
+let MAX = 8
+
+// The suggestions in an OpenSearch answer, without the query itself and duplicates.
+export fn parseSuggestions(body, query) {
+  let top = JSON.parse(body)
+  if (!Array.isArray(top) || top.length < 2 || !Array.isArray(top[1])) {
+    return []
+  }
+  let q = query.trim().toLowerCase()
+  let out = []
+  let seen = {}
+  for (let i = 0; i < top[1].length && out.length < MAX; i = i + 1) {
+    let v = top[1][i]
+    if (typeof v !== "string") {
+      continue
+    }
+    let s = v.trim()
+    let key = s.toLowerCase()
+    if (s !== "" && key !== q && seen[key] !== true) {
+      seen[key] = true
+      out.push(s)
+    }
+  }
+  return out
+}

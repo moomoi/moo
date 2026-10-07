@@ -23,6 +23,8 @@ export const THEME = {
     scrollThumbHover: "secondaryLabel",
     // Layer colours need alpha hex: "#00000000" keeps a row's layer, so its shape never changes.
     clear: "#00000000",
+    // The hairline under the search field and above the footer.
+    divider: "separator",
     // Scroll bar beside lists and the grid: the thumb, and the track behind it.
     scrollThumb: "tertiaryLabel",
     scrollTrack: "#00000000",
@@ -117,13 +119,13 @@ export const THEME = {
   },
   glass: {
     // "regular" or "clear".
-    style: "regular",
+    style: "clear",
     // Pieces closer than this melt together; the idle bar's 8 pt gaps keep them apart at rest.
     spacing: 6,
-    // A light tint lets the desktop show through the bar; the results panel gets a denser one.
+    // Clear glass with one light tint, the same collapsed and expanded.
     tint: {
-      bar: { light: "#F7F7FA4D", dark: "#0F0F124D" },
-      panel: { light: "#F7F7FA8C", dark: "#0F0F128C" },
+      bar: { light: "#F7F7FA59", dark: "#0F0F1259" },
+      panel: { light: "#F7F7FA59", dark: "#0F0F1259" },
     },
   },
   // Before macOS 26: raw vibrancy lets busy windows show through, so a dense tint keeps text

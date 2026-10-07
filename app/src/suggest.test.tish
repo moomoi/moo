@@ -1,0 +1,11 @@
+import { test } from "tish:test"
+import assert from "node:assert/strict"
+import { parseSuggestions } from "./suggest.tish"
+
+test("reads OpenSearch suggestions", () => {
+  let google = "[\"rust trai\",[\"rust traits\",\"rust trailer\",\"Rust Traits\",\"rust trai\"],[],{\"google:suggestsubtypes\":[[512]]}]"
+  assert.equal(JSON.stringify(parseSuggestions(google, "rust trai")), JSON.stringify(["rust traits", "rust trailer"]))
+  assert.equal(parseSuggestions("[\"x\",[]]", "x").length, 0)
+  assert.equal(parseSuggestions("<html>blocked</html>", "x").length, 0)
+  assert.equal(parseSuggestions("[\"caf\",[\"café \\u00e9t\\u00e9\"]]", "caf")[0], "café été")
+})

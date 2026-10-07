@@ -1,0 +1,59 @@
+// Clipboard history, newest first, in memory only (never written to disk). The native watcher
+// (`watchClipboard`) reports each text copy; `record` keeps it.
+
+let MAX_ITEMS = 200
+
+// Single line: whitespace runs collapsed, cut to `max` characters.
+export fn preview(text, max) {
+  let one = text.split(RegExp("\\s+", "u")).filter((w) => w !== "").join(" ")
+  if (one.length <= max) {
+    return one
+  }
+  return one.slice(0, Math.max(max - 1, 0)) + "…"
+}
+
+// Seconds since a copy -> "just now", "5m ago", "3h ago", "2d ago".
+export fn ago(secs) {
+  let s = Math.max(secs, 0)
+  if (s < 60) {
+    return "just now"
+  }
+  if (s < 3600) {
+    return Math.floor(s / 60) + "m ago"
+  }
+  if (s < 86400) {
+    return Math.floor(s / 3600) + "h ago"
+  }
+  return Math.floor(s / 86400) + "d ago"
+}
+
+// `items` with copy `c` ({ text, app, appPath, time }) on top, a repeat of the same text removed.
+export fn pushClip(items, c) {
+  return [c].concat(items.filter((x) => x.text !== c.text)).slice(0, MAX_ITEMS)
+}
+
+let history = []
+
+// A copy from the native watcher.
+export fn record(c) {
+  history = pushClip(history, { text: c.text, app: c.app, appPath: c.appPath, time: Date.now() / 1000 })
+}
+
+export fn clearClips() {
+  history = []
+}
+
+// `[{ text, preview, app, icon, ago }]`, newest first; a non-empty query filters with `fuzzy` (the
+// native matcher) on each copy's first 300 characters. `icon(path)` names an app's icon.
+export fn clipboardHistory(query, limit, fuzzy, icon) {
+  let picked = history.slice(0, limit)
+  if (query.trim() !== "") {
+    let hits = fuzzy(query, history.map((c) => preview(c.text, 300)), limit)
+    picked = hits.map((h) => history[h.index])
+  }
+  let now = Date.now() / 1000
+  return picked.map((c) => ({
+    text: c.text, preview: preview(c.text, 80), app: c.app,
+    icon: c.appPath === "" ? "" : icon(c.appPath), ago: ago(now - c.time)
+  }))
+}

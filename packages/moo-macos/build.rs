@@ -7,7 +7,6 @@ use std::process::Command;
 
 fn main() {
     println!("cargo:rerun-if-changed=swift/ai.swift");
-    println!("cargo:rerun-if-changed=swift/http.swift");
     println!("cargo:rerun-if-env-changed=MACOSX_DEPLOYMENT_TARGET");
     if env::var("CARGO_CFG_TARGET_OS").as_deref() != Ok("macos") {
         return;
@@ -25,7 +24,7 @@ fn main() {
     let status = Command::new(&swiftc)
         .args(["-parse-as-library", "-emit-library", "-static", "-O", "-swift-version", "6"])
         .args(["-module-name", "MooAI", "-target", &format!("{arch}-apple-macos{deployment}"), "-sdk", &sdk])
-        .args(["swift/ai.swift", "swift/http.swift"])
+        .args(["swift/ai.swift"])
         .arg("-o")
         .arg(out.join("libmoo_ai.a"))
         .status()

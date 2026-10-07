@@ -1,59 +1,26 @@
-//! HTTP through URLSession (`swift/http.swift`). `start` streams a response line by line to a
-//! handler on a Swift thread (server-sent events); `fetch` waits for the whole body and must not be
-//! called on the main thread.
+//! Blocking HTTP for the plugin host and OAuth token requests (reqwest, which the app build already
+//! links for `tish:http`). Never call on the main thread. Redirects are followed only when the
+//! request allows it: plugins' allow-lists and OAuth token endpoints are checked on the URL asked
+//! for, so neither may be redirected elsewhere.
 
-use std::collections::HashMap;
-use std::ffi::{c_char, CStr, CString};
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{mpsc, Mutex};
+use std::sync::OnceLock;
 use std::time::Duration;
-
-type Callback = extern "C" fn(u64, i32, i32, *const c_char);
-
-extern "C" {
-    fn moo_http_start(
-        id: u64,
-        method: *const c_char,
-        url: *const c_char,
-        headers: *const c_char,
-        body: *const u8,
-        body_len: usize,
-        timeout: f64,
-        cb: Callback,
-    ) -> bool;
-    fn moo_http_cancel(id: u64);
-}
-
-#[derive(Debug)]
-pub enum Event {
-    Status(u16),
-    Line(String),
-    Done,
-    Failed(String),
-    Cancelled,
-}
-
-pub type Handler = Box<dyn FnMut(Event) + Send>;
-
-static HANDLERS: Mutex<Option<HashMap<u64, Handler>>> = Mutex::new(None);
-static NEXT: AtomicU64 = AtomicU64::new(1);
 
 pub struct Request<'a> {
     pub method: &'a str,
     pub url: &'a str,
     pub headers: Vec<(&'a str, String)>,
     pub body: Vec<u8>,
-    /// Longest wait for more data, in seconds.
+    /// Longest wait for the whole response, in seconds.
     pub timeout: f64,
+    /// Follow 3xx redirects (plugins can't: their allow-list is checked on the URL they ask for).
+    pub follow_redirects: bool,
 }
 
+#[cfg(test)]
 impl<'a> Request<'a> {
     pub fn get(url: &'a str) -> Self {
-        Request { method: "GET", url, headers: Vec::new(), body: Vec::new(), timeout: 20.0 }
-    }
-
-    pub fn post_json(url: &'a str, body: String) -> Self {
-        Request { method: "POST", url, headers: vec![("Content-Type", "application/json".into())], body: body.into_bytes(), timeout: 60.0 }
+        Request { method: "GET", url, headers: Vec::new(), body: Vec::new(), timeout: 20.0, follow_redirects: true }
     }
 
     pub fn header(mut self, name: &'a str, value: impl Into<String>) -> Self {
@@ -62,102 +29,64 @@ impl<'a> Request<'a> {
     }
 }
 
-fn headers_json(headers: &[(&str, String)]) -> String {
-    let mut out = String::from("{");
-    for (i, (k, v)) in headers.iter().enumerate() {
-        if i > 0 {
-            out.push(',');
-        }
-        out.push('"');
-        tishlang_core::escape_json_string_into(&mut out, k);
-        out.push_str("\":\"");
-        tishlang_core::escape_json_string_into(&mut out, v);
-        out.push('"');
-    }
-    out.push('}');
-    out
-}
-
-/// Start `req`; `handler` gets the status, each line, then Done, Failed or Cancelled. None for an
-/// invalid URL.
-pub fn start(req: &Request, handler: Handler) -> Option<u64> {
-    let id = NEXT.fetch_add(1, Ordering::Relaxed);
-    HANDLERS.lock().unwrap_or_else(|e| e.into_inner()).get_or_insert_with(HashMap::new).insert(id, handler);
-    let c = |s: &str| CString::new(s.replace('\0', "")).unwrap();
-    let (method, url, headers) = (c(req.method), c(req.url), c(&headers_json(&req.headers)));
-    let ok = unsafe {
-        moo_http_start(id, method.as_ptr(), url.as_ptr(), headers.as_ptr(), req.body.as_ptr(), req.body.len(), req.timeout, on_event)
+/// One client per redirect policy, so connections are reused.
+fn client(follow_redirects: bool) -> Result<&'static reqwest::blocking::Client, String> {
+    static FOLLOW: OnceLock<Result<reqwest::blocking::Client, String>> = OnceLock::new();
+    static STAY: OnceLock<Result<reqwest::blocking::Client, String>> = OnceLock::new();
+    let (cell, policy) = if follow_redirects {
+        (&FOLLOW, reqwest::redirect::Policy::limited(5))
+    } else {
+        (&STAY, reqwest::redirect::Policy::none())
     };
-    if !ok {
-        HANDLERS.lock().unwrap_or_else(|e| e.into_inner()).as_mut().map(|m| m.remove(&id));
-        return None;
-    }
-    Some(id)
+    cell.get_or_init(|| {
+        reqwest::blocking::Client::builder()
+            .redirect(policy)
+            .connect_timeout(Duration::from_secs(10))
+            .build()
+            .map_err(|e| e.to_string())
+    })
+    .as_ref()
+    .map_err(|e| e.clone())
 }
 
-pub fn cancel(id: u64) {
-    unsafe { moo_http_cancel(id) }
-}
-
-extern "C" fn on_event(id: u64, kind: i32, status: i32, text: *const c_char) {
-    let text = if text.is_null() { String::new() } else { unsafe { CStr::from_ptr(text) }.to_string_lossy().into_owned() };
-    let event = match kind {
-        0 => Event::Status(status as u16),
-        1 => Event::Line(text),
-        2 => Event::Done,
-        4 => Event::Cancelled,
-        _ => Event::Failed(text),
-    };
-    let last = matches!(event, Event::Done | Event::Failed(_) | Event::Cancelled);
-    // Called without the lock held, so a handler may start another request.
-    let Some(mut h) = HANDLERS.lock().unwrap_or_else(|e| e.into_inner()).as_mut().and_then(|m| m.remove(&id)) else { return };
-    h(event);
-    if !last {
-        HANDLERS.lock().unwrap_or_else(|e| e.into_inner()).get_or_insert_with(HashMap::new).insert(id, h);
-    }
-}
-
-/// The status and whole body (lines joined with `\n`). Blocks: never call on the main thread.
+/// The status and the whole body as text. Blocks: never call on the main thread.
 pub fn fetch(req: &Request) -> Result<(u16, String), String> {
-    let (tx, rx) = mpsc::channel();
-    let mut status = 0u16;
-    let mut body = String::new();
-    let handler: Handler = Box::new(move |e| match e {
-        Event::Status(s) => status = s,
-        Event::Line(l) => {
-            if !body.is_empty() {
-                body.push('\n');
-            }
-            body.push_str(&l);
-        }
-        Event::Done => {
-            let _ = tx.send(Ok((status, std::mem::take(&mut body))));
-        }
-        Event::Failed(m) => {
-            let _ = tx.send(Err(m));
-        }
-        Event::Cancelled => {
-            let _ = tx.send(Err("cancelled".into()));
-        }
-    });
-    let id = start(req, handler).ok_or_else(|| format!("invalid URL {}", req.url))?;
-    match rx.recv_timeout(Duration::from_secs_f64(req.timeout + 10.0)) {
-        Ok(r) => r,
-        Err(_) => {
-            cancel(id);
-            Err(format!("{} timed out", req.url))
-        }
+    let method = reqwest::Method::from_bytes(req.method.as_bytes()).map_err(|_| format!("bad method {}", req.method))?;
+    let url = reqwest::Url::parse(req.url).map_err(|_| format!("invalid URL {}", req.url))?;
+    let mut b = client(req.follow_redirects)?.request(method, url).timeout(Duration::from_secs_f64(req.timeout.max(1.0)));
+    for (k, v) in &req.headers {
+        b = b.header(*k, v.as_str());
     }
+    if !req.body.is_empty() {
+        b = b.body(req.body.clone());
+    }
+    let res = b.send().map_err(|e| e.without_url().to_string())?;
+    let status = res.status().as_u16();
+    let text = res.text().map_err(|e| e.without_url().to_string())?;
+    Ok((status, text))
 }
 
 /// `application/x-www-form-urlencoded` body.
 pub fn form(pairs: &[(&str, &str)]) -> Vec<u8> {
     pairs
         .iter()
-        .map(|(k, v)| format!("{}={}", crate::shortcuts::percent_encode(k), crate::shortcuts::percent_encode(v)))
+        .map(|(k, v)| format!("{}={}", percent_encode(k), percent_encode(v)))
         .collect::<Vec<_>>()
         .join("&")
         .into_bytes()
+}
+
+/// Percent-encode everything but `A-Z a-z 0-9 - _ . ~`.
+pub fn percent_encode(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for b in s.bytes() {
+        if b.is_ascii_alphanumeric() || b"-_.~".contains(&b) {
+            out.push(b as char);
+        } else {
+            out.push_str(&format!("%{b:02X}"));
+        }
+    }
+    out
 }
 
 #[cfg(test)]
@@ -208,31 +137,35 @@ pub mod tests {
     }
 
     #[test]
-    fn fetch_and_stream_through_urlsession() {
+    fn fetches_and_does_not_follow_redirects_when_told() {
         let base = serve(|line, headers, body| {
             if line.starts_with("POST /echo") {
                 let auth = headers.lines().find(|h| h.to_lowercase().starts_with("authorization")).unwrap_or("").trim().to_string();
                 (200, "text/plain", vec![format!("{auth}\n{body}")])
-            } else if line.starts_with("GET /lines") {
-                (200, "text/event-stream", vec!["data: one\n\n".into(), "data: two\n\n".into(), "data: [DONE]\n\n".into()])
             } else {
                 (404, "text/plain", vec!["nope".into()])
             }
         });
         let url = format!("{base}/echo");
-        let (status, body) = fetch(&Request::post_json(&url, "{\"a\":1}".into()).header("Authorization", "Bearer k")).unwrap();
+        let mut post = Request::get(&url).header("Authorization", "Bearer k");
+        post.method = "POST";
+        post.body = b"{\"a\":1}".to_vec();
+        let (status, body) = fetch(&post).unwrap();
         assert_eq!(status, 200);
-        assert_eq!(body, "Authorization: Bearer k\n{\"a\":1}");
+        assert_eq!(body.to_lowercase(), "authorization: bearer k\n{\"a\":1}");
 
         let missing = format!("{base}/missing");
         assert_eq!(fetch(&Request::get(&missing)).unwrap(), (404, "nope".into()));
 
-        let (tx, rx) = mpsc::channel();
-        let lines = format!("{base}/lines");
-        start(&Request::get(&lines), Box::new(move |e| { let _ = tx.send(format!("{e:?}")); })).unwrap();
-        let got: Vec<String> = rx.iter().take(5).collect();
-        assert_eq!(got, ["Status(200)", "Line(\"data: one\")", "Line(\"data: two\")", "Line(\"data: [DONE]\")", "Done"]);
-
         assert!(fetch(&Request::get("http://127.0.0.1:1/")).is_err(), "connection refused is an error");
+
+        // A plugin's or token request's redirect is answered, not followed.
+        // (The content type smuggles in a Location header pointing at a closed port.)
+        let moved = serve(|_l, _h, _b| (302, "text/plain\r\nLocation: http://127.0.0.1:1/elsewhere", vec![]));
+        let target = format!("{moved}/x");
+        let mut stay = Request::get(&target);
+        stay.follow_redirects = false;
+        assert_eq!(fetch(&stay).unwrap().0, 302);
+        assert!(fetch(&Request::get(&target)).is_err(), "followed to the closed port");
     }
 }

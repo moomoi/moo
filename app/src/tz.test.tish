@@ -1,0 +1,52 @@
+import { test } from "tish:test"
+import assert from "node:assert/strict"
+import { parseClock, clock, weekday, relative, timeAnswer } from "./tz.tish"
+
+// Fixed offsets, no daylight saving.
+let ZONES = { "UTC": [0, "UTC"], "GMT": [0, "GMT"], "Asia/Tokyo": [32400, "JST"], "America/Los_Angeles": [-28800, "PST"],
+  "America/New_York": [-18000, "EST"], "Europe/London": [0, "GMT"], "Europe/Paris": [3600, "CET"] }
+let db = {
+  names: () => Object.keys(ZONES),
+  local: () => "America/New_York",
+  lookup: (id, unix) => id in ZONES ? { offset: ZONES[id][0], abbreviation: ZONES[id][1] } : null,
+  byAbbreviation: (a) => null
+}
+let NOW = 1759700000
+
+test("clocks", () => {
+  assert.equal(parseClock("3pm"), 900)
+  assert.equal(parseClock("3:30 PM"), 930)
+  assert.equal(parseClock("12am"), 0)
+  assert.equal(parseClock("12 pm"), 720)
+  assert.equal(parseClock("15:05"), 905)
+  assert.equal(parseClock("noon"), 720)
+  let bad = ["3", "13pm", "25:00", "3:7", "tokyo"]
+  for (let i = 0; i < bad.length; i = i + 1) {
+    assert.equal(parseClock(bad[i]), null, bad[i])
+  }
+  assert.equal(clock(0), "12:00 AM")
+  assert.equal(clock(13 * 3600 + 5 * 60), "1:05 PM")
+  assert.equal(clock(-60), "11:59 PM")
+  assert.equal(weekday(0), "Thu")
+  assert.equal(relative(9 * 3600), "9 h ahead")
+  assert.equal(relative(-19800), "5.5 h behind")
+  assert.equal(relative(0), "same time as here")
+})
+
+test("answers", () => {
+  let a = timeAnswer("time in tokyo", db, NOW)
+  assert.ok(a.display.endsWith("M") && a.detail.startsWith("Tokyo · "), a.detail)
+  assert.ok(a.detail.endsWith("JST · 14 h ahead"), a.detail)
+  assert.ok(timeAnswer("tokyo time", db, NOW) !== null)
+  assert.ok(timeAnswer("what time is it in london?", db, NOW) !== null)
+  assert.equal(timeAnswer("New York time", db, NOW).detail.indexOf("New York · "), 0)
+  assert.equal(timeAnswer("noon tokyo in utc", db, NOW).copy, "3:00 AM")
+  let d = timeAnswer("3pm utc to jst", db, NOW)
+  assert.equal(d.copy, "12:00 AM")
+  assert.ok(d.display.length > 8, d.display)
+  assert.equal(timeAnswer("9am pst in cet", db, NOW).detail, "9:00 AM PST = 6:00 PM CET CET")
+  let none = ["screen time", "notes to self", "5 km in mi", "safari"]
+  for (let i = 0; i < none.length; i = i + 1) {
+    assert.equal(timeAnswer(none[i], db, NOW), null, none[i])
+  }
+})

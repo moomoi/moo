@@ -1,0 +1,42 @@
+import { test } from "tish:test"
+import assert from "node:assert/strict"
+import { LAYOUTS, layoutFrame, moveToScreen, screenFor } from "./windowlayout.tish"
+
+fn r(x, y, w, h) {
+  return { x: x, y: y, w: w, h: h }
+}
+
+fn same(a, b) {
+  assert.equal(JSON.stringify(a), JSON.stringify(b))
+}
+
+test("layouts tile the screen", () => {
+  let v = r(0, 25, 1512, 920)
+  let cur = r(100, 100, 800, 600)
+  same(layoutFrame("left-half", v, cur), r(0, 25, 756, 920))
+  same(layoutFrame("right-half", v, cur), r(756, 25, 756, 920))
+  same(layoutFrame("bottom-right", v, cur), r(756, 485, 756, 460))
+  same(layoutFrame("right-third", v, cur), r(1008, 25, 504, 920))
+  same(layoutFrame("center", v, cur), r(356, 185, 800, 600))
+  same(layoutFrame("maximize", v, cur), v)
+  same(layoutFrame("maximize-height", v, cur), r(100, 25, 800, 920))
+  assert.equal(layoutFrame("teleport", v, cur), null)
+  let skip = ["next-display", "previous-display", "restore"]
+  for (let i = 0; i < LAYOUTS.length; i = i + 1) {
+    if (skip.indexOf(LAYOUTS[i][0]) >= 0) {
+      continue
+    }
+    let f = layoutFrame(LAYOUTS[i][0], v, cur)
+    assert.ok(f.x >= v.x && f.y >= v.y && f.x + f.w <= v.x + v.w + 0.5 && f.y + f.h <= v.y + v.h + 0.5, LAYOUTS[i][0])
+  }
+})
+
+test("displays", () => {
+  let a = r(0, 0, 1000, 800)
+  let b = r(1000, -200, 2000, 1200)
+  let w = r(500, 400, 500, 400)
+  assert.equal(screenFor(w, [a, b]), 0)
+  assert.equal(screenFor(r(1500, 0, 100, 100), [a, b]), 1)
+  assert.equal(screenFor(r(-5000, 0, 10, 10), [a, b]), 0)
+  same(moveToScreen(w, a, b), r(2000, 400, 1000, 600))
+})

@@ -5,6 +5,7 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::io::Read;
+use std::os::unix::process::CommandExt;
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
@@ -50,11 +51,21 @@ fn path_env() -> String {
     parts.join(":")
 }
 
-/// Run `cmd` and wait (call off the main thread).
-pub fn run_blocking(cmd: &str, cwd: &str) -> Output {
+extern "C" {
+    #[link_name = "killpg"]
+    fn libc_killpg(pgrp: i32, sig: i32) -> i32;
+}
+
+/// Run `cmd` and wait (call off the main thread). `args` are the script's `$1`, `$2`, ...
+/// (values are never spliced into `cmd`).
+pub fn run_blocking(cmd: &str, cwd: &str, args: &[String]) -> Output {
+    run_with_timeout(cmd, cwd, args, TIMEOUT)
+}
+
+fn run_with_timeout(cmd: &str, cwd: &str, args: &[String], timeout: Duration) -> Output {
     let t0 = Instant::now();
     let mut command = Command::new("/bin/sh");
-    command.arg("-c").arg(cmd).env("PATH", path_env()).stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
+    command.arg("-c").arg(cmd).arg("moo").args(args).process_group(0).env("PATH", path_env()).stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
     if !cwd.is_empty() && std::path::Path::new(cwd).is_dir() {
         command.current_dir(cwd);
     } else if let Some(home) = std::env::var_os("HOME") {
@@ -72,7 +83,10 @@ pub fn run_blocking(cmd: &str, cwd: &str) -> Output {
     let code = loop {
         match child.try_wait() {
             Ok(Some(status)) => break status.code().unwrap_or(-1),
-            Ok(None) if t0.elapsed() > TIMEOUT => {
+            Ok(None) if t0.elapsed() > timeout => {
+                // The shell is its own process group: kill the whole group, so a pipeline or a
+                // backgrounded child can't keep stdout open and leave the reader threads waiting.
+                unsafe { libc_killpg(child.id() as i32, 9) };
                 let _ = child.kill();
                 let _ = child.wait();
                 timed_out = true;
@@ -84,18 +98,18 @@ pub fn run_blocking(cmd: &str, cwd: &str) -> Output {
     };
     let mut stderr = err.join().unwrap_or_default();
     if timed_out {
-        stderr.push_str(&format!("killed after {} s\n", TIMEOUT.as_secs()));
+        stderr.push_str(&format!("killed after {} s\n", timeout.as_secs()));
     }
     Output { code, stdout: out.join().unwrap_or_default(), stderr, ms: t0.elapsed().as_secs_f64() * 1000.0, timed_out }
 }
 
 /// Run `cmd` in the background; `cb({ id, code, stdout, stderr, ms, timedOut })` on the main thread.
-pub fn run(cmd: &str, cwd: &str, cb: Value, to_value: fn(u64, Output) -> Value) -> u64 {
+pub fn run(cmd: &str, cwd: &str, args: Vec<String>, cb: Value, to_value: fn(u64, Output) -> Value) -> u64 {
     let id = NEXT.fetch_add(1, Ordering::Relaxed);
     CALLBACKS.with(|c| c.borrow_mut().insert(id, cb));
     let (cmd, cwd) = (cmd.to_string(), cwd.to_string());
     std::thread::spawn(move || {
-        let out = run_blocking(&cmd, &cwd);
+        let out = run_blocking(&cmd, &cwd, &args);
         DispatchQueue::main().exec_async(move || {
             let Some(Value::Function(f)) = CALLBACKS.with(|c| c.borrow_mut().remove(&id)) else { return };
             crate::mac::with_ui(|| {
@@ -112,17 +126,29 @@ mod tests {
 
     #[test]
     fn captures_output_status_and_quoting() {
-        let o = run_blocking("printf '%s|' \"$PWD\" 'a b'; echo oops >&2; exit 3", "/tmp");
+        let o = run_blocking("printf '%s|' \"$PWD\" 'a b'; echo oops >&2; exit 3", "/tmp", &[]);
         assert_eq!(o.code, 3);
         assert!(o.stdout.ends_with("|a b|"), "{}", o.stdout);
         assert_eq!(o.stderr, "oops\n");
-        let q = crate::shortcuts::shell_quote("it's; rm -rf /");
-        assert_eq!(run_blocking(&format!("printf %s {q}"), "").stdout, "it's; rm -rf /");
+        // Values arrive as arguments; shell syntax in them is never run.
+        let evil = vec!["it's; $(touch /tmp/moo-pwned) `id`".to_string()];
+        assert_eq!(run_blocking("printf %s \"$1\"", "", &evil).stdout, evil[0]);
+        assert_eq!(run_blocking("printf %s '\"$1\"'", "", &evil).stdout, "\"$1\"", "a quoted placeholder stays literal");
+    }
+
+    /// A timed-out pipeline used to leave `sleep` holding stdout open, so the reader thread (and
+    /// the whole call) never returned.
+    #[test]
+    fn timeout_kills_the_whole_pipeline() {
+        let t0 = Instant::now();
+        let o = run_with_timeout("sleep 30 | cat; echo done", "", &[], Duration::from_secs(1));
+        assert!(o.timed_out);
+        assert!(t0.elapsed() < Duration::from_secs(10), "took {:?}", t0.elapsed());
     }
 
     #[test]
     fn caps_large_output() {
-        let o = run_blocking("yes 0123456789 | head -c 3000000", "");
+        let o = run_blocking("yes 0123456789 | head -c 3000000", "", &[]);
         assert_eq!(o.code, 0);
         assert_eq!(o.stdout.len(), MAX_OUTPUT);
     }

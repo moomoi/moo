@@ -1,0 +1,40 @@
+// Live web search suggestions while typing: waits 120 ms for typing to pause, fetches the engine's
+// suggest URL, and answers only for the newest request.
+
+import { macos } from "tish:macos"
+import { fetch } from "tish:http"
+import { withUi } from "tish:moo"
+import { parseSuggestions } from "./suggest.tish"
+
+let DELAY_MS = 120
+let generation = 0
+
+// `cb({ query, results, error })` for the newest call only. Returns the request's generation.
+export fn webSuggest(url, query, cb) {
+  generation = generation + 1
+  let mine = generation
+  let q = "" + query
+  setTimeout(() => {
+    if (mine !== generation) {
+      return
+    }
+    macos.whenSettled(fetch(url, { headers: { "Accept": "application/json" }, timeout: 5000 }), (res, err) => {
+      if (mine !== generation) {
+        return
+      }
+      let answer = (results, error) => withUi(() => cb({ query: q, results: results, error: "" + error }))
+      if (err !== null || res.error) {
+        answer([], err !== null ? err : res.error)
+      } else if (res.status !== 200) {
+        answer([], url + " answered " + res.status)
+      } else {
+        macos.whenSettled(res.text(), (body, e2) => {
+          if (mine === generation) {
+            answer(e2 === null && typeof body === "string" ? parseSuggestions(body, q) : [], e2 === null ? "" : e2)
+          }
+        })
+      }
+    })
+  }, DELAY_MS)
+  return mine
+}

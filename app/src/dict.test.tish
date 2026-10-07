@@ -1,0 +1,72 @@
+import { test } from "tish:test"
+import assert from "node:assert/strict"
+import { parse, define, senseText } from "./dict.tish"
+
+let SERENDIPITY = "serendipity ser·en·dip·i·ty | ˌserənˈdipədē | noun the occurrence and development of events by chance in a happy or beneficial way: a fortunate stroke of serendipity | a series of small serendipities. ORIGIN 1754: coined by Horace Walpole, suggested by The Three Princes of Serendip."
+let EPHEMERAL = "ephemeral e·phem·er·al | əˈfem(ə)rəl | adjective lasting for a very short time: fashions are ephemeral. • (chiefly of plants) having a very short life cycle: chickweed is an ephemeral weed. noun an ephemeral plant: ephemerals avoid the periods of drought as seeds. DERIVATIVES ephemerality | əˌfem(ə)ˈralədē | noun ORIGIN late 16th century: from Greek ephēmeros."
+let RUN = "run | rən | verb (runs) (, running | ˈrəniNG |) (past; ran | ran |) (past participle; run | rən |) 1 [no object] move at a speed faster than a walk: the dog ran across the road | she ran the last few yards. • run as a sport or for exercise: I run every morning. • [with object] Dave has run 42 marathons. 2 pass or cause to pass quickly or smoothly in a particular direction: the rumor ran through the pack. 12 [with two objects] North American English (of an object or act) cost (someone) (a specified amount): a new photocopier will run us about $1,300. noun 1 an act or spell of running: I usually go for a run in the morning. 2 a journey accomplished or route taken by a vehicle: the New York-Washington run. PHRASES on the run trying to avoid being captured. ORIGIN Old English rinnan."
+let PARIS = "Paris 1 Par·is | ˈperəs | 1 the capital of France, on the Seine River; population 2,203,817 (2006). 2 Greek Mythology a Trojan prince."
+let EG = "e.g. | ˌēˈjē | abbreviation for example: life events (e.g. birth, death and marriage). ORIGIN from Latin exempli gratia ‘for the sake of example’."
+
+test("one-sense noun", () => {
+  let e = parse(SERENDIPITY, "serendipity")
+  assert.equal(e.word, "serendipity")
+  assert.equal(e.pronunciation, "ˌserənˈdipədē")
+  assert.equal(e.senses.length, 1)
+  assert.equal(e.senses[0].part, "noun")
+  assert.equal(e.senses[0].definition, "the occurrence and development of events by chance in a happy or beneficial way")
+  assert.equal(e.senses[0].example, "a fortunate stroke of serendipity")
+  assert.ok(e.origin.startsWith("1754: coined by Horace Walpole"))
+})
+
+test("parts of speech, sub-senses dropped", () => {
+  let e = parse(EPHEMERAL, "ephemeral")
+  assert.equal(e.senses.map((s) => s.part).join(), "adjective,noun")
+  assert.equal(e.senses[0].definition, "lasting for a very short time")
+  assert.equal(e.senses[1].definition, "an ephemeral plant")
+  assert.equal(e.origin, "late 16th century: from Greek ephēmeros.")
+})
+
+test("numbered senses, not numbers in examples", () => {
+  let e = parse(RUN, "run")
+  assert.equal(e.word, "run")
+  assert.equal(e.pronunciation, "rən")
+  assert.equal(JSON.stringify(e.senses.map((s) => [s.part, s.definition])), JSON.stringify([
+    ["verb", "move at a speed faster than a walk"],
+    ["verb", "pass or cause to pass quickly or smoothly in a particular direction"],
+    ["noun", "an act or spell of running"],
+    ["noun", "a journey accomplished or route taken by a vehicle"]]))
+  assert.equal(e.senses[0].example, "the dog ran across the road")
+})
+
+test("entries without a part of speech", () => {
+  let e = parse(PARIS, "Paris")
+  assert.equal(e.word, "Paris")
+  assert.equal(e.senses.length, 2)
+  assert.equal(e.senses[0].part, "")
+  assert.ok(e.senses[0].definition.startsWith("the capital of France"))
+  assert.equal(e.senses[1].definition, "Greek Mythology a Trojan prince")
+  let g = parse(EG, "e.g.")
+  assert.equal(g.word, "e.g.")
+  assert.equal(g.senses[0].part, "abbreviation")
+  assert.equal(g.senses[0].definition, "for example")
+})
+
+test("inflections with nested parentheses", () => {
+  let e = parse("child | CHīld | noun (plural children | ˈCHildr(ə)n |) a young human being below the age of puberty: she'd been playing tennis since she was a child.", "children")
+  assert.equal(e.senses[0].definition, "a young human being below the age of puberty")
+  assert.equal(senseText("(Symbol: Pb) a heavy, bluish-gray, soft, ductile metal, the chemical element of atomic number 82.")[0],
+    "(Symbol: Pb) a heavy, bluish-gray, soft, ductile metal, the chemical element of atomic number 82")
+})
+
+test("define merges homographs and checks the word", () => {
+  let lead1 = "lead 1 | lēd | verb cause (a person or animal) to go with one: she led him into the house."
+  let lead2 = "lead 2 | led | noun a heavy bluish-gray soft metal: lead pipes."
+  let e = define("lead", [lead1, lead2])
+  assert.equal(e.senses.length, 2)
+  assert.equal(e.senses[1].pronunciation, "led")
+  assert.ok(e.senses[1].definition.indexOf("metal") >= 0)
+  assert.equal(define("zzqxv", []), null)
+  assert.equal(define("colour", ["unicolor | ˌyo͞onəˈkələr | (also -colour) adjective of one color."]), null)
+  assert.ok(define("ran", [RUN]) !== null)
+})

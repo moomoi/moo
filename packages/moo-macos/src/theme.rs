@@ -204,7 +204,9 @@ pub fn parse_color(s: &str) -> Option<Retained<NSColor>> {
         let c = |x: u32| (x & 255) as f64 / 255.0;
         return Some(NSColor::colorWithSRGBRed_green_blue_alpha(c(r), c(g), c(b), c(a)));
     }
-    if s.is_empty() {
+    // Only real NSColor names: the theme string becomes a selector, and an arbitrary `…Color`
+    // class method that isn't a colour would be undefined behaviour once typed as an NSColor.
+    if !NAMED_COLORS.contains(&s) {
         return None;
     }
     let sel = Sel::register(&CString::new(format!("{s}Color")).ok()?);
@@ -215,6 +217,21 @@ pub fn parse_color(s: &str) -> Option<Retained<NSColor>> {
     }
     unsafe { msg_send![cls, performSelector: sel] }
 }
+
+/// NSColor class methods a theme may name (`"label"` → `labelColor`): semantic, system and basic.
+const NAMED_COLORS: &[&str] = &[
+    "label", "secondaryLabel", "tertiaryLabel", "quaternaryLabel", "quinaryLabel", "text", "placeholderText",
+    "selectedText", "textBackground", "selectedTextBackground", "keyboardFocusIndicator", "unemphasizedSelectedText",
+    "unemphasizedSelectedTextBackground", "link", "separator", "selectedContentBackground",
+    "unemphasizedSelectedContentBackground", "selectedMenuItemText", "grid", "header", "headerText", "control",
+    "controlBackground", "controlText", "disabledControlText", "selectedControl", "selectedControlText",
+    "alternateSelectedControlText", "scrubberTexturedBackground", "windowBackground", "windowFrameText",
+    "underPageBackground", "findHighlight", "highlight", "shadow", "controlAccent", "systemRed", "systemGreen",
+    "systemBlue", "systemOrange", "systemYellow", "systemBrown", "systemPink", "systemPurple", "systemGray",
+    "systemTeal", "systemIndigo", "systemMint", "systemCyan", "systemFill", "secondarySystemFill",
+    "tertiarySystemFill", "quaternarySystemFill", "quinarySystemFill", "clear", "black", "white", "gray",
+    "darkGray", "lightGray", "red", "green", "blue", "cyan", "yellow", "magenta", "orange", "purple", "brown",
+];
 
 #[cfg(test)]
 mod tests {

@@ -1,0 +1,255 @@
+// Time zone answers for root search: "time in tokyo", "tokyo time", "3pm pst to cet",
+// "15:30 london in new york". Zones come from macOS's own database, so daylight saving is right;
+// cities are the database's (`Asia/Tokyo` -> "tokyo") plus a few common aliases.
+//
+// The database is passed in as `db`, so tests can use a fake one. (Its lookup is not called
+// `at`: the native compiler turns any `x.at(i)` into Array.prototype.at.)
+//   db.names() -> every zone id; db.local() -> the local zone's id;
+//   db.lookup(id, unix) -> { offset (seconds east of UTC), abbreviation } or null for an unknown id;
+//   db.byAbbreviation("CET") -> a zone id or null.
+
+// Abbreviations by region (so "PST" in July still means Los Angeles time), cities the database
+// names differently, and countries with one main zone.
+let ALIASES = {
+  pt: "America/Los_Angeles", pst: "America/Los_Angeles", pdt: "America/Los_Angeles", pacific: "America/Los_Angeles",
+  mt: "America/Denver", mst: "America/Denver", mdt: "America/Denver",
+  ct: "America/Chicago", cst: "America/Chicago", cdt: "America/Chicago", central: "America/Chicago",
+  et: "America/New_York", est: "America/New_York", edt: "America/New_York", eastern: "America/New_York",
+  utc: "UTC", gmt: "GMT", bst: "Europe/London", cet: "Europe/Paris", cest: "Europe/Paris", eet: "Europe/Athens",
+  ist: "Asia/Kolkata", jst: "Asia/Tokyo", kst: "Asia/Seoul", hkt: "Asia/Hong_Kong", sgt: "Asia/Singapore",
+  aest: "Australia/Sydney", aedt: "Australia/Sydney",
+  sf: "America/Los_Angeles", "san francisco": "America/Los_Angeles", seattle: "America/Los_Angeles",
+  nyc: "America/New_York", boston: "America/New_York", miami: "America/New_York",
+  austin: "America/Chicago", dallas: "America/Chicago", beijing: "Asia/Shanghai",
+  mumbai: "Asia/Kolkata", delhi: "Asia/Kolkata", bangalore: "Asia/Kolkata",
+  japan: "Asia/Tokyo", india: "Asia/Kolkata", china: "Asia/Shanghai", uk: "Europe/London",
+  germany: "Europe/Berlin", france: "Europe/Paris", australia: "Australia/Sydney"
+}
+
+let DAY = 86400
+let WEEKDAYS = ["Thu", "Fri", "Sat", "Sun", "Mon", "Tue", "Wed"]
+
+fn wrap(a, n) {
+  return ((a % n) + n) % n
+}
+
+fn trimQuestion(s) {
+  let t = s.trim()
+  while (t.endsWith("?")) {
+    t = t.slice(0, t.length - 1)
+  }
+  return t.trim()
+}
+
+fn cityOf(zid) {
+  let parts = zid.split("/")
+  return parts[parts.length - 1].split("_").join(" ")
+}
+
+fn title(s) {
+  return s.split(" ").map((w) => w === "" ? "" : w[0].toUpperCase() + w.slice(1)).join(" ")
+}
+
+// ── Pure ────────────────────────────────────────────────────────────────────
+
+fn digits(s) {
+  return s !== "" && RegExp("^[0-9]+$").test(s)
+}
+
+// Minutes after midnight: "3pm", "3:30 pm", "15:00", "noon", "midnight". A bare "3" is not a
+// time. null when it isn't one.
+export fn parseClock(s) {
+  let t = s.trim().toLowerCase().split(".").join("")
+  if (t === "noon" || t === "midday") {
+    return 720
+  }
+  if (t === "midnight") {
+    return 0
+  }
+  let half = null
+  let num = t
+  if (t.endsWith("am")) {
+    half = "am"
+    num = t.slice(0, t.length - 2).trim()
+  } else if (t.endsWith("pm")) {
+    half = "pm"
+    num = t.slice(0, t.length - 2).trim()
+  }
+  let h = 0
+  let m = 0
+  let colon = num.indexOf(":")
+  if (colon >= 0) {
+    let hs = num.slice(0, colon)
+    let ms = num.slice(colon + 1)
+    if (ms.length !== 2 || !digits(hs) || !digits(ms)) {
+      return null
+    }
+    h = parseInt(hs)
+    m = parseInt(ms)
+  } else if (half !== null && digits(num)) {
+    h = parseInt(num)
+  } else {
+    return null
+  }
+  if (m > 59) {
+    return null
+  }
+  if (half !== null) {
+    if (h < 1 || h > 12) {
+      return null
+    }
+    h = h % 12 + (half === "pm" ? 12 : 0)
+  } else if (h >= 24) {
+    return null
+  }
+  return h * 60 + m
+}
+
+// Local seconds since the epoch -> "3:05 PM".
+export fn clock(local) {
+  let mins = Math.floor(wrap(local, DAY) / 60)
+  let h = Math.floor(mins / 60)
+  let m = mins % 60
+  let h12 = h % 12 === 0 ? 12 : h % 12
+  return h12 + ":" + (m < 10 ? "0" : "") + m + " " + (h < 12 ? "AM" : "PM")
+}
+
+// Local seconds since the epoch -> "Sun" (1970-01-01 was a Thursday).
+export fn weekday(local) {
+  return WEEKDAYS[wrap(Math.floor(local / DAY), 7)]
+}
+
+// Offset difference -> "same time as here", "16 h ahead", "5.5 h behind".
+export fn relative(diff) {
+  if (diff === 0) {
+    return "same time as here"
+  }
+  let h = Math.abs(diff) / 3600
+  let n = h === Math.floor(h) ? "" + h : trimTrailingZero(h.toFixed(1))
+  return n + " h " + (diff > 0 ? "ahead" : "behind")
+}
+
+fn trimTrailingZero(s) {
+  return s.endsWith("0") ? s.slice(0, s.length - 1) : s
+}
+
+// ── Zones ───────────────────────────────────────────────────────────────────
+
+// -> { id, label } or null.
+fn zone(db, name) {
+  let n = trimQuestion(name).toLowerCase()
+  if (n === "" || n.length > 40) {
+    return null
+  }
+  if (n === "local" || n === "here" || n === "my time" || n === "local time") {
+    let zid = db.local()
+    return { id: zid, label: "Local (" + cityOf(zid) + ")" }
+  }
+  if (n in ALIASES) {
+    let zid = ALIASES[n]
+    return db.lookup(zid, 0) === null ? null : { id: zid, label: n.length <= 4 ? n.toUpperCase() : title(n) }
+  }
+  let names = db.names()
+  for (let i = 0; i < names.length; i = i + 1) {
+    let city = cityOf(names[i])
+    if (city.toLowerCase() === n || names[i].toLowerCase() === n) {
+      return { id: names[i], label: city }
+    }
+  }
+  if (n.length <= 5 && RegExp("^[a-z]+$").test(n)) {
+    let zid = db.byAbbreviation(n.toUpperCase())
+    return zid === null ? null : { id: zid, label: n.toUpperCase() }
+  }
+  return null
+}
+
+fn offsetAt(db, zid, unix) {
+  let z = db.lookup(zid, unix)
+  return z === null ? 0 : z.offset
+}
+
+fn abbreviationAt(db, zid, unix) {
+  let z = db.lookup(zid, unix)
+  return z === null ? "" : z.abbreviation
+}
+
+fn nowIn(db, z, now) {
+  let t = Math.floor(now)
+  let off = offsetAt(db, z.id, t)
+  let here = offsetAt(db, db.local(), t)
+  let local = t + off
+  let shown = clock(local)
+  return { display: shown, copy: shown,
+    detail: z.label + " · " + weekday(local) + " · " + abbreviationAt(db, z.id, t) + " · " + relative(off - here) }
+}
+
+// `minutes` today in `from` (local when null), shown in `to`.
+fn convert(db, minutes, from, to, now) {
+  let src = from !== null ? from : { id: db.local(), label: "Local" }
+  let t = Math.floor(now)
+  let offFrom = offsetAt(db, src.id, t)
+  let dayStart = Math.floor((t + offFrom) / DAY) * DAY
+  let utc = dayStart + minutes * 60 - offFrom
+  let offTo = offsetAt(db, to.id, utc)
+  let a = utc + offFrom
+  let b = utc + offTo
+  let shown = clock(b)
+  if (Math.floor(b / DAY) !== Math.floor(a / DAY)) {
+    shown = shown + " " + weekday(b)
+  }
+  return { display: shown, copy: clock(b),
+    detail: clock(a) + " " + abbreviationAt(db, src.id, utc) + " = " + clock(b) + " " + abbreviationAt(db, to.id, utc) + " " + to.label }
+}
+
+// "<clock> [zone]" -> { minutes, zone } (zone null for local); the clock is the first one or two words.
+fn clockAndZone(db, left) {
+  let words = left.split(" ").filter((w) => w !== "")
+  for (let k = Math.min(words.length, 2); k >= 1; k = k - 1) {
+    let m = parseClock(words.slice(0, k).join(" "))
+    if (m !== null) {
+      let rest = words.slice(k).join(" ")
+      if (rest === "") {
+        return { minutes: m, zone: null }
+      }
+      let z = zone(db, rest)
+      if (z !== null) {
+        return { minutes: m, zone: z }
+      }
+    }
+  }
+  return null
+}
+
+// `{ display, copy, detail }` or null. `now` is Unix seconds.
+export fn timeAnswer(input, db, now) {
+  let t = trimQuestion(input).toLowerCase()
+  let asks = ["what time is it in ", "what's the time in ", "whats the time in ", "current time in "]
+  for (let i = 0; i < asks.length; i = i + 1) {
+    if (t.startsWith(asks[i])) {
+      t = "time in " + t.slice(asks[i].length)
+    }
+  }
+  let prefixes = ["time in ", "now in ", "time "]
+  for (let i = 0; i < prefixes.length; i = i + 1) {
+    if (t.startsWith(prefixes[i])) {
+      let z = zone(db, t.slice(prefixes[i].length))
+      return z === null ? null : nowIn(db, z, now)
+    }
+  }
+  if (t.endsWith(" time")) {
+    let z = zone(db, t.slice(0, t.length - 5))
+    return z === null ? null : nowIn(db, z, now)
+  }
+  let seps = [" in ", " to "]
+  for (let i = 0; i < seps.length; i = i + 1) {
+    let at = t.lastIndexOf(seps[i])
+    if (at >= 0) {
+      let cz = clockAndZone(db, t.slice(0, at))
+      let to = zone(db, t.slice(at + seps[i].length))
+      if (cz !== null && to !== null) {
+        return convert(db, cz.minutes, cz.zone, to, now)
+      }
+    }
+  }
+  return null
+}

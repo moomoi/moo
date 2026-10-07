@@ -17,21 +17,20 @@ use objc2::{define_class, msg_send, sel, ClassType, MainThreadMarker, MainThread
 use objc2_app_kit::{
     NSAppearanceCustomization, NSAppearanceNameAqua, NSAppearanceNameDarkAqua, NSApplication, NSApplicationActivationPolicy,
     NSAutoresizingMaskOptions, NSBackingStoreType, NSColor, NSGlassEffectContainerView, NSGlassEffectView,
-    NSEvent, NSEventMask, NSEventModifierFlags, NSEventType, NSMenu, NSMenuItem,
-    NSPanel, NSResponder, NSScreen, NSStatusBar, NSStatusItem, NSTextField, NSView, NSVisualEffectBlendingMode,
+    NSEvent, NSEventMask, NSEventModifierFlags, NSEventType,
+    NSPanel, NSResponder, NSScreen, NSTextField, NSView, NSVisualEffectBlendingMode,
     NSVisualEffectState, NSVisualEffectView, NSWindow, NSWindowButton, NSWindowCollectionBehavior,
     NSWindowDidBecomeKeyNotification, NSWindowDidResignKeyNotification, NSWindowStyleMask,
-    NSImage, NSPasteboard, NSPasteboardTypeString, NSWindowTitleVisibility, NSWorkspace,
+    NSWindowTitleVisibility, NSWorkspace,
 };
 use objc2_foundation::{
     NSArray, NSNotification, NSNotificationCenter, NSObject, NSObjectProtocol, NSPoint, NSRange, NSRect, NSSize, NSString,
     NSTimer, NSURL,
 };
-use tishlang_core::{Value, VmRef};
+use tishlang_core::Value;
 
-use crate::{clip, files, index, keymap, keys, theme, watch};
+use crate::{keymap, keys, theme};
 
-const ICON_SLOTS: usize = 512;
 use tishlang_ui::runtime::{run_with_current_root, LEGACY_ROOT_ID};
 
 thread_local! {
@@ -45,15 +44,10 @@ thread_local! {
     /// Scrolling not yet worth a whole row, carried into the next event.
     static SCROLL_REST: Cell<f64> = const { Cell::new(0.0) };
     static PANEL_SIZE: Cell<(f64, f64)> = const { Cell::new((720.0, 440.0)) };
-    static ICONS: RefCell<HashMap<String, String>> = RefCell::new(HashMap::new());
     static HOTKEY_HANDLER: Cell<bool> = const { Cell::new(false) };
     static HOTKEY_IDS: Cell<u32> = const { Cell::new(1) };
     static SHOWN: Cell<bool> = const { Cell::new(false) };
     static PANEL: RefCell<Option<Retained<NSWindow>>> = const { RefCell::new(None) };
-    static ON_FILES: RefCell<Option<Value>> = const { RefCell::new(None) };
-    static ICON_RING: RefCell<(usize, Vec<String>)> = const { RefCell::new((0, Vec::new())) };
-    static STATUS: RefCell<Option<StatusItem>> = const { RefCell::new(None) };
-    static STATUS_MENU: RefCell<Option<Box<dyn Fn(&str)>>> = const { RefCell::new(None) };
     /// Panel height and its rounded pieces; empty means one full rounded rect.
     static SHAPE: RefCell<(f64, Vec<Piece>)> = const { RefCell::new((0.0, Vec::new())) };
     /// Holds one glass (or blur) view per shape piece, behind the layout.
@@ -411,7 +405,9 @@ fn adopt_into_panel(host_window: &NSWindow, mtm: MainThreadMarker) -> Option<Ret
     let stage: Retained<PanelStage> = unsafe { msg_send![PanelStage::alloc(mtm), initWithFrame: outer] };
     let pieces = NSView::initWithFrame(NSView::alloc(mtm), outer);
     pieces.setAutoresizingMask(sizable);
-    if glass {
+    // Moo has one glass piece, so no merging container: the container draws the glass itself and
+    // would ignore the piece's clip (place_piece).
+    if false {
         let container = NSGlassEffectContainerView::initWithFrame(NSGlassEffectContainerView::alloc(mtm), outer);
         container.setSpacing(theme.glass_spacing);
         container.setAutoresizingMask(sizable);
@@ -469,9 +465,12 @@ fn piece_frames() -> Vec<(NSRect, f64)> {
 fn make_piece(mtm: MainThreadMarker) -> Retained<NSView> {
     let theme = theme::get();
     if GLASS.with(|g| g.get()) {
+        // The glass sits in a clipping view (place_piece).
+        let wrap = NSView::initWithFrame(NSView::alloc(mtm), NSRect::ZERO);
         let g = NSGlassEffectView::initWithFrame(NSGlassEffectView::alloc(mtm), NSRect::ZERO);
         g.setStyle(theme.glass_style);
-        return Retained::into_super(g);
+        wrap.addSubview(&g);
+        return wrap;
     }
     let fx = NSVisualEffectView::initWithFrame(NSVisualEffectView::alloc(mtm), NSRect::ZERO);
     fx.setMaterial(theme.material);
@@ -489,13 +488,31 @@ fn make_piece(mtm: MainThreadMarker) -> Retained<NSView> {
     Retained::into_super(fx)
 }
 
+fn glass_face(piece: &NSView) -> Option<Retained<NSGlassEffectView>> {
+    let faces = piece.subviews();
+    if faces.count() == 0 {
+        return None;
+    }
+    faces.objectAtIndex(0).downcast::<NSGlassEffectView>().ok()
+}
+
 /// The radius never exceeds half the height, so a squashed piece stays a capsule.
 fn place_piece(piece: &NSView, rect: NSRect, radius: f64) {
     piece.setFrame(rect);
     let r = radius.min(rect.size.height / 2.0).min(rect.size.width / 2.0).max(0.0);
     if GLASS.with(|g| g.get()) {
-        if let Some(g) = piece.downcast_ref::<NSGlassEffectView>() {
-            g.setCornerRadius(r);
+        // Short glass renders frosted and whitish, so the glass keeps the full panel's height,
+        // top-aligned, and the piece clips it to its own rounded rect: the idle bar is the panel's
+        // glass cut to its header.
+        piece.setWantsLayer(true);
+        if let Some(layer) = piece.layer() {
+            layer.setMasksToBounds(true);
+            layer.setCornerRadius(r);
+        }
+        let full_h = PANEL_SIZE.with(|c| c.get()).1.max(rect.size.height);
+        if let Some(g) = glass_face(piece) {
+            g.setFrame(NSRect::new(NSPoint::new(0.0, rect.size.height - full_h), NSSize::new(rect.size.width, full_h)));
+            g.setCornerRadius(radius.min(full_h / 2.0).min(rect.size.width / 2.0).max(0.0));
         }
         return;
     }
@@ -593,8 +610,10 @@ fn refresh_edge(w: &NSWindow) {
         let tint = if single { &theme.glass_tint_panel } else { &theme.glass_tint_bar }.resolve(dark);
         PIECES.with(|p| {
             for piece in p.borrow().iter() {
-                if let Some(g) = piece.downcast_ref::<NSGlassEffectView>() {
+                if let Some(g) = glass_face(piece) {
                     g.setTintColor(tint.as_deref());
+                    // Follow the panel's light or dark appearance, not the wallpaper's.
+                    g.setAppearance(Some(&appearance));
                 }
             }
         });
@@ -808,7 +827,7 @@ fn stop_morph() {
     }
 }
 
-fn debug_log(msg: &str) {
+pub fn debug_log(msg: &str) {
     static START: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
     if std::env::var_os("MOO_DEBUG").is_some() {
         let t = START.get_or_init(std::time::Instant::now).elapsed().as_secs_f64() * 1000.0;
@@ -942,6 +961,8 @@ pub fn show() {
         }
         w.orderFrontRegardless();
         w.makeKeyWindow();
+        // Liquid Glass renders flat while its app is inactive.
+        app(mtm).activate();
         focus_search(&w);
     }
     SHOWN.with(|s| s.set(true));
@@ -1492,362 +1513,34 @@ pub fn launch(target: &str) -> bool {
     url.is_some_and(|u| NSWorkspace::sharedWorkspace().openURL(&u))
 }
 
-pub fn reveal(path: &str) -> bool {
-    if !std::path::Path::new(path).exists() {
-        return false;
+// ── Sources: live app index ─────────────────────────────────────────────────
+
+#[repr(C)]
+struct Tm {
+    sec: i32,
+    min: i32,
+    hour: i32,
+    mday: i32,
+    mon: i32,
+    year: i32,
+    wday: i32,
+    yday: i32,
+    isdst: i32,
+    gmtoff: i64,
+    zone: *const std::ffi::c_char,
+}
+
+extern "C" {
+    fn localtime_r(t: *const i64, out: *mut Tm) -> *mut Tm;
+}
+
+/// Local `(YYYY-MM-DD, HH:MM)`.
+pub fn local_date_time() -> (String, String) {
+    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs() as i64);
+    let mut tm = Tm { sec: 0, min: 0, hour: 0, mday: 0, mon: 0, year: 0, wday: 0, yday: 0, isdst: 0, gmtoff: 0, zone: std::ptr::null() };
+    if unsafe { localtime_r(&now, &mut tm) }.is_null() {
+        return (String::new(), String::new());
     }
-    let url = NSURL::fileURLWithPath(&NSString::from_str(path));
-    NSWorkspace::sharedWorkspace().activateFileViewerSelectingURLs(&NSArray::from_retained_slice(&[url]));
-    true
+    (format!("{:04}-{:02}-{:02}", tm.year + 1900, tm.mon + 1, tm.mday), format!("{:02}:{:02}", tm.hour, tm.min))
 }
 
-pub fn clipboard_text() -> String {
-    NSPasteboard::generalPasteboard()
-        .stringForType(unsafe { NSPasteboardTypeString })
-        .map(|s| s.to_string())
-        .unwrap_or_default()
-}
-
-pub fn copy_text(text: &str) -> bool {
-    let pb = NSPasteboard::generalPasteboard();
-    pb.clearContents();
-    let ok = pb.setString_forType(&NSString::from_str(text), unsafe { NSPasteboardTypeString });
-    clip::note_own_change();
-    ok
-}
-
-// ── Status bar item ─────────────────────────────────────────────────────────
-
-define_class!(
-    #[unsafe(super(NSObject))]
-    #[thread_kind = MainThreadOnly]
-    #[name = "MooMenuTarget"]
-    struct MenuTarget;
-
-    impl MenuTarget {
-        #[unsafe(method(statusClicked:))]
-        fn status_clicked(&self, _sender: Option<&AnyObject>) {
-            let Some(mtm) = MainThreadMarker::new() else { return };
-            let menu_click = NSApplication::sharedApplication(mtm).currentEvent().is_some_and(|ev| {
-                ev.r#type() == NSEventType::RightMouseUp || ev.modifierFlags().contains(NSEventModifierFlags::Control)
-            });
-            if !menu_click {
-                show();
-                return;
-            }
-            STATUS.with(|s| {
-                let s = s.borrow();
-                let Some(st) = s.as_ref() else { return };
-                // A status item opens its menu below itself on click; set it just for this click.
-                st.item.setMenu(Some(&st.menu));
-                if let Some(button) = st.item.button(mtm) {
-                    unsafe { button.performClick(None) };
-                }
-                st.item.setMenu(None);
-            });
-        }
-
-        #[unsafe(method(openSettings:))]
-        fn open_settings(&self, _sender: Option<&AnyObject>) {
-            STATUS_MENU.with(|h| {
-                if let Some(h) = h.borrow().as_ref() {
-                    h("settings");
-                }
-            });
-        }
-
-        #[unsafe(method(quitMoo:))]
-        fn quit_moo(&self, _sender: Option<&AnyObject>) {
-            quit();
-        }
-    }
-);
-
-impl MenuTarget {
-    fn new(mtm: MainThreadMarker) -> Retained<Self> {
-        unsafe { msg_send![Self::alloc(mtm), init] }
-    }
-}
-
-pub struct StatusItem {
-    item: Retained<NSStatusItem>,
-    menu: Retained<NSMenu>,
-    _target: Retained<MenuTarget>,
-}
-
-/// Menu bar icon, installed once the run loop is live. A click shows the panel; a right click
-/// (or Control-click) opens Settings… / Quit Moo, and Settings calls `on_menu("settings")`.
-/// `hotkey` goes in the tooltip as a reminder. `symbol` is an image name (from `imageFile`, say)
-/// or an SF Symbol; either is drawn as a template, so it follows the menu bar's colour.
-pub fn status_item(hotkey: &str, symbol: &str, on_menu: Box<dyn Fn(&str)>) -> bool {
-    if STATUS.with(|s| s.borrow().is_some()) {
-        let Some(mtm) = MainThreadMarker::new() else { return false };
-        STATUS.with(|s| {
-            if let Some(button) = s.borrow().as_ref().and_then(|st| st.item.button(mtm)) {
-                set_status_tooltip(&button, hotkey);
-            }
-        });
-        return true;
-    }
-    STATUS_MENU.with(|h| *h.borrow_mut() = Some(on_menu));
-    let (hotkey, symbol) = (hotkey.to_string(), symbol.to_string());
-    DispatchQueue::main().exec_async(move || install_status_item(&hotkey, &symbol));
-    true
-}
-
-fn install_status_item(hotkey: &str, symbol: &str) {
-    let Some(mtm) = MainThreadMarker::new() else { return };
-    if STATUS.with(|s| s.borrow().is_some()) {
-        return;
-    }
-    // NSVariableStatusItemLength
-    let item = NSStatusBar::systemStatusBar().statusItemWithLength(-1.0);
-    if let Some(button) = item.button(mtm) {
-        let desc = NSString::from_str("Moo");
-        let ns_symbol = NSString::from_str(symbol);
-        let image = NSImage::imageNamed(&ns_symbol).or_else(|| NSImage::imageWithSystemSymbolName_accessibilityDescription(&ns_symbol, Some(&desc)));
-        match image {
-            Some(img) => {
-                img.setTemplate(true);
-                button.setImage(Some(&img));
-            }
-            None => button.setTitle(&desc),
-        }
-    }
-    let target = MenuTarget::new(mtm);
-    if let Some(button) = item.button(mtm) {
-        set_status_tooltip(&button, hotkey);
-        unsafe {
-            button.setTarget(Some(&target));
-            button.setAction(Some(sel!(statusClicked:)));
-        }
-        button.sendActionOn(NSEventMask::LeftMouseUp | NSEventMask::RightMouseUp);
-    }
-    let menu = NSMenu::new(mtm);
-    // Which Moo this is, greyed out (no action): "Moo 0.4.0", or "Moo dev" for a local build.
-    let version = unsafe {
-        NSMenuItem::initWithTitle_action_keyEquivalent(
-            NSMenuItem::alloc(mtm),
-            &NSString::from_str(&format!("Moo {}", crate::cli::VERSION)),
-            None,
-            &NSString::from_str(""),
-        )
-    };
-    version.setEnabled(false);
-    menu.addItem(&version);
-    menu.addItem(&NSMenuItem::separatorItem(mtm));
-    let entries = [(Some("Settings…"), Some(sel!(openSettings:)), ","), (None, None, ""), (Some("Quit Moo"), Some(sel!(quitMoo:)), "q")];
-    for (title, action, key) in entries {
-        let Some(title) = title else {
-            menu.addItem(&NSMenuItem::separatorItem(mtm));
-            continue;
-        };
-        let mi = unsafe {
-            NSMenuItem::initWithTitle_action_keyEquivalent(NSMenuItem::alloc(mtm), &NSString::from_str(title), action, &NSString::from_str(key))
-        };
-        unsafe { mi.setTarget(Some(&target)) };
-        menu.addItem(&mi);
-    }
-    STATUS.with(|s| *s.borrow_mut() = Some(StatusItem { item, menu, _target: target }));
-}
-
-fn set_status_tooltip(button: &NSView, hotkey: &str) {
-    let tip = if hotkey.is_empty() { "Moo".to_string() } else { format!("Moo  ({hotkey})") };
-    button.setToolTip(Some(&NSString::from_str(&tip)));
-}
-
-/// Register SF Symbol `symbol` as a named image (once) and return the name.
-pub fn symbol_icon(symbol: &str) -> String {
-    let name = format!("moo-symbol-{symbol}");
-    let ns_name = NSString::from_str(&name);
-    if NSImage::imageNamed(&ns_name).is_none() {
-        let desc = NSString::from_str(symbol);
-        match NSImage::imageWithSystemSymbolName_accessibilityDescription(&NSString::from_str(symbol), Some(&desc)) {
-            Some(img) => {
-                img.setName(Some(&ns_name));
-            }
-            None => return String::new(),
-        }
-    }
-    name
-}
-
-/// Icons are registered as named images so `<image src={name}>` can find them. Names live in a
-/// fixed ring, so file results cannot grow the registry without bound.
-pub fn icon_name(path: &str) -> String {
-    if let Some(n) = ICONS.with(|m| m.borrow().get(path).cloned()) {
-        return n;
-    }
-    let slot = ICON_RING.with(|r| {
-        let mut r = r.borrow_mut();
-        let slot = r.0 % ICON_SLOTS;
-        r.0 += 1;
-        if slot < r.1.len() {
-            let evicted = std::mem::replace(&mut r.1[slot], path.to_string());
-            ICONS.with(|m| m.borrow_mut().remove(&evicted));
-        } else {
-            r.1.push(path.to_string());
-        }
-        slot
-    });
-    let name = format!("moo-icon-{slot}");
-    let ns_name = NSString::from_str(&name);
-    if let Some(old) = NSImage::imageNamed(&ns_name) {
-        old.setName(None);
-    }
-    let img = NSWorkspace::sharedWorkspace().iconForFile(&NSString::from_str(path));
-    img.setName(Some(&ns_name));
-    ICONS.with(|m| m.borrow_mut().insert(path.to_string(), name.clone()));
-    warm_later(img);
-    name
-}
-
-thread_local! {
-    static WARM_QUEUE: RefCell<std::collections::VecDeque<Retained<NSImage>>> = RefCell::new(std::collections::VecDeque::new());
-    static WARMING: Cell<bool> = const { Cell::new(false) };
-}
-
-/// Workspace icons load lazily: an image view draws a placeholder and is not told when the real
-/// icon arrives. Drawing each icon once offscreen loads it (about 15 ms each), so that happens one
-/// icon per main-loop turn, keeping keys and drawing responsive in between. When the queue runs
-/// dry with the panel open, `onKey("icons")` asks the view to redraw.
-fn warm_later(img: Retained<NSImage>) {
-    WARM_QUEUE.with(|q| q.borrow_mut().push_back(img));
-    if !WARMING.with(|w| w.replace(true)) {
-        schedule_warm();
-    }
-}
-
-fn schedule_warm() {
-    let when = DispatchTime::try_from(std::time::Duration::from_millis(1)).unwrap_or(DispatchTime::NOW);
-    let _ = DispatchQueue::main().after(when, warm_next);
-}
-
-fn warm_next() {
-    let Some(img) = WARM_QUEUE.with(|q| q.borrow_mut().pop_front()) else {
-        WARMING.with(|w| w.set(false));
-        // Views drawn before their icon loaded still show the placeholder until redrawn.
-        if SHOWN.with(|s| s.get()) {
-            defer_callback("key", "icons");
-        }
-        return;
-    };
-    let side = NSSize::new(128.0, 128.0);
-    let canvas = NSImage::initWithSize(<NSImage as objc2::AllocAnyThread>::alloc(), side);
-    #[allow(deprecated)]
-    unsafe {
-        canvas.lockFocus();
-        img.drawInRect(NSRect::new(NSPoint::new(0.0, 0.0), side));
-        canvas.unlockFocus();
-    }
-    schedule_warm();
-}
-
-/// Register every app's icon now, A–Z, so they are loaded before Applications is opened.
-pub fn warm_app_icons() {
-    for p in index::paths() {
-        icon_name(&p);
-    }
-}
-
-// ── Sources: Spotlight files and live app index ─────────────────────────────
-
-pub fn search_files(query: &str, limit: usize, cb: Option<Value>) -> u64 {
-    ON_FILES.with(|c| *c.borrow_mut() = cb);
-    files::request(query, limit, deliver_files)
-}
-
-fn deliver_files(d: files::Delivery) {
-    if d.generation != files::latest_generation() {
-        return;
-    }
-    debug_log(&format!("files {:?}: {} hits in {:.1} ms", d.query, d.hits.len(), d.ms));
-    let Some(Value::Function(f)) = ON_FILES.with(|c| c.borrow().clone()) else { return };
-    let rows: Vec<Value> = d
-        .hits
-        .iter()
-        .map(|h| {
-            crate::obj(vec![
-                ("name", Value::String(h.name.as_str().into())),
-                ("path", Value::String(h.path.as_str().into())),
-                ("icon", Value::String(icon_name(&h.path).as_str().into())),
-                ("kind", Value::String(if h.is_dir { "Folder" } else { "File" }.into())),
-                ("detail", Value::String(h.detail.as_str().into())),
-                ("score", Value::Number(h.score as f64)),
-            ])
-        })
-        .collect();
-    let payload = crate::obj(vec![
-        ("query", Value::String(d.query.as_str().into())),
-        ("results", Value::Array(VmRef::new(rows))),
-        ("ms", Value::Number(d.ms)),
-    ]);
-    with_ui(|| {
-        let _ = f.call(&[payload]);
-    });
-}
-
-pub fn watch_apps() -> bool {
-    watch::watch(&index::root_strings(), || {
-        let (n, ms) = index::reindex();
-        warm_app_icons();
-        debug_log(&format!("apps reindexed: {n} in {ms:.1} ms"));
-    })
-}
-
-// ── moo:// URLs ─────────────────────────────────────────────────────────────
-//
-// Info.plist claims the `moo` scheme (scripts/bundle-macos.sh); macOS delivers each opened URL as
-// a GetURL Apple Event, and a cold launch queues it until this handler is installed.
-
-/// 'GURL', the event class and id of a GetURL Apple Event.
-const K_AE_GET_URL: u32 = u32::from_be_bytes(*b"GURL");
-/// '----', the direct-object keyword holding the URL.
-const KEY_DIRECT_OBJECT: u32 = u32::from_be_bytes(*b"----");
-
-thread_local! {
-    static OPEN_URL: RefCell<Option<Box<dyn Fn(&str)>>> = const { RefCell::new(None) };
-    static URL_TARGET: RefCell<Option<Retained<UrlTarget>>> = const { RefCell::new(None) };
-}
-
-define_class!(
-    #[unsafe(super(NSObject))]
-    #[thread_kind = MainThreadOnly]
-    #[name = "MooUrlTarget"]
-    struct UrlTarget;
-
-    impl UrlTarget {
-        #[unsafe(method(handleGetURL:withReplyEvent:))]
-        fn handle_get_url(&self, event: &AnyObject, _reply: &AnyObject) {
-            let url: Option<String> = unsafe {
-                let desc: *mut AnyObject = msg_send![event, paramDescriptorForKeyword: KEY_DIRECT_OBJECT];
-                desc.as_ref().and_then(|d| {
-                    let s: *mut NSString = msg_send![d, stringValue];
-                    s.as_ref().map(|s| s.to_string())
-                })
-            };
-            if let Some(url) = url {
-                OPEN_URL.with(|h| {
-                    if let Some(h) = h.borrow().as_ref() {
-                        h(&url);
-                    }
-                });
-            }
-        }
-    }
-);
-
-/// Calls `on_url(url)` for every `moo://` URL macOS opens with Moo. Call before the run loop
-/// starts so a URL that launched Moo is not missed.
-pub fn on_open_url(on_url: Box<dyn Fn(&str)>) -> bool {
-    let Some(mtm) = MainThreadMarker::new() else { return false };
-    let Some(cls) = AnyClass::get(c"NSAppleEventManager") else { return false };
-    OPEN_URL.with(|h| *h.borrow_mut() = Some(on_url));
-    let target: Retained<UrlTarget> = unsafe { msg_send![UrlTarget::alloc(mtm), init] };
-    unsafe {
-        let manager: *mut AnyObject = msg_send![cls, sharedAppleEventManager];
-        let _: () = msg_send![manager, setEventHandler: &*target, andSelector: sel!(handleGetURL:withReplyEvent:), forEventClass: K_AE_GET_URL, andEventID: K_AE_GET_URL];
-    }
-    URL_TARGET.with(|t| *t.borrow_mut() = Some(target));
-    true
-}

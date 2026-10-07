@@ -19,72 +19,6 @@ use std::time::{Duration, Instant};
 
 use tishlang_core::{json_parse, Value};
 
-pub const USAGE: &str = "\
-usage: moo [command] [args]
-
-  (no command)                 show the launcher (starts Moo if needed)
-  toggle | show | hide | quit
-  search <text>                show the launcher with <text> typed
-  category <name> [text]       show Applications, Files, Actions, Clipboard or Recent searches
-  key <name>                   act as if a key was pressed in the open launcher (tab, shift+tab, enter, escape, …)
-  type <text>                  insert text into the focused field, one character every 120 ms
-  history [--clear]            recent searches, newest first
-  run <keyword|id> [text]      run a shortcut or command (ids: moo list commands)
-  open <path|url>              open with the default app
-  files <query> [-n N] [--contents]
-                               file paths, best match first; --contents searches inside files
-  trash <path>                 move to the Trash; prints where it went
-  open-with <path> [app]       list the apps that open it (* default), or open it in one
-  apps <query> [-n N]          matching applications
-  ask [--model M] <question>   ask Ask AI's model (or M); the answer streams, tools included
-  ai                           the model Ask AI uses and each provider's sign-in
-  ai models [text] [--json]    every model (* current): Apple's, Hypery's (Claude, Grok, Gemini,
-                               GPT, …), OpenAI's, local Ollama and LM Studio ones
-  ai use <model>               make Ask AI use it: apple, hypery:<id>, ollama:<id>, … or default
-  ai login | logout [provider] sign in to Hypery in the browser, or forget its key and sign-in
-  ai key [provider] <key>      keep an API key in the Keychain (Hypery when no provider)
-  ai usage [provider]          Hypery balance and this month's spending
-  ai team [name]               Hypery's teams (* current), or switch to one
-  ai client-id <id> [provider] the OAuth app id browser sign-in uses
-  calc <expression>            the plain answer: 2^10, 5 km in mi, 100 usd to eur, 255 in hex,
-                               time in tokyo, 3pm pst to cet (--json adds display and detail)
-  web <text>                   search suggestions from the default engine
-  web engine [name]            list engines (* default) or pick one: google, duckduckgo, bing,
-                               brave
-  define <word>                the word's senses, pronunciation and origin from the macOS
-                               dictionary, every homograph (--json for the parsed entry)
-  contacts [name]              contacts whose name matches (all when empty); needs access,
-                               which Search Contacts in Moo asks for
-  system [command] [arg]       list system commands, or run one: lock, sleep, sleep-displays,
-                               screen-saver, dark-mode, mute, volume, eject, hide-all, quit-all,
-                               empty-trash, restart, shut-down, log-out
-  window [layout]              list layouts, or arrange the frontmost window: left-half,
-                               right-third, maximize, center, next-display, restore, …
-  selection                    the selected text in the frontmost app
-  running [--json]             apps with a Dock icon, most memory first
-  running <action> <name|pid>  switch, hide, unhide, quit or force-quit one of them
-  volume [N|up|down]           print or set the output volume
-  mute [on|off]                toggle or set mute
-  dark-mode [on|off]           toggle or set dark mode
-  clipboard [-n N]             clipboard history, newest first
-  list [shortcuts|commands|hotkeys]
-  shortcut add <keyword> <kind> <target> [--name N] [--hotkey K] [--output show|copy|none] [--input T] [--expand]
-                               kinds: url, open, command, shell, text; --expand makes a text
-                               shortcut a snippet, replaced wherever its keyword is typed
-  shortcut rm <keyword>
-  hotkey add <keys> <keyword|id|app> [text]
-                               bind a shortcut, a command id or an app's path
-                               (/Applications/Safari.app)
-  hotkey rm <keys>
-  config                       print the path of shortcuts.json
-  status
-  --version                    this binary's version and path
-
-  --json                       machine-readable output (files, apps, list, clipboard, status)
-
-Templates take {query}, {clipboard}, {date} and {time}.
-";
-
 /// Release builds set `MOO_VERSION` (scripts/build-universal.sh); local builds say "dev".
 pub const VERSION: &str = match option_env!("MOO_VERSION") {
     Some(v) => v,
@@ -197,10 +131,10 @@ fn num_field(v: &Value, key: &str) -> Option<f64> {
 }
 
 /// Send `args` to the running app (starting it if needed), print the reply; the exit code.
-pub fn client(args: &[String]) -> i32 {
+pub fn client(args: &[String], usage: &str) -> i32 {
     let first = args.first().map(String::as_str).unwrap_or("");
     if matches!(first, "help" | "-h" | "--help") {
-        print!("{USAGE}");
+        print!("{usage}");
         return 0;
     }
     if matches!(first, "-v" | "--version") {
@@ -316,6 +250,10 @@ pub fn serve(dispatch: impl Fn(Request) + Send + Sync + 'static) -> Result<PathB
             for stream in listener.incoming().flatten() {
                 let dispatch = dispatch.clone();
                 std::thread::spawn(move || {
+                    // A client that never sends its request, or stops reading our output (`moo files x |
+                    // less`, paused), times out instead of holding a thread or blocking the app.
+                    let _ = stream.set_read_timeout(Some(Duration::from_secs(5)));
+                    let _ = stream.set_write_timeout(Some(Duration::from_secs(2)));
                     let Some((args, cwd)) = read_request(&stream) else { return };
                     let token = NEXT_TOKEN.fetch_add(1, Ordering::Relaxed);
                     if let Some(m) = CONNECTIONS.lock().unwrap_or_else(|e| e.into_inner()).as_mut() {
@@ -339,11 +277,13 @@ pub fn stop_serving() {
 
 /// Send output to the client of `token`: `stream` is "out" or "err". False once it has gone.
 pub fn write(token: u64, stream: &str, text: &str) -> bool {
-    let mut guard = CONNECTIONS.lock().unwrap_or_else(|e| e.into_inner());
-    let Some(conn) = guard.as_mut().and_then(|m| m.get_mut(&token)) else { return false };
+    // Write outside the lock (called on the main thread): a slow client only delays its own output,
+    // and the write timeout ends it.
+    let conn = CONNECTIONS.lock().unwrap_or_else(|e| e.into_inner()).as_ref().and_then(|m| m.get(&token)?.try_clone().ok());
+    let Some(mut conn) = conn else { return false };
     let key = if stream == "err" { "err" } else { "out" };
     if conn.write_all(json_line(key, text).as_bytes()).is_err() {
-        guard.as_mut().map(|m| m.remove(&token));
+        CONNECTIONS.lock().unwrap_or_else(|e| e.into_inner()).as_mut().map(|m| m.remove(&token));
         return false;
     }
     true

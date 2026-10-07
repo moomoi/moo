@@ -618,17 +618,30 @@ impl Index {
     }
 
     fn kill_subtree(&mut self, top: u32) {
-        let mut frontier: HashSet<u32> = HashSet::from([top]);
-        self.kill(top);
-        while !frontier.is_empty() {
-            let mut next = HashSet::new();
-            for id in 0..self.parent.len() {
-                if self.flags[id] & DEAD == 0 && frontier.contains(&self.parent[id]) {
-                    self.kill(id as u32);
-                    next.insert(id as u32);
-                }
+        self.kill_subtrees(&[top]);
+    }
+
+    /// Kill every entry under `tops`, and the tops, in one pass over the index. Entries are only
+    /// appended, so a child's id is always greater than its parent's: walking forward from the
+    /// lowest top, an entry is doomed when its parent is. (This used to scan the whole index once
+    /// per level of every removed subtree, about N × entries for deleting a folder.)
+    fn kill_subtrees(&mut self, tops: &[u32]) {
+        let Some(&start) = tops.iter().min() else { return };
+        let start = start as usize;
+        let mut doomed = vec![false; self.parent.len() - start];
+        for &t in tops {
+            doomed[t as usize - start] = true;
+            self.kill(t);
+        }
+        for id in start + 1..self.parent.len() {
+            let parent = self.parent[id];
+            if parent == NONE || (parent as usize) < start {
+                continue;
             }
-            frontier = next;
+            if !doomed[id - start] && doomed[parent as usize - start] {
+                doomed[id - start] = true;
+                self.kill(id as u32);
+            }
         }
     }
 
@@ -670,9 +683,7 @@ impl Index {
             let dir_path = self.path(dir);
             let existing = children.remove(&dir).unwrap_or_default();
             if recursive {
-                for c in existing {
-                    self.kill_subtree(c);
-                }
+                self.kill_subtrees(&existing);
                 self.flags[dir as usize] &= !BULK;
                 self.crawl_from(dir, PathBuf::from(&dir_path), &mut interner);
                 continue;
@@ -684,15 +695,17 @@ impl Index {
                     self.flags[dir as usize] &= !BULK;
                     let on_disk: HashMap<&str, u8> = listed.iter().map(|l| (l.name.as_str(), l.flags)).collect();
                     let mut present: HashSet<String> = HashSet::new();
+                    let mut gone = Vec::new();
                     for c in existing {
                         let name = self.name_str(c).to_string();
                         let keep = on_disk.get(name.as_str()) == Some(&(self.flags[c as usize] & (DIR | PACKAGE)));
                         if keep {
                             present.insert(name);
                         } else {
-                            self.kill_subtree(c);
+                            gone.push(c);
                         }
                     }
+                    self.kill_subtrees(&gone);
                     for l in listed {
                         if present.contains(&l.name) {
                             continue;
@@ -706,9 +719,7 @@ impl Index {
                     }
                 }
                 Listing::Bulk => {
-                    for c in existing {
-                        self.kill_subtree(c);
-                    }
+                    self.kill_subtrees(&existing);
                     self.flags[dir as usize] |= BULK;
                 }
                 Listing::Unreadable => {
@@ -1001,6 +1012,27 @@ mod tests {
         t.file("quarterly-report.pdf");
         let (ix, _) = Index::crawl(vec![t.root()]);
         assert_eq!(names(&ix.search("qrtrep", 5, |_| 0)), ["quarterly-report.pdf"]);
+    }
+
+    /// Deleting a big folder removes every entry under it in one pass, leaves siblings (and
+    /// entries added after it) alone, and stays fast.
+    #[test]
+    fn removing_a_large_folder_is_one_pass() {
+        let t = TempTree::new("bigdelete");
+        for i in 0..400 {
+            t.file(&format!("Projects/big/sub{}/file{i}.txt", i % 20));
+        }
+        t.file("Projects/keep/stay.txt");
+        let (mut ix, _) = Index::crawl(vec![t.root()]);
+        t.file("Projects/later/after.txt");
+        std::fs::remove_dir_all(t.0.join("Projects/big")).unwrap();
+        let start = std::time::Instant::now();
+        ix.rescan(&[t.0.join("Projects").to_string_lossy().into_owned()], false);
+        assert!(start.elapsed() < std::time::Duration::from_millis(500), "{:?}", start.elapsed());
+        assert!(ix.search("file1", 5, |_| 0).is_empty());
+        assert!(ix.search("sub3", 5, |_| 0).is_empty());
+        assert_eq!(names(&ix.search("stay.txt", 5, |_| 0)), ["stay.txt"]);
+        assert_eq!(names(&ix.search("after.txt", 5, |_| 0)), ["after.txt"]);
     }
 
     #[test]

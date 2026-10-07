@@ -11,7 +11,7 @@
     "clean": "rm -rf app/dist plugins/dist web/dist dist target packages/moo-macos/target app/node_modules plugins/node_modules"
   },
   "devDependencies": {
-    "@tishlang/tish": "3.15.2",
+    "@tishlang/tish": "3.15.3",
     "lattish": "4.0.4"
   }
 }

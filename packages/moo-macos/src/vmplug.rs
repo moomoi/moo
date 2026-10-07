@@ -53,7 +53,7 @@ fn run_chunk(chunk: &Chunk, label: &str) -> Result<Value, String> {
     vm.set_jit_enabled(false);
     vm.set_global(Arc::from("register"), Value::native(register));
     #[cfg(target_os = "macos")]
-    let host: crate::pluginhost::Shared = Arc::new(std::sync::Mutex::new(crate::pluginhost::Host { id: label.to_string(), network: Vec::new() }));
+    let host: crate::pluginhost::Shared = Arc::new(std::sync::Mutex::new(crate::pluginhost::Host { id: label.to_string(), network: Vec::new(), sign_in_cancel: None }));
     #[cfg(target_os = "macos")]
     vm.set_global(Arc::from("moo"), crate::pluginhost::object(host.clone()));
     REGISTERED.with(|r| r.borrow_mut().take());
@@ -76,8 +76,13 @@ fn run_chunk(chunk: &Chunk, label: &str) -> Result<Value, String> {
         take_pending_throw();
         let mut h = host.lock().unwrap_or_else(|e| e.into_inner());
         h.network = crate::pluginhost::network_permissions(&m);
+        // Identity is the installed file's name (`<id>.tishc`), never what the plugin says about
+        // itself: an id taken from `manifest()` would let a plugin claim another's Keychain secrets
+        // and store. A manifest that disagrees doesn't load.
         if let Some(Value::String(id)) = field(&m, "id") {
-            h.id = id.to_string();
+            if &*id != label {
+                return Err(format!("manifest id \"{id}\" does not match the file name \"{label}\""));
+            }
         }
     }
     Ok(exports)
@@ -137,6 +142,20 @@ mod tests {
         let program = tishlang_parser::parse(src).map_err(|e| format!("{e:?}"))?;
         let chunk = tishlang_bytecode::compile(&program).map_err(|e| format!("{e:?}"))?;
         run_chunk(&chunk, "test")
+    }
+
+    /// A plugin can't take another's identity: its manifest id must be its file name.
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn manifest_id_must_match_the_file_name() {
+        let src = |id: &str| format!("register({{ manifest: () => ({{ id: \"{id}\", title: \"T\", commands: [] }}), run: (c) => null, list: (c, q) => [] }})");
+        let program = tishlang_parser::parse(&src("test")).unwrap();
+        let chunk = tishlang_bytecode::compile(&program).unwrap();
+        assert!(run_chunk(&chunk, "test").is_ok(), "matching id loads");
+        let program = tishlang_parser::parse(&src("slack")).unwrap();
+        let chunk = tishlang_bytecode::compile(&program).unwrap();
+        let err = run_chunk(&chunk, "test").err().expect("a plugin claiming slack must not load");
+        assert!(err.contains("does not match"), "{err}");
     }
 
     fn call(exports: &Value, name: &str, args: &[Value]) -> Value {

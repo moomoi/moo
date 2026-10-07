@@ -8,14 +8,50 @@
 
 import { loadModule } from "tish:ffi"
 import { macos, useState } from "tish:macos"
-import { reindex, search, launch, setup, setPanelShape, setArrowKeys, setTheme, typeText, getPref, setPref, searchHistory, addSearchHistory, clearSearchHistory, registerHotkey, quit, hide, appCount, searchFiles, watchApps, fuzzy, pluginPaths, copyText, loadBytecodePlugin, bundleResources, exeDir, about, recordUse, frecency, statusItem, watchClipboard, onOpenUrl, clipboardHistory, clearClipboardHistory, aiAvailability, aiSession, aiEndSession, aiPrewarm, aiAsk, aiCancel, aiProviders, aiModels, aiChat, aiChatCancel, aiSetKey, aiLogin, aiCancelLogin, aiLogout, aiAccount, aiSetModel, aiSetClientId, aiSetOrganization, imageIcon, imageFile, setAlias, checkAlias, setDisabled, setPanelKey, setPanelKeys, onPluginRefresh, siteIcon, symbolIcon, fileIndexStart, findFiles, recentFiles, queryFiles, runningApps, systemInfo, calculate, define, dictionaryWarm, webSuggest, contactsAccess, contactsRequest, searchContacts, systemCommand, appAction, arrangeWindow, selectedText, watchSnippets, replaceTyped, trashFile, appsFor, openWith, quickLook, quickLookVisible, searchContents, accessibilityTrusted, fileIcon, revealFile, fileIndexStatus, show, toggle, unregisterHotkey, checkHotkey, hotkeyDisplay, recordHotkey, loadShortcuts, saveShortcut, checkKeyword, ensureShortcutsFile, removeShortcut, bindHotkey, unbindHotkey, setLauncherHotkey, expandTemplate, watchShortcuts, runShell, cliMain, cliServe, cliWrite, cliEnd, cliUsage } from "tish:moo"
+import { setup, setPanelShape, setArrowKeys, setTheme, typeText, registerHotkey, quit, hide, appCount, fuzzy, pluginPaths, loadBytecodePlugin, bundleResources, exeDir, recordUse, frecency, aiAvailability, aiSession, aiEndSession, aiPrewarm, aiAsk, aiCancel, setPanelKeys, onPluginRefresh, fileIndexStart, quickLook, quickLookVisible, fileIndexStatus, show, toggle, unregisterHotkey, checkHotkey, hotkeyDisplay, recordHotkey, runShell, cliMain, cliServe, cliWrite, cliEnd, about } from "tish:moo"
 import { env } from "tish:process"
 import { THEME } from "./theme.tish"
 import { greeting } from "./greetings.tish"
+import { answer as calcAnswer } from "./calc.tish"
+import { currencyRates } from "./rates.tish"
+import { siteIcon, imageIcon } from "./siteicons.tish"
+import { webSuggest } from "./websuggest.tish"
+import { aiProviders, aiModels, aiChat, aiChatCancel, aiSetKey, aiLogin, aiCancelLogin, aiLogout, aiAccount } from "./ai.tish"
+import { getPref, setPref, searchHistory, addSearchHistory, clearSearchHistory } from "./stores.tish"
+import { configDir, aiSetModel, aiSetClientId, aiSetOrganization, setAlias, checkAlias, setDisabled, setPanelKey, loadShortcuts, saveShortcut, checkKeyword, ensureShortcutsFile, removeShortcut, bindHotkey, unbindHotkey, setLauncherHotkey, expandTemplate, shellValues } from "./shortcutsfile.tish"
+
+import { timeAnswer } from "./tz.tish"
+import { reindex, search, findFiles, recentFiles, fileIcon, symbolIcon, imageFile, statusItem, onIconsLoaded, searchFiles, searchContents, queryFiles, arrangeWindow, selectedText, watchSnippets, replaceTyped, accessibilityTrusted, systemInfo, systemCommand, runningApps, appAction, contactsAccess, contactsRequest, searchContacts, launch, watchApps, copyText, watchClipboard, onOpenUrl, dictionaryEntries, dictionaryWarm, trashFile, appsFor, openWith, revealFile, watchShortcuts, ZONES } from "./platform.tish"
+import { define as defineFrom } from "./dict.tish"
+import { record as recordClip, clearClips, clipboardHistory as clipRows } from "./clip.tish"
+
+// Clipboard history rows: `[{ text, preview, app, icon, ago }]`, newest first.
+fn clipboardHistory(query, limit) {
+  return clipRows(query, limit, fuzzy, fileIcon)
+}
+
+fn clearClipboardHistory() {
+  clearClips()
+}
+
+// `{ word, pronunciation, senses: [{ part, pronunciation, definition, example }], origin }` from
+// the system dictionary, or null.
+fn define(word) {
+  return defineFrom(word, dictionaryEntries(word.trim()))
+}
+
+// Inline answers: arithmetic, units, currency and bases (calc.tish), else time zones (tz.tish).
+fn calculate(text) {
+  let a = calcAnswer(text, currencyRates())
+  return a !== null ? a : timeAnswer(text, ZONES, Date.now() / 1000)
+}
 
 // `moo <command>` (or launching while Moo already runs) makes this process a client of the
 // running app: it sends the arguments over the socket, prints the reply and exits here.
-cliMain()
+// `moo help`; printed by the client process too, so it needs no running app.
+let CLI_USAGE = "usage: moo [command] [args]\n\n  (no command)                 show the launcher (starts Moo if needed)\n  toggle | show | hide | quit\n  search <text>                show the launcher with <text> typed\n  category <name> [text]       show Applications, Files, Actions, Clipboard or Recent searches\n  key <name>                   act as if a key was pressed in the open launcher (tab, shift+tab, enter, escape, …)\n  type <text>                  insert text into the focused field, one character every 120 ms\n  history [--clear]            recent searches, newest first\n  run <keyword|id> [text]      run a shortcut or command (ids: moo list commands)\n  open <path|url>              open with the default app\n  files <query> [-n N] [--contents]\n                               file paths, best match first; --contents searches inside files\n  trash <path>                 move to the Trash; prints where it went\n  open-with <path> [app]       list the apps that open it (* default), or open it in one\n  apps <query> [-n N]          matching applications\n  ask [--model M] <question>   ask Ask AI's model (or M); the answer streams, tools included\n  ai                           the model Ask AI uses and each provider's sign-in\n  ai models [text] [--json]    every model (* current): Apple's, Hypery's (Claude, Grok, Gemini,\n                               GPT, …), OpenAI's, local Ollama and LM Studio ones\n  ai use <model>               make Ask AI use it: apple, hypery:<id>, ollama:<id>, … or default\n  ai login | logout [provider] sign in to Hypery in the browser, or forget its key and sign-in\n  ai key [provider] <key>      keep an API key in the Keychain (Hypery when no provider)\n  ai usage [provider]          Hypery balance and this month's spending\n  ai team [name]               Hypery's teams (* current), or switch to one\n  ai client-id <id> [provider] the OAuth app id browser sign-in uses\n  calc <expression>            the plain answer: 2^10, 5 km in mi, 100 usd to eur, 255 in hex,\n                               time in tokyo, 3pm pst to cet (--json adds display and detail)\n  web <text>                   search suggestions from the default engine\n  web engine [name]            list engines (* default) or pick one: google, duckduckgo, bing,\n                               brave\n  define <word>                the word's senses, pronunciation and origin from the macOS\n                               dictionary, every homograph (--json for the parsed entry)\n  contacts [name]              contacts whose name matches (all when empty); needs access,\n                               which Search Contacts in Moo asks for\n  system [command] [arg]       list system commands, or run one: lock, sleep, sleep-displays,\n                               screen-saver, dark-mode, mute, volume, eject, hide-all, quit-all,\n                               empty-trash, restart, shut-down, log-out\n  window [layout]              list layouts, or arrange the frontmost window: left-half,\n                               right-third, maximize, center, next-display, restore, …\n  selection                    the selected text in the frontmost app\n  running [--json]             apps with a Dock icon, most memory first\n  running <action> <name|pid>  switch, hide, unhide, quit or force-quit one of them\n  volume [N|up|down]           print or set the output volume\n  mute [on|off]                toggle or set mute\n  dark-mode [on|off]           toggle or set dark mode\n  clipboard [-n N]             clipboard history, newest first\n  list [shortcuts|commands|hotkeys]\n  shortcut add <keyword> <kind> <target> [--name N] [--hotkey K] [--output show|copy|none] [--input T] [--expand]\n                               kinds: url, open, command, shell, text; --expand makes a text\n                               shortcut a snippet, replaced wherever its keyword is typed\n  shortcut rm <keyword>\n  hotkey add <keys> <keyword|id|app> [text]\n                               bind a shortcut, a command id or an app's path\n                               (/Applications/Safari.app)\n  hotkey rm <keys>\n  config                       print the path of shortcuts.json\n  status\n  --version                    this binary's version and path\n\n  --json                       machine-readable output (files, apps, list, clipboard, status)\n\nTemplates take {query}, {clipboard}, {date} and {time}.\n"
+
+cliMain(CLI_USAGE)
 
 const ROWS = 8
 const FILE_MIN_CHARS = 2
@@ -145,7 +181,9 @@ for (let i = 0; i < HOTKEYS.length && hotkey === ""; i = i + 1) {
   }
 }
 statusItem(hotkeyLabel, statusIcon, (what) => onStatusMenu(what))
-watchClipboard()
+// Rows drawn before their icon loaded still show the placeholder until redrawn.
+onIconsLoaded(() => refresh())
+watchClipboard(recordClip)
 
 // ── Plugins: every module in PLUGIN_DIR contributes its manifest's commands to root search ──
 
@@ -482,15 +520,9 @@ fn syncShape() {
     return
   }
   shapeCompact = c
-  if (!c) {
-    setPanelShape(PANEL_H, [])
-    return
-  }
-  let segs = [[0, FIELD_W, HEADER_H / 2]]
-  for (let i = 0; i < 4; i = i + 1) {
-    segs.push([FIELD_W + CAT_GAP + i * (CAT_W + CAT_GAP), CAT_W, CAT_W / 2])
-  }
-  setPanelShape(HEADER_H, segs)
+  // One glass surface in both states: collapsed is the expanded panel cut to its header, so the
+  // change is the same glass growing or shrinking, with the views fading in and out inside it.
+  setPanelShape(c ? HEADER_H : PANEL_H, [])
 }
 
 fn refresh() {
@@ -842,7 +874,7 @@ fn runShortcut(s, query, cli) {
     }
     return "done"
   }
-  runShell(text, cli !== null ? cli.cwd : HOME, (r) => onShellDone(s, r, cli))
+  runShell(text, cli !== null ? cli.cwd : HOME, (r) => onShellDone(s, r, cli), shellValues(s.target, query))
   if (cli === null && s.output === "show") {
     showOutput(s, null)
   }
@@ -4430,7 +4462,7 @@ fn aiRunShortcut(ta) {
   runShell(text, HOME, (r) => {
     shell.hud = s.name + (r.code === 0 ? " finished" : " failed (exit " + r.code + ")")
     refresh()
-  })
+  }, shellValues(s.target, input))
   return toolReply("Started " + s.name + "; it runs in the background.", "", [])
 }
 
@@ -5788,7 +5820,7 @@ fn GridRow(props) {
   return <row columnWidths={widths}>{cells}</row>
 }
 
-// A category button of the idle bar, over its glass circle (setPanelShape). The one selected with
+// A category button of the idle bar, inside the bar's glass. The one selected with
 // tab is filled with the system accent colour. 1 px once expanded.
 fn CategoryButton(props) {
   let c = props.category
@@ -6263,11 +6295,14 @@ fn App() {
     <row columnWidths={widths} alignItems="center" height={FOOTER_H} paddingLeft={18} paddingRight={12} backgroundColor={CLEAR}
     ><text fontSize={T.status} color={C.secondaryText}>{statusText()}</text>{cells}</row>
   )
+  // The divider under the header is a plain 1 px row, clear while collapsed: the bar's shape ends
+  // right below it, and a system separator (<rule>) draws its line whatever its height. It stays
+  // in the tree either way (changing the tree's shape would rebuild the field).
   // The list's height: SLOTS slots and GRID_ROWS grid rows, with the 1 px ones, in either view.
   let listH = LIST_H + total + GRID_ROWS
   let bar = THEME.scrollbar
   return (
-    <div>{header}<rule /><div paddingLeft={8} paddingRight={2} paddingTop={LIST_PAD} paddingBottom={LIST_PAD}
+    <div>{header}<row columnWidths={["flex"]} height={1} backgroundColor={compact ? CLEAR : C.divider}><space height={1} /></row><div paddingLeft={8} paddingRight={2} paddingTop={LIST_PAD} paddingBottom={LIST_PAD}
     ><row columnWidths={["flex", bar.gap + bar.width]} height={listH}><div>{rows}</div><ScrollBar scroll={scrollState(lay)} height={listH} /></row></div><rule />{footer}</div>
   )
 }
@@ -7035,7 +7070,7 @@ fn handleCli(argv, cwd, token) {
   } else if (cmd === "status") {
     cliStatus(token, p.flags.json)
   } else if (cmd === "help") {
-    cliOut(token, cliUsage())
+    cliOut(token, CLI_USAGE)
     cliEnd(token, 0)
   } else {
     cliFail(token, "unknown command “" + cmd + "” (moo help)")
@@ -7069,7 +7104,7 @@ syncPanelKeys()
 for (let i = 0; i < config.warnings.length; i = i + 1) {
   console.log("moo: shortcuts: " + config.warnings[i])
 }
-watchShortcuts(onShortcutsChanged)
+watchShortcuts(configDir(), onShortcutsChanged)
 // moo:// URLs, from the marketplace on moo.moi. moo://plugins/<id> shows the launcher with that
 // plugin's commands; plugins can't be installed from the web yet, so an unknown id says so.
 fn onUrl(url) {

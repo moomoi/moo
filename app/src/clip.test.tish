@@ -1,0 +1,38 @@
+import { test } from "tish:test"
+import assert from "node:assert/strict"
+import { preview, ago, pushClip, record, clearClips, clipboardHistory } from "./clip.tish"
+
+test("preview and ago", () => {
+  assert.equal(preview("  a\n\tb   c ", 80), "a b c")
+  assert.equal(preview("abcdef", 4), "abc…")
+  assert.equal(ago(5), "just now")
+  assert.equal(ago(-3), "just now")
+  assert.equal(ago(125), "2m ago")
+  assert.equal(ago(7300), "2h ago")
+  assert.equal(ago(200000), "2d ago")
+})
+
+test("newest first, repeats move up, capped", () => {
+  let h = pushClip([], { text: "a" })
+  h = pushClip(h, { text: "b" })
+  h = pushClip(h, { text: "a" })
+  assert.equal(h.map((c) => c.text).join(","), "a,b")
+  for (let i = 0; i < 250; i = i + 1) {
+    h = pushClip(h, { text: "x" + i })
+  }
+  assert.equal(h.length, 200)
+})
+
+test("history rows", () => {
+  clearClips()
+  record({ text: "hello world", app: "Notes", appPath: "/Applications/Notes.app" })
+  record({ text: "second", app: "Moo", appPath: "" })
+  let rows = clipboardHistory("", 10, null, (p) => "icon:" + p)
+  assert.equal(rows.length, 2)
+  assert.equal(rows[0].text, "second")
+  assert.equal(rows[0].icon, "")
+  assert.equal(rows[1].icon, "icon:/Applications/Notes.app")
+  assert.equal(rows[1].ago, "just now")
+  let fuzzy = (q, titles, limit) => titles.map((t, i) => ({ index: i, t: t })).filter((x) => x.t.indexOf(q) >= 0)
+  assert.equal(clipboardHistory("hello", 10, fuzzy, (p) => "").map((r) => r.text).join(), "hello world")
+})

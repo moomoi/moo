@@ -110,13 +110,14 @@ extern "C" fn on_swift_tool(session: u64, name: *const c_char, args: *const c_ch
     }
     let out = Arc::new(Mutex::new(String::new()));
     let slot = out.clone();
-    let call = format!("{name} {args}");
+    // Logged: the tool's name and sizes, never the arguments or reply (the user's words and files).
+    let call = format!("{name} ({} chars of arguments)", args.len());
     DispatchQueue::main().exec_sync(move || {
         let reply = run_tool(session, &name, &args);
         *slot.lock().unwrap() = reply;
     });
     let reply = std::mem::take(&mut *out.lock().unwrap());
-    eprintln!("moo: AI tool {call} -> {}", reply.lines().next().unwrap_or(""));
+    crate::mac::debug_log(&format!("AI tool {call} -> {} chars", reply.len()));
     let c = CString::new(reply.replace('\0', "")).unwrap();
     unsafe { strdup(c.as_ptr()) }
 }

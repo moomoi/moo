@@ -1,0 +1,122 @@
+// Window layouts as pure geometry. Rects are { x, y, w, h } with a top-left origin (Accessibility's
+// coordinates).
+
+// [id, title] for every layout, in menu order. next-display, previous-display and restore need
+// more than one screen's geometry and are handled by the caller.
+export let LAYOUTS = [
+  ["left-half", "Left Half"], ["right-half", "Right Half"], ["top-half", "Top Half"], ["bottom-half", "Bottom Half"],
+  ["top-left", "Top Left Quarter"], ["top-right", "Top Right Quarter"], ["bottom-left", "Bottom Left Quarter"],
+  ["bottom-right", "Bottom Right Quarter"], ["left-third", "First Third"], ["center-third", "Center Third"],
+  ["right-third", "Last Third"], ["left-two-thirds", "First Two Thirds"], ["right-two-thirds", "Last Two Thirds"],
+  ["maximize", "Maximize"], ["almost-maximize", "Almost Maximize"], ["maximize-height", "Maximize Height"],
+  ["center", "Center"], ["reasonable-size", "Reasonable Size"], ["next-display", "Next Display"],
+  ["previous-display", "Previous Display"], ["restore", "Restore"]
+]
+
+export fn layoutTitle(lid) {
+  for (let i = 0; i < LAYOUTS.length; i = i + 1) {
+    if (LAYOUTS[i][0] === lid) {
+      return LAYOUTS[i][1]
+    }
+  }
+  return null
+}
+
+fn rect(x, y, w, h) {
+  return { x: x, y: y, w: w, h: h }
+}
+
+// Rust's f64::round: half away from zero.
+fn roundAway(n) {
+  return n < 0 ? -Math.round(-n) : Math.round(n)
+}
+
+fn rounded(r) {
+  return rect(roundAway(r.x), roundAway(r.y), roundAway(r.w), roundAway(r.h))
+}
+
+fn clamp(n, lo, hi) {
+  return Math.min(Math.max(n, lo), hi)
+}
+
+fn centered(v, w, h) {
+  return rect(v.x + (v.w - w) / 2, v.y + (v.h - h) / 2, w, h)
+}
+
+// Where a window at `cur` goes for `layout` on a screen whose usable area is `v`, or null.
+export fn layoutFrame(layout, v, cur) {
+  let hw = v.w / 2
+  let hh = v.h / 2
+  let t = v.w / 3
+  let r = null
+  if (layout === "left-half") { r = rect(v.x, v.y, hw, v.h) }
+  else if (layout === "right-half") { r = rect(v.x + hw, v.y, v.w - hw, v.h) }
+  else if (layout === "top-half") { r = rect(v.x, v.y, v.w, hh) }
+  else if (layout === "bottom-half") { r = rect(v.x, v.y + hh, v.w, v.h - hh) }
+  else if (layout === "top-left") { r = rect(v.x, v.y, hw, hh) }
+  else if (layout === "top-right") { r = rect(v.x + hw, v.y, v.w - hw, hh) }
+  else if (layout === "bottom-left") { r = rect(v.x, v.y + hh, hw, v.h - hh) }
+  else if (layout === "bottom-right") { r = rect(v.x + hw, v.y + hh, v.w - hw, v.h - hh) }
+  else if (layout === "left-third") { r = rect(v.x, v.y, t, v.h) }
+  else if (layout === "center-third") { r = rect(v.x + t, v.y, t, v.h) }
+  else if (layout === "right-third") { r = rect(v.x + 2 * t, v.y, v.w - 2 * t, v.h) }
+  else if (layout === "left-two-thirds") { r = rect(v.x, v.y, 2 * t, v.h) }
+  else if (layout === "right-two-thirds") { r = rect(v.x + t, v.y, v.w - t, v.h) }
+  else if (layout === "maximize") { r = rect(v.x, v.y, v.w, v.h) }
+  else if (layout === "almost-maximize") { r = centered(v, v.w * 0.9, v.h * 0.9) }
+  else if (layout === "maximize-height") {
+    let w = Math.min(cur.w, v.w)
+    r = rect(clamp(cur.x, v.x, Math.max(v.x + v.w - w, v.x)), v.y, w, v.h)
+  }
+  else if (layout === "center") { r = centered(v, Math.min(cur.w, v.w), Math.min(cur.h, v.h)) }
+  else if (layout === "reasonable-size") { r = centered(v, Math.max(v.w * 0.6, Math.min(cur.w, v.w * 0.6)), v.h * 0.7) }
+  return r === null ? null : rounded(r)
+}
+
+// The same relative place and size on another screen.
+export fn moveToScreen(cur, from, to) {
+  let sx = to.w / from.w
+  let sy = to.h / from.h
+  let w = Math.min(cur.w * sx, to.w)
+  let h = Math.min(cur.h * sy, to.h)
+  let x = clamp(to.x + (cur.x - from.x) * sx, to.x, to.x + to.w - w)
+  let y = clamp(to.y + (cur.y - from.y) * sy, to.y, to.y + to.h - h)
+  return rounded(rect(x, y, w, h))
+}
+
+fn overlap(a, b) {
+  let w = Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x)
+  let h = Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y)
+  return w > 0 && h > 0 ? w * h : 0
+}
+
+// The screen (index) that holds most of `r`, or whose center is nearest.
+export fn screenFor(r, screens) {
+  let best = -1
+  let bestArea = 0
+  for (let i = 0; i < screens.length; i = i + 1) {
+    let a = overlap(screens[i], r)
+    if (a > bestArea) {
+      best = i
+      bestArea = a
+    }
+  }
+  if (best >= 0) {
+    return best
+  }
+  let cx = r.x + r.w / 2
+  let cy = r.y + r.h / 2
+  let nearest = 0
+  let nearestD = -1
+  for (let i = 0; i < screens.length; i = i + 1) {
+    let s = screens[i]
+    let dx = s.x + s.w / 2 - cx
+    let dy = s.y + s.h / 2 - cy
+    let d = dx * dx + dy * dy
+    if (nearestD < 0 || d < nearestD) {
+      nearest = i
+      nearestD = d
+    }
+  }
+  return nearest
+}

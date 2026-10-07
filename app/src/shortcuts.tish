@@ -1,0 +1,518 @@
+// User shortcuts and hotkeys, stored as hand-editable JSON in `~/.config/moo/shortcuts.json`
+// (`$XDG_CONFIG_HOME/moo`, or `MOO_CONFIG` for the file itself):
+//
+//   {
+//     "launcher": "cmd+space",
+//     "shortcuts": [
+//       { "keyword": "g", "name": "Google", "kind": "url", "target": "https://www.google.com/search?q={query}" },
+//       { "keyword": "dl", "name": "Downloads", "kind": "open", "target": "~/Downloads", "hotkey": "ctrl+alt+d" }
+//     ],
+//     "hotkeys": [{ "keys": "cmd+shift+v", "run": "moo:clipboard" }],
+//     "aliases": { "moo:clipboard": "cb" },
+//     "disabled": ["moo:system:empty-trash"],
+//     "keys": { "actions": "cmd+j" },
+//     "search": "https://duckduckgo.com/?q={query}",
+//     "ai": { "model": "hypery:gpt-5-mini", "providers": { "work": { "url": "https://llm.example/v1", "keyEnv": "WORK_KEY" } } }
+//   }
+//
+// Type a keyword, a space and some text: the text fills `{query}`. Kinds: `url` opens the
+// expanded URL (query percent-encoded), `open` opens an app, file or folder, `command` runs a
+// Moo or plugin command with `input` as its search text, `shell` runs `/bin/sh -c` (values passed
+// as `"$1"`..`"$3"`) and shows, copies or discards the output, `text` copies the expanded text (or,
+// with `"expand": true`, replaces the keyword wherever it is typed), `ai` sends the expanded
+// prompt to `model` (or the default model). Templates also take `{clipboard}`, `{selection}` (the
+// text selected in the frontmost app), `{date}` (2026-10-03) and `{time}` (17:20).
+//
+// `aliases` and `disabled` name commands and apps by what they run (as `hotkeys` do): typing an
+// alias brings its command first, and disabled ones are left out of search. `keys` holds Moo's
+// own panel keys that differ from the defaults, by action (`none` for no key).
+//
+// Pure: no file or native access, so `tish test` can run it. Reading and writing the file is in
+// shortcutsfile.tish.
+
+export let KINDS = ["url", "open", "command", "shell", "text", "ai"]
+export let OUTPUTS = ["show", "copy", "none"]
+let MAX_KEYWORD = 32
+// Top-level keys this file understands; others are kept as they are when it is rewritten.
+let KNOWN = ["launcher", "shortcuts", "hotkeys", "aliases", "disabled", "keys", "search", "ai"]
+let PROVIDER_FIELDS = ["title", "url", "keyEnv", "clientId", "redirectUri", "organization"]
+
+fn str(v) {
+  if (typeof v === "string") {
+    return v
+  }
+  if (typeof v === "number") {
+    return "" + v
+  }
+  return ""
+}
+
+fn isObject(v) {
+  return typeof v === "object" && v !== null && !Array.isArray(v)
+}
+
+fn hasSpace(s) {
+  return RegExp("\\s", "u").test(s)
+}
+
+fn same(a, b) {
+  return a.toLowerCase() === b.toLowerCase()
+}
+
+fn byFirst(a, b) {
+  return a[0] < b[0] ? -1 : (a[0] > b[0] ? 1 : (a[1] < b[1] ? -1 : (a[1] > b[1] ? 1 : 0)))
+}
+
+export fn emptyConfig() {
+  return { launcher: "", shortcuts: [], hotkeys: [], aliases: [], disabled: [], keys: [], search: "",
+    ai: { model: "", providers: [] }, extra: {} }
+}
+
+export fn shortcut(v) {
+  return {
+    keyword: str(v.keyword), name: str(v.name), kind: str(v.kind), target: str(v.target), input: str(v.input),
+    output: str(v.output), hotkey: str(v.hotkey), model: str(v.model), expand: v.expand === true
+  }
+}
+
+fn normalize(s) {
+  s.keyword = s.keyword.trim()
+  if (s.name.trim() === "") {
+    s.name = s.keyword
+  }
+  if (s.kind === "command" && s.input === "") {
+    s.input = "{query}"
+  }
+  if (s.kind === "shell" && s.output === "") {
+    s.output = "show"
+  }
+  return s
+}
+
+// null when `keyword` can be used; `replacing` is the keyword of the shortcut being edited.
+export fn checkKeyword(cfg, keyword, replacing) {
+  let k = keyword.trim()
+  if (k === "") {
+    return "needs a keyword"
+  }
+  if (hasSpace(k)) {
+    return "keyword `" + k + "` cannot contain spaces"
+  }
+  if (k.length > MAX_KEYWORD) {
+    return "keyword `" + k + "` is longer than " + MAX_KEYWORD + " characters"
+  }
+  let editing = typeof replacing === "string" && replacing !== "" && same(replacing, k)
+  for (let i = 0; i < cfg.shortcuts.length; i = i + 1) {
+    if (same(cfg.shortcuts[i].keyword, k) && !editing) {
+      return "keyword `" + k + "` is already used by \"" + cfg.shortcuts[i].name + "\""
+    }
+  }
+  for (let i = 0; i < cfg.aliases.length; i = i + 1) {
+    if (same(cfg.aliases[i][1], k)) {
+      return "`" + k + "` is already the alias of " + cfg.aliases[i][0]
+    }
+  }
+  return null
+}
+
+// null when `s` can be added to `cfg`.
+export fn check(cfg, s, replacing) {
+  if (KINDS.indexOf(s.kind) < 0) {
+    return "unknown kind `" + s.kind + "` (url, open, command, shell, text, ai)"
+  }
+  let e = checkKeyword(cfg, s.keyword, replacing)
+  if (e !== null) {
+    return e
+  }
+  if (s.target.trim() === "") {
+    return "needs a target"
+  }
+  if (s.kind === "shell" && s.output !== "" && OUTPUTS.indexOf(s.output) < 0) {
+    return "output must be show, copy or none, not `" + s.output + "`"
+  }
+  return null
+}
+
+// null when `alias` can name `run`: one word, not a shortcut keyword or another alias.
+export fn checkAlias(cfg, alias, run) {
+  let a = alias.trim()
+  if (run.trim() === "") {
+    return "needs something to run"
+  }
+  if (a === "") {
+    return "needs an alias"
+  }
+  if (hasSpace(a)) {
+    return "alias `" + a + "` cannot contain spaces"
+  }
+  if (a.length > MAX_KEYWORD) {
+    return "alias `" + a + "` is longer than " + MAX_KEYWORD + " characters"
+  }
+  for (let i = 0; i < cfg.shortcuts.length; i = i + 1) {
+    if (same(cfg.shortcuts[i].keyword, a)) {
+      return "`" + a + "` is the keyword of \"" + cfg.shortcuts[i].name + "\""
+    }
+  }
+  for (let i = 0; i < cfg.aliases.length; i = i + 1) {
+    let p = cfg.aliases[i]
+    if (same(p[1], a) && p[0] !== run.trim()) {
+      return "`" + a + "` is already the alias of " + p[0]
+    }
+  }
+  return null
+}
+
+// Parse the file's text -> { cfg, warnings } or { error }. Invalid entries are skipped with a
+// warning each, so one typo does not lose every shortcut. `keysError(spec)` -> null or why the key
+// spec doesn't parse.
+export fn parse(json, keysError) {
+  let cfg = emptyConfig()
+  if (json.trim() === "") {
+    return { cfg: cfg, warnings: [] }
+  }
+  let root = JSON.parse(json)
+  if (root === null) {
+    return { error: "the file is not valid JSON" }
+  }
+  if (!isObject(root)) {
+    return { error: "the file must contain a JSON object" }
+  }
+  let rootKeys = Object.keys(root)
+  for (let i = 0; i < rootKeys.length; i = i + 1) {
+    if (KNOWN.indexOf(rootKeys[i]) < 0) {
+      cfg.extra[rootKeys[i]] = root[rootKeys[i]]
+    }
+  }
+  cfg.launcher = str(root.launcher)
+  cfg.search = str(root.search)
+  if (isObject(root.ai)) {
+    cfg.ai.model = str(root.ai.model)
+    let p = root.ai.providers
+    if (isObject(p)) {
+      let ids = Object.keys(p).sort()
+      for (let i = 0; i < ids.length; i = i + 1) {
+        let v = isObject(p[ids[i]]) ? p[ids[i]] : {}
+        let out = { id: ids[i] }
+        for (let j = 0; j < PROVIDER_FIELDS.length; j = j + 1) {
+          out[PROVIDER_FIELDS[j]] = str(v[PROVIDER_FIELDS[j]])
+        }
+        cfg.ai.providers.push(out)
+      }
+    }
+  }
+  let warnings = []
+  let list = Array.isArray(root.shortcuts) ? root.shortcuts : []
+  for (let i = 0; i < list.length; i = i + 1) {
+    let s = shortcut(isObject(list[i]) ? list[i] : {})
+    let e = check(cfg, s, null)
+    if (e === null) {
+      cfg.shortcuts.push(normalize(s))
+    } else if (KINDS.indexOf(s.kind) < 0) {
+      warnings.push("shortcut " + (i + 1) + ": " + e)
+    } else {
+      warnings.push("shortcut " + (i + 1) + " (" + s.keyword + "): " + e)
+    }
+  }
+  let hk = Array.isArray(root.hotkeys) ? root.hotkeys : []
+  for (let i = 0; i < hk.length; i = i + 1) {
+    let h = isObject(hk[i]) ? hk[i] : {}
+    let b = { keys: str(h.keys), run: str(h.run), query: str(h.query) }
+    if (b.keys.trim() === "" || b.run.trim() === "") {
+      warnings.push("hotkey " + (i + 1) + ": needs `keys` and `run`")
+    } else {
+      cfg.hotkeys.push(b)
+    }
+  }
+  if (isObject(root.aliases)) {
+    let runs = Object.keys(root.aliases)
+    let pairs = []
+    for (let i = 0; i < runs.length; i = i + 1) {
+      pairs.push([runs[i].trim(), str(root.aliases[runs[i]]).trim()])
+    }
+    pairs.sort(byFirst)
+    for (let i = 0; i < pairs.length; i = i + 1) {
+      let e = checkAlias(cfg, pairs[i][1], pairs[i][0])
+      if (e === null) {
+        cfg.aliases.push(pairs[i])
+      } else {
+        warnings.push("alias of " + pairs[i][0] + ": " + e)
+      }
+    }
+  }
+  if (Array.isArray(root.disabled)) {
+    for (let i = 0; i < root.disabled.length; i = i + 1) {
+      if (typeof root.disabled[i] === "string") {
+        setDisabled(cfg, root.disabled[i], true)
+      }
+    }
+  }
+  if (isObject(root.keys)) {
+    let actions = Object.keys(root.keys)
+    for (let i = 0; i < actions.length; i = i + 1) {
+      let keys = str(root.keys[actions[i]]).trim()
+      let e = keys === "none" ? null : keysError(keys)
+      if (e !== null) {
+        warnings.push("key for " + actions[i] + ": " + e)
+      } else {
+        setPanelKey(cfg, actions[i], keys)
+      }
+    }
+  }
+  return { cfg: cfg, warnings: warnings }
+}
+
+// ── Edits ───────────────────────────────────────────────────────────────────
+// Each changes `cfg` in place and returns null, or returns why it can't.
+
+// Add `s`, or replace the shortcut keyed `replacing`.
+export fn upsert(cfg, s, replacing) {
+  let e = check(cfg, s, replacing)
+  if (e !== null) {
+    return e
+  }
+  normalize(s)
+  if (typeof replacing === "string" && replacing !== "") {
+    for (let i = 0; i < cfg.shortcuts.length; i = i + 1) {
+      if (same(cfg.shortcuts[i].keyword, replacing)) {
+        cfg.shortcuts[i] = s
+        return null
+      }
+    }
+  }
+  cfg.shortcuts.push(s)
+  return null
+}
+
+export fn remove(cfg, keyword) {
+  let before = cfg.shortcuts.length
+  cfg.shortcuts = cfg.shortcuts.filter((s) => !same(s.keyword, keyword.trim()))
+  return cfg.shortcuts.length !== before ? null : "no shortcut `" + keyword + "`"
+}
+
+// Add binding `h` ({ keys, run, query }), replacing an existing binding of the same keys. (One
+// object rather than three strings: the native compiler typed a separate `query` as a number.)
+export fn bind(cfg, h) {
+  let b = { keys: h.keys.trim(), run: h.run.trim(), query: h.query }
+  for (let i = 0; i < cfg.hotkeys.length; i = i + 1) {
+    if (same(cfg.hotkeys[i].keys, b.keys)) {
+      cfg.hotkeys[i] = b
+      return null
+    }
+  }
+  cfg.hotkeys.push(b)
+  return null
+}
+
+// Remove the binding of `keys`, or the hotkey of the shortcut that has them.
+export fn unbind(cfg, keys) {
+  let k = keys.trim()
+  let before = cfg.hotkeys.length
+  cfg.hotkeys = cfg.hotkeys.filter((h) => !same(h.keys, k))
+  let changed = cfg.hotkeys.length !== before
+  for (let i = 0; i < cfg.shortcuts.length; i = i + 1) {
+    if (same(cfg.shortcuts[i].hotkey, k)) {
+      cfg.shortcuts[i].hotkey = ""
+      changed = true
+    }
+  }
+  return changed ? null : "no hotkey `" + keys + "`"
+}
+
+// Give `run` the alias `alias`, or none when `alias` is empty.
+export fn setAlias(cfg, run, alias) {
+  let r = run.trim()
+  let a = alias.trim()
+  if (a !== "") {
+    let e = checkAlias(cfg, a, r)
+    if (e !== null) {
+      return e
+    }
+  }
+  cfg.aliases = cfg.aliases.filter((p) => p[0] !== r)
+  if (a !== "") {
+    cfg.aliases.push([r, a])
+    cfg.aliases.sort(byFirst)
+  }
+  return null
+}
+
+export fn setDisabled(cfg, run, disabled) {
+  let r = run.trim()
+  cfg.disabled = cfg.disabled.filter((x) => x !== r)
+  if (disabled && r !== "") {
+    cfg.disabled.push(r)
+    cfg.disabled.sort()
+  }
+  return null
+}
+
+// Set panel key `action` to `keys` (`none` for no key), or back to the default when empty.
+export fn setPanelKey(cfg, action, keys) {
+  let a = action.trim()
+  cfg.keys = cfg.keys.filter((p) => p[0] !== a)
+  if (keys.trim() !== "" && a !== "") {
+    cfg.keys.push([a, keys.trim()])
+    cfg.keys.sort(byFirst)
+  }
+  return null
+}
+
+// Change one field of provider `id` (adding it if missing).
+export fn setProvider(cfg, id, field, value) {
+  let p = null
+  for (let i = 0; i < cfg.ai.providers.length; i = i + 1) {
+    if (cfg.ai.providers[i].id === id) {
+      p = cfg.ai.providers[i]
+    }
+  }
+  if (p === null) {
+    p = { id: id }
+    for (let j = 0; j < PROVIDER_FIELDS.length; j = j + 1) {
+      p[PROVIDER_FIELDS[j]] = ""
+    }
+    cfg.ai.providers.push(p)
+    cfg.ai.providers.sort((a, b) => a.id < b.id ? -1 : (a.id > b.id ? 1 : 0))
+  }
+  p[field] = value
+  return null
+}
+
+// ── Writing ─────────────────────────────────────────────────────────────────
+
+fn q(s) {
+  return JSON.stringify(s)
+}
+
+fn pairsJson(key, list) {
+  if (list.length === 0) {
+    return ""
+  }
+  let out = ",\n  " + q(key) + ": {"
+  for (let i = 0; i < list.length; i = i + 1) {
+    out = out + (i === 0 ? "\n    " : ",\n    ") + q(list[i][0]) + ": " + q(list[i][1])
+  }
+  return out + "\n  }"
+}
+
+// The file as written: two-space indent, one shortcut per line, fields in a fixed order, empty
+// optional fields left out, and keys this version doesn't know kept at the end.
+export fn toJson(cfg) {
+  let out = "{\n"
+  if (cfg.launcher !== "") {
+    out = out + "  \"launcher\": " + q(cfg.launcher) + ",\n"
+  }
+  out = out + "  \"shortcuts\": ["
+  for (let i = 0; i < cfg.shortcuts.length; i = i + 1) {
+    let s = cfg.shortcuts[i]
+    let fields = [["keyword", s.keyword], ["name", s.name], ["kind", s.kind], ["target", s.target]]
+    if (s.kind === "command" && s.input !== "{query}") {
+      fields.push(["input", s.input])
+    }
+    if (s.kind === "shell" && s.output !== "show") {
+      fields.push(["output", s.output])
+    }
+    if (s.hotkey !== "") {
+      fields.push(["hotkey", s.hotkey])
+    }
+    if (s.kind === "ai" && s.model !== "") {
+      fields.push(["model", s.model])
+    }
+    out = out + (i === 0 ? "\n    { " : ",\n    { ") + fields.map((f) => q(f[0]) + ": " + q(f[1])).join(", ")
+    if (s.kind === "text" && s.expand) {
+      out = out + ", \"expand\": true"
+    }
+    out = out + " }"
+  }
+  out = out + (cfg.shortcuts.length === 0 ? "],\n" : "\n  ],\n")
+  out = out + "  \"hotkeys\": ["
+  for (let i = 0; i < cfg.hotkeys.length; i = i + 1) {
+    let h = cfg.hotkeys[i]
+    out = out + (i === 0 ? "\n    { \"keys\": " : ",\n    { \"keys\": ") + q(h.keys) + ", \"run\": " + q(h.run)
+    if (h.query !== "") {
+      out = out + ", \"query\": " + q(h.query)
+    }
+    out = out + " }"
+  }
+  out = out + (cfg.hotkeys.length === 0 ? "]" : "\n  ]")
+  out = out + pairsJson("aliases", cfg.aliases)
+  if (cfg.disabled.length > 0) {
+    out = out + ",\n  \"disabled\": [" + cfg.disabled.map((r) => "\n    " + q(r)).join(",") + "\n  ]"
+  }
+  out = out + pairsJson("keys", cfg.keys)
+  if (cfg.search !== "") {
+    out = out + ",\n  \"search\": " + q(cfg.search)
+  }
+  if (cfg.ai.model !== "" || cfg.ai.providers.length > 0) {
+    out = out + ",\n  \"ai\": { \"model\": " + q(cfg.ai.model)
+    if (cfg.ai.providers.length > 0) {
+      out = out + ", \"providers\": {"
+      for (let i = 0; i < cfg.ai.providers.length; i = i + 1) {
+        let p = cfg.ai.providers[i]
+        let fields = PROVIDER_FIELDS.filter((f) => p[f] !== "").map((f) => " " + q(f) + ": " + q(p[f]))
+        out = out + (i === 0 ? "\n    " : ",\n    ") + q(p.id) + ": {" + fields.join(",") + " }"
+      }
+      out = out + "\n  }"
+    }
+    out = out + " }"
+  }
+  let extra = Object.keys(cfg.extra)
+  for (let i = 0; i < extra.length; i = i + 1) {
+    out = out + ",\n  " + q(extra[i]) + ": " + JSON.stringify(cfg.extra[extra[i]])
+  }
+  return out + "\n}\n"
+}
+
+// ── Templates ───────────────────────────────────────────────────────────────
+
+export fn needsQuery(template) {
+  return template.indexOf("{query}") >= 0 || template.indexOf("{}") >= 0
+}
+
+// Percent-encode everything but A-Z a-z 0-9 - _ . ~ (UTF-8 bytes).
+export fn percentEncode(s) {
+  return encodeURIComponent(s).split("!").join("%21").split("'").join("%27").split("(").join("%28")
+    .split(")").join("%29").split("*").join("%2A")
+}
+
+// How each kind inserts values: `url` percent-encodes; `shell` writes `"$1"`, `"$2"`, `"$3"` for
+// query, clipboard and selection, whose values are passed as the script's arguments (see
+// `shellValues`) and never spliced in, so quoting a placeholder can't run code.
+let SHELL_ARGS = { query: "\"$1\"", clipboard: "\"$2\"", selection: "\"$3\"" }
+
+// `vars`: { query, clipboard, selection, date, time }.
+export fn expand(template, vars, kind) {
+  let put = (name, v) => kind === "url" ? percentEncode(v) : (kind === "shell" ? SHELL_ARGS[name] : v)
+  let tokens = [["{query}", "query"], ["{}", "query"], ["{clipboard}", "clipboard"], ["{selection}", "selection"],
+    ["{date}", "date"], ["{time}", "time"]]
+  let out = ""
+  let rest = template
+  while (true) {
+    let i = rest.indexOf("{")
+    if (i < 0) {
+      break
+    }
+    out = out + rest.slice(0, i)
+    let tail = rest.slice(i)
+    let hit = null
+    for (let t = 0; t < tokens.length; t = t + 1) {
+      if (tail.startsWith(tokens[t][0])) {
+        hit = tokens[t]
+        break
+      }
+    }
+    if (hit === null) {
+      out = out + "{"
+      rest = tail.slice(1)
+    } else {
+      let name = hit[1]
+      out = out + (name === "date" || name === "time" ? vars[name] : put(name, vars[name]))
+      rest = tail.slice(hit[0].length)
+    }
+  }
+  return out + rest
+}
+
+// The arguments a shell shortcut's script reads as `$1`, `$2`, `$3`.
+export fn shellValues(vars) {
+  return [vars.query, vars.clipboard, vars.selection]
+}

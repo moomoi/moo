@@ -57,17 +57,21 @@ pub fn base64url(data: &[u8]) -> String {
     out
 }
 
-fn random(n: usize) -> Vec<u8> {
+/// `n` random bytes, or an error: a failed `getentropy` must not leave a predictable all-zero
+/// verifier or state.
+fn random(n: usize) -> Result<Vec<u8>, String> {
     let mut b = vec![0u8; n];
-    unsafe { getentropy(b.as_mut_ptr(), n) };
-    b
+    if unsafe { getentropy(b.as_mut_ptr(), n) } != 0 {
+        return Err("couldn't get random bytes for sign-in".into());
+    }
+    Ok(b)
 }
 
 /// `(verifier, challenge)` for PKCE S256.
-pub fn pkce() -> (String, String) {
-    let verifier = base64url(&random(32));
+pub fn pkce() -> Result<(String, String), String> {
+    let verifier = base64url(&random(32)?);
     let challenge = base64url(&sha256(verifier.as_bytes()));
-    (verifier, challenge)
+    Ok((verifier, challenge))
 }
 
 fn now() -> f64 {
@@ -108,6 +112,8 @@ fn token_request(ep: &Endpoints, params: &[(&str, &str)], old_refresh: &str) -> 
         headers: vec![("Content-Type", "application/x-www-form-urlencoded".into()), ("Accept", "application/json".into())],
         body: http::form(params),
         timeout: 30.0,
+        // Tokens go only to the endpoint that was checked (a plugin's may only be a declared host).
+        follow_redirects: false,
     };
     let (status, body) = http::fetch(&req)?;
     if status >= 400 {
@@ -203,13 +209,13 @@ pub fn login(ep: &Endpoints, open: impl FnOnce(&str), cancel: &AtomicBool) -> Re
     }
     let listener = TcpListener::bind("127.0.0.1:0").map_err(|e| format!("cannot listen for the sign-in redirect: {e}"))?;
     let port = listener.local_addr().map_err(|e| e.to_string())?.port();
-    let (verifier, challenge) = pkce();
+    let (verifier, challenge) = pkce()?;
     let (redirect, state) = if ep.relay.is_empty() {
-        (format!("http://127.0.0.1:{port}/callback"), base64url(&random(16)))
+        (format!("http://127.0.0.1:{port}/callback"), base64url(&random(16)?))
     } else {
-        (ep.relay.clone(), format!("{port}.{}", base64url(&random(16))))
+        (ep.relay.clone(), format!("{port}.{}", base64url(&random(16)?)))
     };
-    let enc = crate::shortcuts::percent_encode;
+    let enc = crate::http::percent_encode;
     let mut url = format!(
         "{}?response_type=code&client_id={}&redirect_uri={}&code_challenge={}&code_challenge_method=S256&state={}",
         ep.authorize,
@@ -221,7 +227,13 @@ pub fn login(ep: &Endpoints, open: impl FnOnce(&str), cancel: &AtomicBool) -> Re
     if !ep.scope.is_empty() {
         url.push_str(&format!("&scope={}", enc(&ep.scope)));
     }
+    // Extra parameters (a plugin's `params`) can't repeat the ones that carry this sign-in's
+    // security: a second redirect_uri, state or challenge would be ambiguous to the server.
+    const RESERVED: [&str; 7] = ["response_type", "client_id", "redirect_uri", "state", "code_challenge", "code_challenge_method", "scope"];
     for (k, v) in &ep.extra {
+        if RESERVED.contains(&k.to_ascii_lowercase().as_str()) {
+            continue;
+        }
         url.push_str(&format!("&{}={}", enc(k), enc(v)));
     }
     open(&url);
@@ -260,16 +272,23 @@ pub fn login(ep: &Endpoints, open: impl FnOnce(&str), cancel: &AtomicBool) -> Re
             let _ = write!(s, "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
             continue;
         }
+        // Only a callback carrying this sign-in's state may end it, with a code or an error. Anything
+        // else (another page, a stale tab, a forged ?error=) is answered and ignored, so it can't
+        // abort the sign-in.
+        if get("state") != state {
+            reply("Sign-in failed", "The response did not match this sign-in. Try again from Moo.");
+            continue;
+        }
         if !get("error").is_empty() {
             let why = if get("error_description").is_empty() { get("error") } else { get("error_description") };
             reply("Sign-in failed", &why);
             return Err(why);
         }
-        if get("state") != state {
-            reply("Sign-in failed", "The response did not match this sign-in. Try again from Moo.");
-            return Err("state mismatch".into());
-        }
         let code = get("code");
+        if code.is_empty() {
+            reply("Sign-in failed", "The response had no authorization code. Try again from Moo.");
+            return Err("no authorization code in the response".into());
+        }
         let result = token_request(
             ep,
             &[("grant_type", "authorization_code"), ("code", &code), ("redirect_uri", &redirect), ("client_id", &ep.client_id), ("code_verifier", &verifier)],
@@ -283,25 +302,6 @@ pub fn login(ep: &Endpoints, open: impl FnOnce(&str), cancel: &AtomicBool) -> Re
     }
 }
 
-pub fn to_json(t: &Tokens) -> String {
-    let mut out = String::from("{\"access\":\"");
-    tishlang_core::escape_json_string_into(&mut out, &t.access);
-    out.push_str("\",\"refresh\":\"");
-    tishlang_core::escape_json_string_into(&mut out, &t.refresh);
-    out.push_str(&format!("\",\"expires\":{}}}", t.expires_at));
-    out
-}
-
-pub fn from_json(s: &str) -> Option<Tokens> {
-    let v = json_parse(s).ok()?;
-    Some(Tokens { access: field(&v, "access"), refresh: field(&v, "refresh"), expires_at: field(&v, "expires").parse().unwrap_or(0.0) })
-}
-
-/// Expired, or expiring within a minute.
-pub fn stale(t: &Tokens) -> bool {
-    t.expires_at > 0.0 && t.expires_at < now() + 60.0
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -311,7 +311,7 @@ mod tests {
     fn pkce_matches_rfc_7636() {
         let verifier = "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk";
         assert_eq!(base64url(&sha256(verifier.as_bytes())), "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM");
-        let (v, c) = pkce();
+        let (v, c) = pkce().unwrap();
         assert_eq!(v.len(), 43);
         assert_eq!(c, base64url(&sha256(v.as_bytes())));
         assert_eq!(base64url(b"f"), "Zg");
@@ -326,8 +326,7 @@ mod tests {
         assert_eq!(p, vec![("code".into(), "a/b c".into()), ("state".into(), "xyz".into())]);
         let t = parse_tokens(r#"{"access_token":"at","refresh_token":"rt","expires_in":3600}"#, "").unwrap();
         assert_eq!((t.access.as_str(), t.refresh.as_str()), ("at", "rt"));
-        assert!(!stale(&t));
-        assert_eq!(from_json(&to_json(&t)), Some(t));
+        assert!(t.expires_at > 0.0);
         let kept = parse_tokens(r#"{"access_token":"at2"}"#, "old").unwrap();
         assert_eq!(kept.refresh, "old", "a refresh without a new refresh token keeps the old one");
         assert!(parse_tokens(r#"{"error":"invalid_grant","error_description":"code expired"}"#, "").unwrap_err().contains("code expired"));

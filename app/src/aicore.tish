@@ -1,0 +1,452 @@
+// The pure half of the AI providers (ai.tish does the requests): built-in and configured providers,
+// model names, the streamed chat-completion parser, error messages, model lists, Hypery accounts and
+// OAuth token records. Remote and local models speak the OpenAI-compatible chat API
+// (`POST {base}/chat/completions` with `stream: true`, `GET {base}/models`); a model is named
+// `provider:model`.
+
+// Moo's OAuth app on hypery.ai (public client: PKCE). Its registered redirect is the moo.moi relay
+// (web/ in this repo), which hands the code to the loopback listener. Config and
+// `MOO_HYPERY_CLIENT_ID` / `MOO_HYPERY_REDIRECT` win.
+let HYPERY_CLIENT_ID = "app_1791139621564_l2l6kzx0m"
+let HYPERY_REDIRECT = "https://moo.moi/callback"
+
+// Picks which of the user's Hypery organizations a request acts for and bills to.
+export let ORG_HEADER = "x-hypery-active-organization-id"
+
+fn provider(pid, title, url, keyEnv, local) {
+  return { id: pid, title: title, url: url, keyEnv: keyEnv, oauth: null, scope: "", clientId: "", redirect: "",
+    local: local, modelsQuery: "", publicModels: false, account: false, organization: "" }
+}
+
+fn builtins() {
+  let hypery = provider("hypery", "Hypery", "https://hypery.ai/v1", "HYPERY_API_KEY", false)
+  hypery.oauth = { authorize: "/api/oauth/authorize", token: "/api/oauth/token" }
+  hypery.scope = "ai:chat ai:models billing:read"
+  hypery.modelsQuery = "?category=chat&limit=1000"
+  hypery.publicModels = true
+  hypery.account = true
+  return [
+    hypery,
+    provider("openai", "OpenAI", "https://api.openai.com/v1", "OPENAI_API_KEY", false),
+    provider("ollama", "Ollama", "http://localhost:11434/v1", "", true),
+    provider("lmstudio", "LM Studio", "http://localhost:1234/v1", "", true)
+  ]
+}
+
+export fn isLocal(url) {
+  let i = url.indexOf("://")
+  let rest = i >= 0 ? url.slice(i + 3) : ""
+  let host = rest.split("/")[0]
+  if (host.startsWith("[")) {
+    host = host.slice(0, host.indexOf("]") + 1)
+  } else {
+    host = host.split(":")[0]
+  }
+  return host === "localhost" || host === "127.0.0.1" || host === "[::1]"
+}
+
+fn trimSlashes(s) {
+  let t = s
+  while (t.endsWith("/")) {
+    t = t.slice(0, t.length - 1)
+  }
+  return t
+}
+
+// Built-in providers with `ai.providers` overrides from shortcuts.json applied, then the config's
+// own. `cfgProviders`: [{ id, title, url, keyEnv, clientId, redirectUri, organization }]; `env`
+// supplies `MOO_<ID>_CLIENT_ID` / `MOO_<ID>_REDIRECT`.
+export fn providers(cfgProviders, env) {
+  let list = builtins()
+  for (let i = 0; i < cfgProviders.length; i = i + 1) {
+    let c = cfgProviders[i]
+    let p = null
+    for (let j = 0; j < list.length; j = j + 1) {
+      if (list[j].id === c.id) {
+        p = list[j]
+      }
+    }
+    if (p === null) {
+      p = provider(c.id, c.id, "", "", false)
+      list.push(p)
+    }
+    if (c.title !== "") {
+      p.title = c.title
+    }
+    if (c.url !== "") {
+      p.url = trimSlashes(c.url)
+      p.local = isLocal(p.url)
+    }
+    if (c.keyEnv !== "") {
+      p.keyEnv = c.keyEnv
+    }
+    if (c.clientId !== "") {
+      p.clientId = c.clientId
+    }
+    if (c.redirectUri !== "") {
+      p.redirect = c.redirectUri
+    }
+    p.organization = c.organization
+  }
+  for (let i = 0; i < list.length; i = i + 1) {
+    let p = list[i]
+    if (p.oauth === null) {
+      continue
+    }
+    let up = p.id.toUpperCase()
+    if (p.clientId === "") {
+      let v = env["MOO_" + up + "_CLIENT_ID"]
+      p.clientId = v ? v : (p.id === "hypery" ? HYPERY_CLIENT_ID : "")
+    }
+    if (p.redirect === "") {
+      let v = env["MOO_" + up + "_REDIRECT"]
+      p.redirect = v ? v : (p.id === "hypery" ? HYPERY_REDIRECT : "")
+    }
+  }
+  return list
+}
+
+// `provider:model` -> [provider, model]. `apple` (or empty) is Apple's on-device model.
+export fn splitModel(m) {
+  let t = m.trim()
+  if (t === "" || t === "apple") {
+    return ["apple", ""]
+  }
+  let i = t.indexOf(":")
+  return i < 0 ? [t, ""] : [t.slice(0, i), t.slice(i + 1)]
+}
+
+export fn origin(url) {
+  let i = url.indexOf("://")
+  let start = i >= 0 ? i + 3 : 0
+  let slash = url.indexOf("/", start)
+  return slash < 0 ? url : url.slice(0, slash)
+}
+
+// OAuth endpoints for a provider with browser sign-in, or null.
+export fn endpoints(p) {
+  if (p.oauth === null) {
+    return null
+  }
+  let o = origin(p.url)
+  return { authorize: o + p.oauth.authorize, token: o + p.oauth.token, clientId: p.clientId, scope: p.scope, relay: p.redirect }
+}
+
+export fn oauthAccount(pid) {
+  return pid + ".oauth"
+}
+
+export fn noCredential(p) {
+  let how = p.title + " needs an API key: `moo ai key " + p.id + " <key>`"
+  if (p.keyEnv !== "") {
+    how = how + " or $" + p.keyEnv
+  }
+  if (p.oauth !== null) {
+    how = how + ", or sign in with `moo ai login " + p.id + "`"
+  }
+  return how
+}
+
+// ── Bytes ───────────────────────────────────────────────────────────────────
+
+// UTF-8 bytes -> string. Malformed sequences become U+FFFD.
+export fn utf8(bytes) {
+  let out = []
+  let i = 0
+  let n = bytes.length
+  while (i < n) {
+    let b = bytes[i]
+    let cp = 65533
+    let len = 1
+    if (b < 128) {
+      cp = b
+    } else if (b >= 194 && b < 224 && i + 1 < n) {
+      cp = ((b & 31) << 6) | (bytes[i + 1] & 63)
+      len = 2
+    } else if (b >= 224 && b < 240 && i + 2 < n) {
+      cp = ((b & 15) << 12) | ((bytes[i + 1] & 63) << 6) | (bytes[i + 2] & 63)
+      len = 3
+    } else if (b >= 240 && b < 245 && i + 3 < n) {
+      cp = ((b & 7) << 18) | ((bytes[i + 1] & 63) << 12) | ((bytes[i + 2] & 63) << 6) | (bytes[i + 3] & 63)
+      len = 4
+    }
+    out.push(String.fromCharCode(cp))
+    i = i + len
+  }
+  return out.join("")
+}
+
+// Split a byte stream into lines: `feed(lines, chunk)` appends each completed line (without its
+// "\n" or "\r\n") to `lines.done` and keeps the rest in `lines.rest` for the next chunk. Splitting
+// on the newline byte keeps every line whole UTF-8.
+export fn newLines() {
+  return { rest: [], done: [] }
+}
+
+export fn feedLines(lines, chunk) {
+  let start = 0
+  for (let i = 0; i < chunk.length; i = i + 1) {
+    if (chunk[i] === 10) {
+      let line = lines.rest.concat(chunk.slice(start, i))
+      lines.rest = []
+      if (line.length > 0 && line[line.length - 1] === 13) {
+        line = line.slice(0, line.length - 1)
+      }
+      lines.done.push(utf8(line))
+      start = i + 1
+    }
+  }
+  if (start < chunk.length) {
+    lines.rest = lines.rest.concat(chunk.slice(start))
+  }
+}
+
+// ── Streamed chat completions ───────────────────────────────────────────────
+
+// A server-sent-events chat completion: { text, calls: [{ id, name, arguments }], finish, error,
+// done }. Events are dispatched at the blank line that ends them, and an event's `data:` lines are
+// joined with "\n" (so a JSON payload split over several lines still parses).
+export fn newStream() {
+  return { text: "", calls: [], finish: "", error: "", done: false, data: [] }
+}
+
+fn str(v) {
+  if (typeof v === "string") {
+    return v
+  }
+  if (typeof v === "number") {
+    return "" + v
+  }
+  return ""
+}
+
+export fn errorText(e) {
+  if (typeof e === "string") {
+    return e
+  }
+  if (typeof e !== "object" || e === null) {
+    return "unknown error"
+  }
+  let code = str(e.code)
+  let msg = str(e.message)
+  if (code !== "" && msg !== "") {
+    return code + ": " + msg
+  }
+  if (msg !== "") {
+    return msg
+  }
+  return code !== "" ? code : "unknown error"
+}
+
+// One event's data; true when the text or tool calls changed.
+fn dispatch(st, data) {
+  if (data === "[DONE]") {
+    st.done = true
+    return false
+  }
+  let v = JSON.parse(data)
+  if (typeof v !== "object" || v === null) {
+    return false
+  }
+  if ("error" in v && v.error !== null) {
+    st.error = errorText(v.error)
+    return false
+  }
+  let changed = false
+  let choices = Array.isArray(v.choices) ? v.choices : []
+  for (let c = 0; c < choices.length; c = c + 1) {
+    let choice = choices[c]
+    let finish = str(choice.finish_reason)
+    if (finish !== "") {
+      st.finish = finish
+    }
+    let delta = choice.delta
+    if (typeof delta !== "object" || delta === null) {
+      continue
+    }
+    let piece = str(delta.content)
+    if (piece !== "") {
+      st.text = st.text + piece
+      changed = true
+    }
+    let tcs = Array.isArray(delta.tool_calls) ? delta.tool_calls : []
+    for (let t = 0; t < tcs.length; t = t + 1) {
+      let tc = tcs[t]
+      let i = typeof tc.index === "number" ? tc.index : Math.max(st.calls.length - 1, 0)
+      while (st.calls.length <= i) {
+        st.calls.push({ id: "", name: "", arguments: "" })
+      }
+      let call = st.calls[i]
+      if (str(tc.id) !== "") {
+        call.id = str(tc.id)
+      }
+      if (typeof tc["function"] === "object" && tc["function"] !== null) {
+        if (str(tc["function"].name) !== "") {
+          call.name = str(tc["function"].name)
+        }
+        call.arguments = call.arguments + str(tc["function"].arguments)
+      }
+      changed = true
+    }
+  }
+  return changed
+}
+
+// Feed one line of the stream; true when the text or tool calls changed. Call `streamLine(st, "")`
+// at the end so a last event without its blank line still counts.
+export fn streamLine(st, line) {
+  if (line === "") {
+    if (st.data.length === 0) {
+      return false
+    }
+    let data = st.data.join("\n")
+    st.data = []
+    return dispatch(st, data)
+  }
+  if (line.startsWith(":")) {
+    return false
+  }
+  if (line.startsWith("data:")) {
+    let d = line.slice(5)
+    st.data.push(d.startsWith(" ") ? d.slice(1) : d)
+  }
+  return false
+}
+
+// A readable message for a failed response.
+export fn errorMessage(status, body) {
+  let v = JSON.parse(body)
+  let detail = ""
+  if (typeof v === "object" && v !== null) {
+    detail = errorText("error" in v ? v.error : v)
+  }
+  if (detail === "" || detail === "unknown error") {
+    detail = body.trim().slice(0, 200)
+  }
+  let what = "request failed"
+  if (status === 401) {
+    what = "the API key was rejected"
+  } else if (status === 402) {
+    what = "out of credit"
+  } else if (status === 403) {
+    what = "not allowed"
+  } else if (status === 404) {
+    what = "model or endpoint not found"
+  } else if (status === 429) {
+    what = "rate limited"
+  } else if (status >= 500 && status < 600) {
+    what = "the server failed"
+  }
+  return detail === "" ? "HTTP " + status + ": " + what : "HTTP " + status + ": " + what + " (" + detail + ")"
+}
+
+// ── Models ──────────────────────────────────────────────────────────────────
+
+fn stripTilde(s) {
+  return s.startsWith("~") ? s.slice(1) : s
+}
+
+// A readable name: the gateway's display name without an "Author: " prefix, else the id's last part.
+export fn displayName(name, mid) {
+  let n = name.trim()
+  if (n === "" || n === mid) {
+    let parts = mid.split("/")
+    return stripTilde(parts[parts.length - 1])
+  }
+  let i = n.indexOf(": ")
+  if (i >= 0 && i <= 24 && n.slice(i + 2).trim() !== "") {
+    return n.slice(i + 2).trim()
+  }
+  return n
+}
+
+// The models in a `/models` response, in the server's order (Hypery's is by popularity), each id
+// once: [{ id, name, owner, context, tier }].
+export fn parseModels(body) {
+  let v = JSON.parse(body)
+  if (typeof v !== "object" || v === null) {
+    return []
+  }
+  let all = (Array.isArray(v.data) ? v.data : []).concat(Array.isArray(v.models) ? v.models : [])
+  let seen = {}
+  let out = []
+  for (let i = 0; i < all.length; i = i + 1) {
+    let m = all[i]
+    let mid = str(m.id)
+    if (mid === "" || seen[mid] === true) {
+      continue
+    }
+    seen[mid] = true
+    let owner = str(m.owned_by)
+    if (owner === "" && mid.indexOf("/") >= 0) {
+      owner = stripTilde(mid.split("/")[0])
+    }
+    let ctx = Number(str(m.context_length))
+    out.push({ id: mid, name: displayName(str(m.name), mid), owner: owner, context: isNaN(ctx) ? 0 : ctx, tier: str(m.pricing_tier_label) })
+  }
+  return out
+}
+
+// ── Hypery accounts ─────────────────────────────────────────────────────────
+
+// `GET /api/auth/list_memberships` -> the user's organizations, personal first.
+export fn parseOrgs(body) {
+  let v = JSON.parse(body)
+  let ms = typeof v === "object" && v !== null && Array.isArray(v.memberships) ? v.memberships : []
+  let personal = []
+  let others = []
+  for (let i = 0; i < ms.length; i = i + 1) {
+    let t = ms[i].team
+    if (typeof t !== "object" || t === null || str(t.id) === "") {
+      continue
+    }
+    let o = { id: str(t.id), name: str(t.name), slug: str(t.slug), image: str(t.image), personal: t.isPersonal === true, role: str(t.role) }
+    if (o.personal) {
+      personal.push(o)
+    } else {
+      others.push(o)
+    }
+  }
+  return personal.concat(others)
+}
+
+// The chosen organization when the user belongs to it, else the personal one, else null.
+export fn activeOrg(orgs, chosen) {
+  for (let i = 0; i < orgs.length; i = i + 1) {
+    if (chosen !== "" && orgs[i].id === chosen) {
+      return orgs[i]
+    }
+  }
+  for (let i = 0; i < orgs.length; i = i + 1) {
+    if (orgs[i].personal) {
+      return orgs[i]
+    }
+  }
+  return null
+}
+
+// Credits as dollars (100 credits = $1); -1 when unknown.
+export fn dollars(credits) {
+  let n = Number(str(credits))
+  return str(credits) === "" || isNaN(n) ? -1 : n / 100
+}
+
+// ── OAuth tokens (stored in the Keychain as JSON) ───────────────────────────
+
+// { access, refresh, expires } from the Keychain's JSON, or null.
+export fn parseTokens(json) {
+  let v = JSON.parse(json)
+  if (typeof v !== "object" || v === null || str(v.access) === "") {
+    return null
+  }
+  return { access: str(v.access), refresh: str(v.refresh), expires: typeof v.expires === "number" ? v.expires : 0 }
+}
+
+export fn tokensJson(t) {
+  return JSON.stringify({ access: t.access, refresh: t.refresh, expires: t.expires })
+}
+
+// Expired, or expiring within a minute. `now` is Unix seconds.
+export fn staleTokens(t, now) {
+  return t.expires > 0 && t.expires < now + 60
+}

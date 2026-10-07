@@ -1,0 +1,153 @@
+// Small stores the launcher keeps between runs, in `~/Library/Application Support/Moo`:
+// view preferences (prefs.tsv, `key<TAB>value` per line; `MOO_PREFS`) and search history
+// (history.txt, queries the user opened something from, newest first; `MOO_HISTORY`).
+
+import { readFile, writeFile, mkdir, rename, fileExists } from "tish:fs"
+import { env } from "tish:process"
+
+let MAX_HISTORY = 50
+
+fn dataPath(override, name) {
+  if (override) {
+    return override
+  }
+  return env.HOME ? env.HOME + "/Library/Application Support/Moo/" + name : ""
+}
+
+fn readText(path) {
+  if (path === "" || !fileExists(path)) {
+    return ""
+  }
+  let t = readFile(path)
+  return typeof t === "string" ? t : ""
+}
+
+// Write atomically (temp file, then rename), creating the folder.
+fn writeText(path, text) {
+  if (path === "") {
+    return
+  }
+  let dir = path.slice(0, path.lastIndexOf("/"))
+  mkdir(dir, { recursive: true })
+  let w = writeFile(path + ".tmp", text)
+  let r = w === null ? rename(path + ".tmp", path) : w
+  if (r !== null) {
+    console.error("moo: saving " + path + " failed: " + r.error)
+  }
+}
+
+// ── Pure: formats ───────────────────────────────────────────────────────────
+
+export fn parsePrefs(text) {
+  let out = []
+  let lines = text.split("\n")
+  for (let i = 0; i < lines.length; i = i + 1) {
+    let tab = lines[i].indexOf("\t")
+    if (tab >= 0) {
+      out.push([lines[i].slice(0, tab), lines[i].slice(tab + 1)])
+    }
+  }
+  return out
+}
+
+export fn formatPrefs(items) {
+  return items.map((p) => p[0] + "\t" + p[1] + "\n").join("")
+}
+
+fn clean(s) {
+  return s.split("\t").join(" ").split("\n").join(" ")
+}
+
+// Set `key` in `items` (tabs and newlines become spaces); false when the key is empty.
+export fn putPref(items, key, value) {
+  let k = clean(key.trim())
+  if (k === "") {
+    return false
+  }
+  for (let i = 0; i < items.length; i = i + 1) {
+    if (items[i][0] === k) {
+      items[i][1] = clean(value)
+      return true
+    }
+  }
+  items.push([k, clean(value)])
+  return true
+}
+
+export fn parseHistory(text) {
+  return text.split("\n").filter((l) => l.trim() !== "").slice(0, MAX_HISTORY)
+}
+
+// `items` with `query` moved to the top, or null when it's blank.
+export fn pushHistory(items, query) {
+  let q = query.trim().split("\n").join(" ")
+  if (q === "") {
+    return null
+  }
+  return [q].concat(items.filter((i) => i !== q)).slice(0, MAX_HISTORY)
+}
+
+// ── Prefs ───────────────────────────────────────────────────────────────────
+
+let prefs = null
+
+fn prefsPath() {
+  return dataPath(env.MOO_PREFS, "prefs.tsv")
+}
+
+fn loadedPrefs() {
+  if (prefs === null) {
+    prefs = parsePrefs(readText(prefsPath()))
+  }
+  return prefs
+}
+
+// The remembered value, or "".
+export fn getPref(key) {
+  let items = loadedPrefs()
+  for (let i = 0; i < items.length; i = i + 1) {
+    if (items[i][0] === key) {
+      return items[i][1]
+    }
+  }
+  return ""
+}
+
+export fn setPref(key, value) {
+  if (putPref(loadedPrefs(), key, value)) {
+    writeText(prefsPath(), formatPrefs(prefs))
+  }
+}
+
+// ── Search history ──────────────────────────────────────────────────────────
+
+let history = null
+
+fn historyPath() {
+  return dataPath(env.MOO_HISTORY, "history.txt")
+}
+
+fn loadedHistory() {
+  if (history === null) {
+    history = parseHistory(readText(historyPath()))
+  }
+  return history
+}
+
+// Up to `limit` queries, newest first.
+export fn searchHistory(limit) {
+  return loadedHistory().slice(0, limit)
+}
+
+export fn addSearchHistory(query) {
+  let next = pushHistory(loadedHistory(), query)
+  if (next !== null) {
+    history = next
+    writeText(historyPath(), history.join("\n") + "\n")
+  }
+}
+
+export fn clearSearchHistory() {
+  history = []
+  writeText(historyPath(), "\n")
+}

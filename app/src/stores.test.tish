@@ -1,0 +1,28 @@
+import { test } from "tish:test"
+import assert from "node:assert/strict"
+import { parsePrefs, formatPrefs, putPref, parseHistory, pushHistory } from "./stores.tish"
+
+test("prefs set, clean and round trip", () => {
+  let items = []
+  putPref(items, "appsView", "list")
+  putPref(items, "other", "a\tb")
+  putPref(items, "appsView", "grid")
+  assert.equal(putPref(items, "  ", "x"), false)
+  let back = parsePrefs(formatPrefs(items))
+  assert.equal(JSON.stringify(back), JSON.stringify([["appsView", "grid"], ["other", "a b"]]))
+})
+
+test("history newest first without duplicates", () => {
+  let h = pushHistory([], "safari")
+  h = pushHistory(h, "  notes ")
+  h = pushHistory(h, "safari")
+  assert.equal(JSON.stringify(h), JSON.stringify(["safari", "notes"]))
+  assert.equal(pushHistory(h, "   "), null)
+  assert.equal(JSON.stringify(parseHistory(h.join("\n") + "\n")), JSON.stringify(h))
+  let many = []
+  for (let i = 0; i < 60; i = i + 1) {
+    many = pushHistory(many, "q" + i)
+  }
+  assert.equal(many.length, 50)
+  assert.equal(many[0], "q59")
+})

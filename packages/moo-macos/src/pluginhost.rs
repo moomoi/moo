@@ -30,11 +30,12 @@ const RELAY: &str = "https://moo.moi/callback";
 pub struct Host {
     pub id: String,
     pub network: Vec<String>,
+    /// This plugin's pending sign-in, if any: `cancelSignIn` stops only its own.
+    pub sign_in_cancel: Option<Arc<AtomicBool>>,
 }
 
 pub type Shared = Arc<Mutex<Host>>;
 
-static SIGN_IN_CANCEL: AtomicBool = AtomicBool::new(false);
 
 thread_local! {
     static REFRESH: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
@@ -152,8 +153,10 @@ fn save_store(id: &str, map: &BTreeMap<String, String>) -> bool {
     path.parent().is_some_and(|d| std::fs::create_dir_all(d).is_ok()) && std::fs::write(&tmp, out).is_ok() && std::fs::rename(&tmp, &path).is_ok()
 }
 
-fn secret_account(id: &str, key: &str) -> String {
-    format!("plugin.{id}.{key}")
+/// The Keychain account for a plugin secret, or None when the id or key isn't `[A-Za-z0-9_-]+`.
+/// Neither may contain the `.` separator, so `("a.b", "c")` and `("a", "b.c")` can't collide.
+fn secret_account(id: &str, key: &str) -> Option<String> {
+    Some(format!("plugin.{}.{}", safe_id(id)?, safe_id(key)?))
 }
 
 fn arg(args: &[Value], i: usize) -> String {
@@ -205,7 +208,7 @@ fn fetch(host: &Shared, args: &[Value]) {
             "DELETE" => "DELETE",
             _ => "GET",
         };
-        let mut req = http::Request { method, url: &url, headers: Vec::new(), body: Vec::new(), timeout: 30.0 };
+        let mut req = http::Request { method, url: &url, headers: Vec::new(), body: Vec::new(), timeout: 30.0, follow_redirects: false };
         for (k, v) in &headers {
             req.headers.push((k.as_str(), v.clone()));
         }
@@ -243,8 +246,13 @@ fn signed_in_value(r: SignedIn) -> Value {
 }
 
 fn sign_in(host: &Shared, args: &[Value]) {
+    let cancel = Arc::new(AtomicBool::new(false));
     let (id, network) = {
-        let h = host.lock().unwrap_or_else(|e| e.into_inner());
+        let mut h = host.lock().unwrap_or_else(|e| e.into_inner());
+        // A new sign-in replaces this plugin's previous one: stop that one first.
+        if let Some(old) = h.sign_in_cancel.replace(cancel.clone()) {
+            old.store(true, Ordering::Relaxed);
+        }
         (h.id.clone(), h.network.clone())
     };
     let request = bridge::hold(callback(args, 1, format!("{id}: signIn callback")));
@@ -261,7 +269,6 @@ fn sign_in(host: &Shared, args: &[Value]) {
         let error = format!("{id} may not sign in through {}: add its host to permissions.network", ep.authorize);
         return bridge::post(request, SignedIn { tokens: None, error }, signed_in_value, true);
     }
-    SIGN_IN_CANCEL.store(false, Ordering::Relaxed);
     std::thread::spawn(move || {
         let r = oauth::login(
             &ep,
@@ -271,7 +278,7 @@ fn sign_in(host: &Shared, args: &[Value]) {
                     crate::mac::launch(&url);
                 });
             },
-            &SIGN_IN_CANCEL,
+            &cancel,
         );
         let out = match r {
             Ok(t) => SignedIn { tokens: Some(t), error: String::new() },
@@ -337,9 +344,22 @@ pub fn object(host: Shared) -> Value {
         ),
     ]);
     let secret = obj(vec![
-        ("get", native(&host, |h, a| s(&keychain::get(&secret_account(&id_of(h), &arg(a, 0))).unwrap_or_default()))),
-        ("set", native(&host, |h, a| Value::Bool(keychain::set(&secret_account(&id_of(h), &arg(a, 0)), &arg(a, 1)).is_ok()))),
-        ("remove", native(&host, |h, a| Value::Bool(keychain::delete(&secret_account(&id_of(h), &arg(a, 0)))))),
+        (
+            "get",
+            native(&host, |h, a| {
+                s(&secret_account(&id_of(h), &arg(a, 0)).and_then(|acct| keychain::get(&acct)).unwrap_or_default())
+            }),
+        ),
+        (
+            "set",
+            native(&host, |h, a| {
+                Value::Bool(secret_account(&id_of(h), &arg(a, 0)).is_some_and(|acct| keychain::set(&acct, &arg(a, 1)).is_ok()))
+            }),
+        ),
+        (
+            "remove",
+            native(&host, |h, a| Value::Bool(secret_account(&id_of(h), &arg(a, 0)).is_some_and(|acct| keychain::delete(&acct)))),
+        ),
     ]);
     obj(vec![
         (
@@ -360,8 +380,10 @@ pub fn object(host: Shared) -> Value {
         ),
         (
             "cancelSignIn",
-            native(&host, |_, _| {
-                SIGN_IN_CANCEL.store(true, Ordering::Relaxed);
+            native(&host, |h, _| {
+                if let Some(c) = h.lock().unwrap_or_else(|e| e.into_inner()).sign_in_cancel.take() {
+                    c.store(true, Ordering::Relaxed);
+                }
                 Value::Null
             }),
         ),
@@ -382,7 +404,8 @@ pub fn object(host: Shared) -> Value {
         (
             "log",
             native(&host, |h, a| {
-                println!("moo: plugin {}: {}", id_of(h), arg(a, 0));
+                // Plugins log what they like (tokens included), so it only goes out with MOO_DEBUG.
+                crate::mac::debug_log(&format!("plugin {}: {}", id_of(h), arg(a, 0)));
                 Value::Null
             }),
         ),
@@ -392,6 +415,16 @@ pub fn object(host: Shared) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn secret_accounts_cannot_collide_or_escape() {
+        assert_eq!(secret_account("slack", "token").as_deref(), Some("plugin.slack.token"));
+        // "a.b"+"c" and "a"+"b.c" used to both be plugin.a.b.c.
+        assert_eq!(secret_account("a", "b.c"), None);
+        assert_eq!(secret_account("a.b", "c"), None);
+        assert_eq!(secret_account("slack", ""), None);
+        assert_eq!(secret_account("../x", "token"), None);
+    }
 
     #[test]
     fn network_is_limited_to_declared_https_hosts() {
