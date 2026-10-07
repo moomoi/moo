@@ -12,8 +12,8 @@
     "lint": "tish-lint --deny-warnings app/src web/site web/src web/render.tish"
   },
   "devDependencies": {
-    "@tishlang/tish": "3.15.3",
-    "@tishlang/tish-lint": "^3.15.3",
+    "@tishlang/tish": "4.0.1",
+    "@tishlang/tish-lint": "^4.0.1",
     "lattish": "4.0.4"
   }
 }

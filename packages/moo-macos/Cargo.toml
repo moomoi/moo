@@ -8,18 +8,18 @@ license = "MIT"
 [dependencies]
 # crates.io, at the version of the tish compiler (package.json): the code it generates and
 # @tishlang/tish-macos depend on the same registry crates, so everything shares one tishlang_core.
-tishlang_core = { version = "3.15.3" }
-tishlang_ui = { version = "3.15.3", default-features = false, features = ["runtime"] }
+tishlang_core = { version = "4.0.1" }
+tishlang_ui = { version = "4.0.1", default-features = false, features = ["runtime"] }
 nucleo-matcher = "0.3"
 # Tier A plugins: bytecode chunks in a capability-free VM.
 # `send-values` must match the app build, which enables it on tishlang_core (http implies it).
-tishlang_vm = { version = "3.15.3", features = ["send-values"] }
-tishlang_bytecode = { version = "3.15.3" }
+tishlang_vm = { version = "4.0.1", features = ["send-values"] }
+tishlang_bytecode = { version = "4.0.1" }
 # Blocking HTTP for the plugin host and OAuth token requests; the same reqwest tish:http links.
 reqwest = { version = "0.13", default-features = false, features = ["blocking", "rustls"] }
 
 [dev-dependencies]
-tishlang_parser = { version = "3.15.3" }
+tishlang_parser = { version = "4.0.1" }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6"
