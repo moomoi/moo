@@ -1,8 +1,5 @@
 target/
 *.lib
-poc/ffi-tish-plugin/plugin/gen/
-poc/lattish-native/app-native
-poc/host-native/host
 app/dist/
 app/node_modules/
 plugins/dist/

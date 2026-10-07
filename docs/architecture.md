@@ -36,38 +36,30 @@ Tish binary) over a Unix-socket RPC. It does not exist yet.
 | `app/src/main.tish` | The launcher: state, search composition, plugin loading, key handling, view |
 | `app/src/theme.tish` | The whole look: colours, type, radii, icons, glass tints, panel geometry, motion |
 | `packages/moo-macos` | Rust native module imported as `tish:moo` |
-| `  src/mac.rs` | Panel, focus, key routing, Carbon hotkeys and the recorder, launch, icons, status item (click shows the panel, right click opens Settings… / Quit) |
+| `  src/lib.rs` | The `tish:moo` module: every native function Tish calls, and stubs off macOS |
+| `  src/mac.rs` | Panel and its Liquid Glass, focus, key routing, right-click on rows, Carbon hotkeys and the recorder, launch, icons |
 | `  src/theme.rs` | Holds the theme set from Tish (`setTheme`) and resolves its colours; no values of its own |
 | `  src/keys.rs` | Key names, hotkey spec parsing and display (`cmd+shift+k` → ⇧⌘K) |
 | `  src/keymap.rs` | macOS system shortcut conflicts (Spotlight, input sources) |
-| `  src/shortcuts.rs` | `shortcuts.json`: parse, validate, save, templates (portable) |
 | `  src/cli.rs` | Unix-socket server and the `moo` command-line client |
+| `  src/bridge.rs` | Results from worker threads back to Tish callbacks on the main thread |
 | `  src/shell.rs` | Shell shortcuts: `/bin/sh` on a worker thread, capped output, timeout |
 | `  src/index.rs` | App index and nucleo fuzzy ranking (portable) |
 | `  src/fsindex.rs` | File name index: crawl, search, rescan, snapshot (portable) |
 | `  src/fslive.rs` | File index service: background build, FSEvents updates, saves |
-| `  src/files.rs` | Spotlight file search on a worker thread (fallback while indexing); metadata search (size, dates, kind, folder, words in the text) for the AI's `findFiles`; content search for Search Files |
-| `  src/fileops.rs` | Move to Trash, the apps that open a file, open with one of them |
-| `  src/sysinfo.rs` | OS, hardware, disk and battery facts for the AI's `systemInfo` tool |
-| `  src/system.rs` | System commands for `systemCommand`: lock, sleep, restart / shut down / log out (Apple Events to loginwindow), empty Trash, dark mode, volume and mute (CoreAudio), eject, hide / quit all apps; running apps with memory use and switch / hide / quit / force quit for Running Apps. `MOO_SYSTEM_DRY_RUN=1` makes every command only report what it would do |
-| `  src/ax.rs` | Accessibility: arrange the frontmost app's focused window (remembers the frame for Restore), selected text for `{selection}`, replacing a typed snippet keyword, permission check |
-| `  src/snippets.rs` | Snippet keywords: the characters typed in other apps since the cursor last jumped, matched against expanding text shortcuts |
-| `  src/layout.rs` | Window layouts as pure geometry: halves, quarters, thirds, maximize, center, moving to another display |
-| `  src/calc.rs` | Calculator: arithmetic, percentages, units, currency, number bases |
-| `  src/dict.rs` | Word definitions: Dictionary Services text for every homograph (the private record functions, looked up at run time, with the public first-homograph call as fallback), parsed into senses, examples and origin |
-| `  src/websearch.rs` | Search suggestions: an engine's OpenSearch JSON over URLSession (portable parser) |
-| `  src/contacts.rs` | Contacts: access status and request, name search and the full list (Contacts framework); embeds the usage description the bare dev binary needs in `__TEXT,__info_plist` |
-| `  src/rates.rs` | ECB exchange rates, fetched on a background thread and cached for 12 h (`MOO_RATES`) |
-| `  src/tz.rs` | Time zone answers ("time in tokyo", "3pm pst to cet") on `NSTimeZone` |
-| `  src/watch.rs` | FSEvents on the application folders |
 | `  src/frecency.rs` | Use counts with decay, persisted as TSV (portable) |
-| `  src/history.rs` | Recent searches for Spotlight's ↑ list, newest first (portable) |
-| `  src/clip.rs` | Clipboard history |
+| `  src/snippets.rs` | Snippet keywords: the characters typed in other apps since the cursor last jumped, matched against expanding text shortcuts |
+| `  src/winctl.rs` | Window states on another app through Accessibility: minimize, unminimize, full screen, close, raise |
+| `  src/ai.rs` | Apple's on-device model (through `swift/ai.swift`), streamed back to Tish |
+| `  src/keychain.rs` | AI keys and OAuth tokens in the login Keychain |
+| `  src/oauth.rs` | OAuth 2.0 sign-in with PKCE through a loopback redirect |
+| `  src/http.rs` | Blocking HTTP for the plugin host and OAuth token requests |
+| `  src/infoplist.rs` | The Contacts usage description the bare dev binary needs in `__TEXT,__info_plist` |
+| `  src/pluginhost.rs` | The `moo` object a Tier A plugin's VM gets: fetch, store, secret, sign-in, notify |
 | `  src/vmplug.rs` | Tier A loader: runs a bytecode chunk in a VM with no capabilities |
 | `web/` | The moo.moi site: landing page and the sign-in relay, a native Tish HTTP server (see [web.md](web.md)) |
 | `plugins/` | Submodule: [moomoi/plugins](https://github.com/moomoi/plugins), the 8 official plugins (`utils` is Tier B, the rest Tier A) and `build.sh` |
 | `scripts/` | `.app` bundling, release packaging, UI drive scripts used for testing |
-| `poc/` | FFI and Lattish proofs of concept |
 
 ## The panel
 
