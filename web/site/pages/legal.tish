@@ -1,0 +1,73 @@
+import { h } from "lattish"
+import { Page } from "../components/layout.tish"
+import { REPO_URL } from "../links.tish"
+
+// Legal pages: a side menu and the text. `active` lights up the current page in the menu.
+fn Legal(props) {
+  let link = (href, name, label) => <a href={href} class={props.active === name ? "on" : null}>{label}</a>
+  return (
+    <Page title={props.title} active="legal">
+      <div class="wrap doc">
+        <aside>{link("/legal", "index", "Overview")}{link("/legal/terms", "terms", "Terms of Use")}{link("/legal/privacy", "privacy", "Privacy")}</aside>
+        <article class="prose up">{props.children}</article>
+      </div>
+    </Page>
+  )
+}
+
+fn Contact() {
+  return <><h2>Contact</h2><p>Questions? Open an issue on <a href={REPO_URL}>GitHub</a>.</p></>
+}
+
+export fn LegalIndex() {
+  return (
+    <Legal title="Legal · Moo" active="index">
+      <h1>Legal</h1>
+      <p>The short version: moo runs on your Mac, keeps your stuff on your Mac, and doesn't sell anything about you to anyone.</p>
+      <div class="legal-cards">
+        <a class="card" href="/legal/terms"><h3 style="margin-top:0">Terms of Use</h3><p>The rules for using moo and this site.</p></a>
+        <a class="card" href="/legal/privacy"><h3 style="margin-top:0">Privacy</h3><p>What moo touches, and what it never does.</p></a>
+      </div>
+    </Legal>
+  )
+}
+
+export fn Terms() {
+  return (
+    <Legal title="Terms of Use · Moo" active="terms">
+      <h1>Terms of Use</h1>
+      <p class="date">Last updated October 2026</p>
+      <h2>Using moo</h2>
+      <p>moo is provided free of charge for personal and commercial use on your own Macs. Use it lawfully and don't try to break, reverse-engineer around or abuse the services it connects to.</p>
+      <h2>Plugins</h2>
+      <p>Plugins in the marketplace may be written by third parties. They run sandboxed, but you're responsible for the plugins you install and the access you grant them.</p>
+      <h2>AI and third-party services</h2>
+      <p>When you use Ask AI with an external provider, or sign in to a service like Slack, your use of that service is also governed by its own terms.</p>
+      <h2>No warranty</h2>
+      <p>moo is provided <b>“as is”</b>, without warranties of any kind. To the extent the law allows, we aren't liable for any damages arising from its use.</p>
+      <h2>Changes</h2>
+      <p>We may update these terms. Material changes will be noted on this page with a new date.</p>
+      <Contact />
+    </Legal>
+  )
+}
+
+export fn Privacy() {
+  return (
+    <Legal title="Privacy · Moo" active="privacy">
+      <h1>Privacy</h1>
+      <p class="date">Last updated October 2026</p>
+      <h2>Local first</h2>
+      <p>moo is a native app. Your searches, files, clipboard history and settings <b>stay on your Mac</b>. We don't run analytics or collect telemetry.</p>
+      <h2>Sign-in</h2>
+      <p>When you sign in, your browser passes briefly through <b>moo.moi/callback</b>, which forwards it straight back to moo on your Mac. The relay keeps no state and logs nothing about requests. The sign-in code can't be redeemed without a secret that never leaves your Mac.</p>
+      <h2>AI</h2>
+      <p>On-device Apple Intelligence never leaves your machine. If you choose an external provider, your prompts go directly to that provider under its privacy policy.</p>
+      <h2>Plugins</h2>
+      <p>Plugins run in a sandbox with no file, network or process access unless granted. A plugin that connects to a service, like Slack, talks to that service directly.</p>
+      <h2>This website</h2>
+      <p>moo.moi serves plain HTML and CSS. No scripts, no cookies, no trackers.</p>
+      <Contact />
+    </Legal>
+  )
+}

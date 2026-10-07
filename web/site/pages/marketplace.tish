@@ -1,0 +1,86 @@
+import { h } from "lattish"
+import { Page, Hero } from "../components/layout.tish"
+import { Icon } from "../components/icons.tish"
+import { PLUGINS, tagLabel } from "../plugins.tish"
+import { PLUGINS_REPO } from "../links.tish"
+
+fn Tag(props) {
+  return <span class={props.plugin.tag === "core" ? "tag core" : "tag"}>{tagLabel(props.plugin)}</span>
+}
+
+fn PluginCard(props) {
+  let p = props.plugin
+  return (
+    <a class="card plug" href={"/marketplace/" + p.id}>
+      <div class="top"><div class="glyph">{p.glyph}</div><div><h3>{p.name}</h3><span class="by">{"by " + p.by}</span></div></div>
+      <p>{p.text}</p>
+      <Tag plugin={p} />
+    </a>
+  )
+}
+
+export fn Marketplace() {
+  return (
+    <Page title="Marketplace · Moo" active="market">
+      <Hero eyebrow="Marketplace" style="padding-bottom:48px">
+        <h2 class="t up d1" style="font-size:clamp(48px,9vw,104px)">Teach moo<br /><span class="grad">new tricks</span>.</h2>
+        <p class="lede up d2">Small, fast, sandboxed plugins. Each one runs in its own VM with only the access you grant.</p>
+      </Hero>
+      <div class="wrap market up d3">
+        {PLUGINS.map((p) => <PluginCard plugin={p} />)}
+        <a class="card plug ghost" href="/docs/first-plugin">
+          <div class="glyph"><Icon name="puzzle" /></div>
+          <h3 style="margin-top:16px">Build a plugin</h3>
+          <p style="flex:none;margin:6px 0 0">Write it in Tish. Open a PR on moomoi/plugins.</p>
+        </a>
+      </div>
+    </Page>
+  )
+}
+
+// What the plugin may reach, for the facts box.
+fn Access(props) {
+  let p = props.plugin
+  if (p.tier !== "A") {
+    return "Full (first-party native plugin)"
+  }
+  if (p.network.length === 0) {
+    return "None. No files, no network"
+  }
+  return <raw html={"Network: <code>" + p.network.join("</code>, <code>") + "</code> only"} />
+}
+
+export fn PluginPage(props) {
+  let p = props.plugin
+  let source = PLUGINS_REPO + "/tree/main/" + p.id
+  return (
+    <Page title={p.name + " · Moo Marketplace"} active="market">
+      <div class="wrap pdp">
+        <a class="back" href="/marketplace">← Marketplace</a>
+        <header class="up">
+          <div class="glyph big">{p.glyph}</div>
+          <div class="who"><h1>{p.name}</h1><p>{p.text}</p><div class="meta"><Tag plugin={p} /><span class="by">{"by " + p.by}</span></div></div>
+          <div class="get"><a class="btn go" href={"moo://plugins/" + p.id}><Icon name="down" />Install</a><span class="fine">Opens in moo. <a href="/get">Don't have it?</a></span></div>
+        </header>
+        <div class="cols up d2">
+          <div>
+            <h2>About</h2>
+            <p class="about"><raw html={p.about} /></p>
+            <h2>Commands</h2>
+            <ul class="cmds">
+              {p.commands.map((c) => <li><span class="ic">{p.glyph}</span><span><b>{c[0]}</b>{c[1] !== "" ? <small>{c[1]}</small> : null}</span></li>)}
+            </ul>
+            {p.docs ? <a class="btn ghost" href={p.docs}>Read the docs</a> : null}{p.docs ? " " : null}<a class="btn ghost" href={source}>View source</a>
+          </div>
+          <aside class="facts">
+            <div><span>Sandbox</span><b>{p.tier === "A" ? "Tier A · own VM" : "Tier B · native"}</b></div>
+            <div><span>Access</span><b><Access plugin={p} /></b></div>
+            <div><span>Author</span><b>{p.by}</b></div>
+            <div><span>Price</span><b>Free</b></div>
+            <div><span>Source</span><b><a href={source} style="color:inherit">moomoi/plugins</a></b></div>
+          </aside>
+        </div>
+      </div>
+    </Page>
+  )
+}

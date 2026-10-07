@@ -62,7 +62,7 @@ The icons come from one image, `packaging/icon.png` (1024×1024, full bleed). Af
 `bash scripts/make-icons.sh` (needs ImageMagick) and commit what it writes:
 `packaging/AppIcon.icns` (the app icon), `packaging/MenuBarIcon.tiff` (the menu bar template),
 `packaging/SearchIcon.png` (the search field's icon) and
-`web/src/icon.tish` (the site's logo and favicon). Dev runs from `app/` load the icons from
+`web/site/icon.tish` (the site's logo and favicon). Dev runs from `app/` load the icons from
 `../packaging`; the bundle carries them in `Contents/Resources`.
 
 Release builds (universal, notarized DMG) are `scripts/build-universal.sh` then

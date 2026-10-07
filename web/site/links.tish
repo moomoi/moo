@@ -1,0 +1,6 @@
+// Where the site points. Promoted releases are mirrored to the public repo under a fixed asset
+// name (docs/release.md).
+export let DOWNLOAD_URL = "https://github.com/moomoi/moo/releases/latest/download/Moo-macos-universal.dmg"
+export let REPO_URL = "https://github.com/moomoi/moo"
+export let PLUGINS_REPO = "https://github.com/moomoi/plugins"
+export let BREW = "brew install moomoi/moo/moo"
