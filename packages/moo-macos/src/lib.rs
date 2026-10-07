@@ -21,6 +21,8 @@ mod keymap;
 #[cfg(target_os = "macos")]
 mod keys;
 #[cfg(target_os = "macos")]
+mod winctl;
+#[cfg(target_os = "macos")]
 mod mac;
 #[cfg(target_os = "macos")]
 mod oauth;
@@ -318,6 +320,16 @@ mod natives {
 
     fn arr(items: Vec<Value>) -> Value {
         Value::Array(VmRef::new(items))
+    }
+
+    /// `windowAction(pid, name, action)`: minimize, unminimize, fullscreen, close or raise that
+    /// app's focused window -> { ok, message }.
+    pub fn window_action(args: &[Value]) -> Value {
+        let pid = num_arg(args, 0, 0.0) as i32;
+        match crate::winctl::window_action(pid, &str_arg(args, 1), &str_arg(args, 2)) {
+            Ok(m) => obj(vec![("ok", Value::Bool(true)), ("message", Value::String(m.into()))]),
+            Err(e) => obj(vec![("ok", Value::Bool(false)), ("message", Value::String(e.into()))]),
+        }
     }
 
     /// `isRightClick()`: whether the onClick running now came from a right-click or control-click.
@@ -691,6 +703,7 @@ mod natives {
     pub use unsupported as unregister_hotkey;
     pub use unsupported as check_hotkey;
     pub fn set_panel_keys(_a: &[Value]) -> Value { Value::Null }
+    pub fn window_action(_a: &[Value]) -> Value { obj(vec![("ok", Value::Bool(false)), ("message", Value::String("macOS only".into()))]) }
     pub fn is_right_click(_a: &[Value]) -> Value { Value::Bool(false) }
     pub use unsupported as cli_serve;
     pub fn hotkey_display(a: &[Value]) -> Value { Value::String(str_arg(a, 0).as_str().into()) }
@@ -750,6 +763,7 @@ pub fn moo_object() -> Value {
     m.insert(Arc::from("recordHotkey"), Value::native(natives::record_hotkey));
     m.insert(Arc::from("toggle"), Value::native(natives::toggle));
     m.insert(Arc::from("setPanelKeys"), Value::native(natives::set_panel_keys));
+    m.insert(Arc::from("windowAction"), Value::native(natives::window_action));
     m.insert(Arc::from("isRightClick"), Value::native(natives::is_right_click));
     m.insert(Arc::from("keysError"), Value::native(natives::keys_error));
     m.insert(Arc::from("localDateTime"), Value::native(natives::local_date_time));

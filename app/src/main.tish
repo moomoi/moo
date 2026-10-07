@@ -9,7 +9,7 @@
 import { loadModule } from "tish:ffi"
 import { fileExists } from "tish:fs"
 import { macos, useState } from "tish:macos"
-import { setup, setPanelShape, setArrowKeys, setTheme, typeText, registerHotkey, quit, hide, appCount, fuzzy, pluginPaths, loadBytecodePlugin, bundleResources, exeDir, recordUse, frecency, aiAvailability, aiSession, aiEndSession, aiPrewarm, aiAsk, aiCancel, setPanelKeys, onPluginRefresh, fileIndexStart, quickLook, quickLookVisible, fileIndexStatus, show, toggle, unregisterHotkey, checkHotkey, hotkeyDisplay, recordHotkey, runShell, cliMain, cliServe, cliWrite, cliEnd, about , isRightClick } from "tish:moo"
+import { setup, setPanelShape, setArrowKeys, setTheme, typeText, registerHotkey, quit, hide, appCount, fuzzy, pluginPaths, loadBytecodePlugin, bundleResources, exeDir, recordUse, frecency, aiAvailability, aiSession, aiEndSession, aiPrewarm, aiAsk, aiCancel, setPanelKeys, onPluginRefresh, fileIndexStart, quickLook, quickLookVisible, fileIndexStatus, show, toggle, unregisterHotkey, checkHotkey, hotkeyDisplay, recordHotkey, runShell, cliMain, cliServe, cliWrite, cliEnd, about , windowAction, isRightClick } from "tish:moo"
 import { env } from "tish:process"
 import { THEME } from "./theme.tish"
 import { greeting } from "./greetings.tish"
@@ -382,7 +382,71 @@ for (let i = 0; i < WINDOW_LAYOUTS.length; i = i + 1) {
   let d = WINDOW_LAYOUTS[i]
   commands.push({ name: d.name, path: "moo:window:" + d.layout, icon: symbolIcon(d.symbol), kind: "Window", mode: "window", layout: d.layout, pluginTitle: "Window" })
 }
-commands.push({ name: "Running Apps", path: "moo:running", icon: symbolIcon("square.stack.3d.up"), kind: "Command", mode: "running", pluginTitle: "System" })
+commands.push({ name: "Running Apps", path: "moo:running", icon: symbolIcon("square.stack.3d.up"), kind: "Command", mode: "running", keyword: "ps", pluginTitle: "System" })
+// App verbs: each is a subcommand over the running apps. "kill cursor", "focus slack", "max
+// safari", "fs zed": the keyword, a space, and the app's name; Return does the verb to the picked
+// app. `act` is an appAction (switch, hide, unhide, quit, force-quit), a windowAction (minimize,
+// unminimize, fullscreen, close, raise), a window layout ("layout:left-half") or relaunch / reveal
+// / copy-path. Every keyword works; the first is shown.
+let APP_VERBS = [
+  { name: "Quit App", act: "quit", keywords: ["kill", "quit", "q"], symbol: "xmark.app", label: "Quit" },
+  { name: "Force Quit App", act: "force-quit", keywords: ["fkill", "forcequit", "kill9"], symbol: "exclamationmark.octagon", label: "Force Quit" },
+  { name: "Relaunch App", act: "relaunch", keywords: ["relaunch", "restart", "reopen"], symbol: "arrow.clockwise", label: "Relaunch" },
+  { name: "Focus App", act: "switch", keywords: ["focus", "switch", "go"], symbol: "macwindow.on.rectangle", label: "Focus" },
+  { name: "Hide App", act: "hide", keywords: ["hide"], symbol: "eye.slash", label: "Hide" },
+  { name: "Show Hidden App", act: "unhide", keywords: ["unhide", "show"], symbol: "eye", label: "Show" },
+  { name: "Minimize Window", act: "minimize", keywords: ["min", "minimize", "minimise"], symbol: "minus.rectangle", label: "Minimize" },
+  { name: "Restore Minimized Windows", act: "unminimize", keywords: ["unmin", "unminimize"], symbol: "plus.rectangle", label: "Restore" },
+  { name: "Toggle Full Screen", act: "fullscreen", keywords: ["fs", "fullscreen", "full"], symbol: "arrow.up.left.and.arrow.down.right", label: "Full Screen" },
+  { name: "Close Window", act: "close", keywords: ["close"], symbol: "xmark.rectangle", label: "Close Window" },
+  { name: "Maximize App", act: "layout:maximize", keywords: ["max", "maximize", "maximise", "zoom"], symbol: "rectangle.inset.filled", label: "Maximize" },
+  { name: "Almost Maximize App", act: "layout:almost-maximize", keywords: ["almost"], symbol: "rectangle.center.inset.filled", label: "Almost Maximize" },
+  { name: "Center App", act: "layout:center", keywords: ["center", "centre"], symbol: "rectangle.center.inset.filled", label: "Center" },
+  { name: "App to Left Half", act: "layout:left-half", keywords: ["left"], symbol: "rectangle.lefthalf.filled", label: "Left Half" },
+  { name: "App to Right Half", act: "layout:right-half", keywords: ["right"], symbol: "rectangle.righthalf.filled", label: "Right Half" },
+  { name: "App to Top Half", act: "layout:top-half", keywords: ["top"], symbol: "rectangle.tophalf.filled", label: "Top Half" },
+  { name: "App to Bottom Half", act: "layout:bottom-half", keywords: ["bottom"], symbol: "rectangle.bottomhalf.filled", label: "Bottom Half" },
+  { name: "App to Next Display", act: "layout:next-display", keywords: ["display", "move", "next"], symbol: "rectangle.on.rectangle", label: "Next Display" },
+  { name: "Restore App's Window Size", act: "layout:restore", keywords: ["restore", "unmax"], symbol: "arrow.uturn.backward", label: "Restore Size" },
+  { name: "Reveal App in Finder", act: "reveal", keywords: ["reveal", "where"], symbol: "folder", label: "Show in Finder" },
+  { name: "Copy App Path", act: "copy-path", keywords: ["path"], symbol: "doc.on.clipboard", label: "Copy Path" }
+]
+for (let i = 0; i < APP_VERBS.length; i = i + 1) {
+  let v = APP_VERBS[i]
+  commands.push({ name: v.name, path: "moo:app:" + v.act, icon: symbolIcon(v.symbol), kind: v.keywords[0] + " ‹app›", mode: "running", keyword: v.keywords[0], keywords: v.keywords, appAct: v.act, verb: v.label, pluginTitle: "Apps" })
+}
+// File verbs: "f report", "ql invoice", "trash old.zip". The files matching the text come first;
+// Return does the verb (fileAction) to the picked one.
+let FILE_VERBS = [
+  { name: "Open File", act: "open", keywords: ["f", "find", "open"], symbol: "doc", label: "Open" },
+  { name: "Reveal File in Finder", act: "reveal", keywords: ["finder", "rev"], symbol: "folder", label: "Show in Finder" },
+  { name: "Quick Look File", act: "look", keywords: ["ql", "look", "peek"], symbol: "eye", label: "Quick Look" },
+  { name: "Open File With…", act: "openwith", keywords: ["with", "openwith"], symbol: "square.on.square", label: "Open With" },
+  { name: "Copy File Path", act: "copypath", keywords: ["cp", "copypath"], symbol: "doc.on.clipboard", label: "Copy Path" },
+  { name: "Move File to Trash", act: "trash", keywords: ["trash", "rm", "del"], symbol: "trash", label: "Move to Trash" }
+]
+for (let i = 0; i < FILE_VERBS.length; i = i + 1) {
+  let v = FILE_VERBS[i]
+  commands.push({ name: v.name, path: "moo:file:" + v.act, icon: symbolIcon(v.symbol), kind: v.keywords[0] + " ‹file›", mode: "files", keyword: v.keywords[0], keywords: v.keywords, fileAct: v.act, verb: v.label, pluginTitle: "Files" })
+}
+// "win left", "sys lock": the window layouts and system commands, filtered by the text.
+commands.push({ name: "Window Layouts", path: "moo:windows", icon: symbolIcon("macwindow"), kind: "win ‹layout›", mode: "subs", keyword: "win", keywords: ["win", "window", "layout"], subOf: "window", pluginTitle: "Window" })
+commands.push({ name: "System Commands", path: "moo:system", icon: symbolIcon("gearshape.2"), kind: "sys ‹command›", mode: "subs", keyword: "sys", keywords: ["sys", "system", "mac"], subOf: "system", pluginTitle: "System" })
+// Keywords for Moo's own lists: "clip invoice", "define serendipity", "web rust traits", "contact
+// ana", "apps xcode", "recent", "set engine".
+let LIST_KEYWORDS = [
+  [CLIPBOARD, ["clip", "cb", "paste"]],
+  [DICTIONARY, ["define", "def", "meaning"]],
+  [WEB, ["web", "search"]],
+  [CONTACTS, ["contact", "contacts", "call", "email"]],
+  [APPS, ["apps", "app"]],
+  [HISTORY, ["recent", "history"]],
+  [SETTINGS, ["set", "settings", "prefs"]]
+]
+for (let i = 0; i < LIST_KEYWORDS.length; i = i + 1) {
+  LIST_KEYWORDS[i][0].keyword = LIST_KEYWORDS[i][1][0]
+  LIST_KEYWORDS[i][0].keywords = LIST_KEYWORDS[i][1]
+}
 for (let i = 0; i < SYSTEM_COMMANDS.length; i = i + 1) {
   let d = SYSTEM_COMMANDS[i]
   commands.push({ name: d.name, path: "moo:system:" + d.system + (d.arg ? "-" + d.arg : ""), icon: symbolIcon(d.symbol), kind: "System", mode: "system", system: d.system, arg: d.arg ? d.arg : "", hides: d.hides === true, confirm: d.confirm === true, pluginTitle: "System" })
@@ -445,6 +509,9 @@ for (let i = 0; i < pluginFiles.length; i = i + 1) {
 }
 // What the root search matches a command by: its title, and a plugin command's keyword and plugin.
 fn commandMatchText(c) {
+  if (c.keywords) {
+    return c.name + " " + c.keywords.join(" ")
+  }
   return c.plugin ? [c.name, c.keyword, c.pluginTitle].filter((s) => s !== "").join(" ") : c.name
 }
 
@@ -1516,13 +1583,18 @@ fn rootResults(text) {
   }
   let sc = shortcutMatch(text)
   let skip = ""
+  let sub = sc === null ? subcommandMatch(text) : null
+  if (sub !== null) {
+    out = out.concat(subcommandRows(sub.command, sub.query).slice(0, ROWS - 2))
+    skip = sub.command.path
+  }
   if (sc !== null) {
     out.push(shortcutRow(sc.shortcut, sc.query))
     skip = "shortcut:" + sc.shortcut.keyword
     if (sc.query !== "") {
       return out
     }
-  } else {
+  } else if (sub === null) {
     let al = aliasMatch(text)
     if (al !== null) {
       out.push(al.row)
@@ -1735,6 +1807,9 @@ fn openHistory() {
 
 // Spotlight's groups for a root search; the first result is the Top Hit.
 fn rootGroup(r) {
+  if (r.sub) {
+    return r.sub
+  }
   if (r.mode === "filter") {
     return "Filter Search"
   }
@@ -1781,7 +1856,7 @@ fn groupInOrder(list, groupOf, from, ranked) {
 
 fn groupAt(r, i) {
   if (shell.mode === null) {
-    return i === 0 && r.mode !== "filter" && r.mode !== "calc" && r.mode !== "define" ? "Top Hit" : rootGroup(r)
+    return i === 0 && !r.sub && r.mode !== "filter" && r.mode !== "calc" && r.mode !== "define" ? "Top Hit" : rootGroup(r)
   }
   if (modeIs("actions")) {
     return r.mode === "shortcut" ? "Quick Keys" : "Actions"
@@ -2692,6 +2767,91 @@ fn runningResults(text) {
   return rows
 }
 
+// An app verb picked in the root search ("kill cursor" ↵): no list to refresh, so say what
+// happened and search again (the app may be gone from the list now).
+fn rootAppAction(row, verb) {
+  let r = appAction(row.pid, verb)
+  if (verb === "switch" && r.ok) {
+    hide()
+    setQuery("")
+    return
+  }
+  if (r.ok && (verb === "quit" || verb === "force-quit")) {
+    quitting["" + row.pid] = Date.now()
+  }
+  shell.hud = r.message
+  setQuery(shell.query)
+}
+
+// Window and other verbs on a running app: window states through Accessibility, layouts after
+// bringing the app forward (they act on the frontmost window), relaunch, reveal, copy path.
+fn appVerb(row, verb) {
+  if (verb === "reveal") {
+    revealFile(row.path)
+    hide()
+    return
+  }
+  if (verb === "copy-path") {
+    copyText(row.path)
+    shell.hud = "Copied " + row.path
+    refresh()
+    return
+  }
+  if (verb === "relaunch") {
+    let r = appAction(row.pid, "quit")
+    if (!r.ok) {
+      shell.hud = r.message
+      refresh()
+      return
+    }
+    quitting["" + row.pid] = Date.now()
+    shell.hud = "Relaunching " + row.name + "…"
+    refresh()
+    relaunchWhenGone(row, 0)
+    return
+  }
+  if (verb.indexOf("layout:") === 0) {
+    appAction(row.pid, "switch")
+    hide()
+    setQuery("")
+    let layout = verb.slice(7)
+    // The app needs a moment to become frontmost before its window can be moved.
+    setTimeout(() => {
+      let r = arrangeWindow(layout)
+      if (!r.ok) {
+        console.log("moo: " + layout + " " + row.name + ": " + r.message)
+      }
+    }, 250)
+    return
+  }
+  let r = windowAction(row.pid, row.name, verb)
+  shell.hud = r.message
+  if (r.ok && verb !== "minimize" && verb !== "close") {
+    appAction(row.pid, "switch")
+    hide()
+    setQuery("")
+    return
+  }
+  setQuery(shell.query)
+}
+
+// Opens the app again once its process has gone (checking every 250 ms, for up to 10 s).
+fn relaunchWhenGone(row, tries) {
+  setTimeout(() => {
+    let alive = runningApps().some((a) => a.pid === row.pid)
+    if (alive && tries < 40) {
+      relaunchWhenGone(row, tries + 1)
+      return
+    }
+    if (alive) {
+      shell.hud = row.name + " did not quit"
+      refresh()
+      return
+    }
+    launch(row.path)
+  }, 250)
+}
+
 // The selected row while it waits for its second ⌥↵.
 fn forcingRow() {
   let r = shell.selected < shell.results.length ? shell.results[shell.selected] : null
@@ -3116,6 +3276,17 @@ fn finishSub(msg) {
 
 // The text of each asynchronous search still out (files, contents, web), "" when none.
 let pending = { files: "", contents: "", web: "" }
+// The file verb typed at root ("trash old.zip" → { query: "old.zip", command }), or null.
+let fileVerb = null
+
+// Files found for a file verb, marked so they group under it and Return does the verb.
+fn fileVerbRows(files) {
+  return files.map((f) => {
+    f.sub = fileVerb.command.name
+    f.fileAct = fileVerb.command.fileAct
+    return f
+  })
+}
 
 // Something is on its way: the header shows a spinner in place of the search icon.
 fn busy() {
@@ -3152,8 +3323,9 @@ fn inFiles() {
 fn compose() {
   if (shell.mode === null) {
     let keepApps = shell.files.length > 0 ? ROWS - Math.min(shell.files.length, FILE_ROWS_WITH_APPS) : ROWS
-    let merged = shell.apps.slice(0, keepApps).concat(shell.files).slice(0, ROWS)
-    shell.results = groupInOrder(merged, rootGroup, merged.length > 0 && merged[0].mode !== "filter" ? 1 : 0, ROOT_GROUPS)
+    let merged = shell.files.length > 0 && shell.files[0].sub ? shell.files.concat(shell.apps).slice(0, ROWS) : shell.apps.slice(0, keepApps).concat(shell.files).slice(0, ROWS)
+    let lead = merged.length > 0 && merged[0].sub ? [merged[0].sub] : []
+    shell.results = groupInOrder(merged, rootGroup, merged.length > 0 && merged[0].mode !== "filter" && !merged[0].sub ? 1 : 0, lead.concat(ROOT_GROUPS))
   } else if (inFiles()) {
     let named = shell.apps.concat(shell.files)
     let seen = {}
@@ -3326,6 +3498,12 @@ fn onFiles(r) {
   if (r.query === pending.files) {
     pending.files = ""
     refresh()
+  }
+  if (shell.mode === null && fileVerb !== null && r.query === fileVerb.query) {
+    shell.files = fileVerbRows(r.results)
+    compose()
+    refresh()
+    return
   }
   if ((shell.mode !== null && !inFiles()) || r.query !== shell.query) {
     return
@@ -4944,7 +5122,11 @@ fn setQuery(text) {
   } else {
     shell.apps = rootResults(text)
     let sc = shortcutMatch(text)
-    if (text.trim().length >= FILE_MIN_CHARS && text.indexOf("/") !== 0 && (sc === null || sc.query === "")) {
+    let sub = sc === null ? subcommandMatch(text) : null
+    fileVerb = sub !== null && sub.command.fileAct ? { query: sub.query, command: sub.command } : null
+    if (fileVerb !== null) {
+      shell.files = fileVerb.query === "" ? [] : fileVerbRows(fileResults(fileVerb.query, ROWS, ROWS))
+    } else if (text.trim().length >= FILE_MIN_CHARS && text.indexOf("/") !== 0 && (sc === null || sc.query === "")) {
       shell.files = fileResults(text, ROWS, ROWS)
     }
   }
@@ -5207,6 +5389,89 @@ fn keywordCommand(text) {
   return null
 }
 
+// Subcommands: a command's keyword (or alias), a space and text lists that command's own rows
+// first in the root search, filtered by the text: "kill " lists running apps, "kill cursor" puts
+// Cursor first; "npm react", "gh moo". Only commands that list something; shortcut keywords keep
+// their own meaning ("g rust" → Google).
+fn subcommandFor(word) {
+  let k = word.trim().toLowerCase()
+  if (k === "" || k.indexOf(" ") >= 0 || findShortcut(k) !== null) {
+    return null
+  }
+  let found = null
+  for (let i = 0; i < commands.length && found === null; i = i + 1) {
+    if (commands[i].keyword === k || (commands[i].keywords && commands[i].keywords.indexOf(k) >= 0)) {
+      found = commands[i]
+    }
+  }
+  for (let i = 0; i < config.aliases.length && found === null; i = i + 1) {
+    let a = config.aliases[i]
+    if (a.alias.toLowerCase() === k && a.run.indexOf("/") !== 0) {
+      found = findCommand(a.run)
+    }
+  }
+  if (found === null || isDisabled(found.path) || hasArgs(found)) {
+    return null
+  }
+  let m = found.mode
+  if (m === "system" || m === "window" || m === "builtin" || m === "no-view" || m === "shortcut" || m === "view" || m === "ai" || (m === "files" && !found.fileAct)) {
+    return null
+  }
+  return found
+}
+
+// "kill cursor" → { command: Quit App, query: "cursor" }; null unless the first word is a
+// subcommand keyword followed by a space.
+fn subcommandMatch(text) {
+  let space = text.indexOf(" ")
+  if (space <= 0) {
+    return null
+  }
+  let c = subcommandFor(text.slice(0, space))
+  return c === null ? null : { command: c, query: text.slice(space + 1).trim() }
+}
+
+// The command's own rows for `query`, as its list would show them, marked with the command so
+// they are grouped under its name.
+fn subcommandRows(c, query) {
+  if (c.fileAct) {
+    // Files arrive in setQuery (fileVerbFiles), possibly later; nothing synchronous here.
+    return []
+  }
+  if (c.subOf) {
+    let pool = commands.filter((x) => x.mode === c.subOf && !isDisabled(x.path))
+    let hits = []
+    if (query === "") {
+      for (let k = 0; k < pool.length; k = k + 1) {
+        hits.push({ index: k })
+      }
+    } else {
+      hits = fuzzy(query, pool.map((x) => x.name), pool.length)
+    }
+    return hits.map((h) => {
+      let x = pool[h.index]
+      return { name: x.name, path: x.path, icon: x.icon, kind: x.kind, mode: x.mode, layout: x.layout, system: x.system, arg: x.arg, hides: x.hides, confirm: x.confirm, sub: c.name, subCommand: x }
+    })
+  }
+  let saved = shell.mode
+  shell.mode = c
+  let rows = []
+  try {
+    rows = listResults(query)
+  } catch (e) {
+    rows = []
+  }
+  shell.mode = saved
+  return rows.map((r) => {
+    r.sub = c.name
+    if (c.appAct) {
+      r.appAct = c.appAct
+      r.kind = c.verb + " · " + r.kind
+    }
+    return r
+  })
+}
+
 fn enterArgs(c, first) {
   recordUse(c.path)
   let none = c.arguments.map(() => "")
@@ -5448,8 +5713,26 @@ fn open(i) {
     setQuery("")
     return
   }
+  if (target.fileAct) {
+    fileAction(target, target.fileAct)
+    return
+  }
+  if (target.subCommand) {
+    recordUse(target.subCommand.path)
+    openCommand(target.subCommand, "")
+    return
+  }
   if (target.mode === "running-app") {
-    runningAction(target, "switch")
+    let verb = target.appAct ? target.appAct : (shell.mode !== null && shell.mode.appAct ? shell.mode.appAct : "switch")
+    if (verb === "switch" || verb === "hide" || verb === "unhide" || verb === "quit" || verb === "force-quit") {
+      if (shell.mode !== null) {
+        runningAction(target, verb)
+      } else {
+        rootAppAction(target, verb)
+      }
+    } else {
+      appVerb(target, verb)
+    }
     return
   }
   if (target.mode === "define") {
@@ -5583,6 +5866,10 @@ fn open(i) {
     return
   }
   if (shell.mode !== null && !modeIs("apps") && !modeIs("actions")) {
+    perform(target.action)
+    return
+  }
+  if (target.sub && target.action) {
     perform(target.action)
     return
   }
