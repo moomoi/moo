@@ -41,6 +41,9 @@ thread_local! {
     static PENDING: RefCell<Vec<(&'static str, String)>> = const { RefCell::new(Vec::new()) };
     static MONITOR: RefCell<Option<Retained<AnyObject>>> = const { RefCell::new(None) };
     static SCROLL_MONITOR: RefCell<Option<Retained<AnyObject>>> = const { RefCell::new(None) };
+    static RIGHT_MONITOR: RefCell<Option<Retained<AnyObject>>> = const { RefCell::new(None) };
+    /// True while a right-click (or control-click) is being delivered as a row's onClick.
+    static RIGHT_CLICK: Cell<bool> = const { Cell::new(false) };
     /// Scrolling not yet worth a whole row, carried into the next event.
     static SCROLL_REST: Cell<f64> = const { Cell::new(0.0) };
     static PANEL_SIZE: Cell<(f64, f64)> = const { Cell::new((720.0, 440.0)) };
@@ -1142,6 +1145,54 @@ fn install_key_monitor() {
         unsafe { NSEvent::addLocalMonitorForEventsMatchingMask_handler(NSEventMask::KeyDown, &block) };
     MONITOR.with(|m| *m.borrow_mut() = monitor);
     install_scroll_monitor();
+    install_right_click_monitor();
+}
+
+/// Whether the onClick running now came from a right-click (or control-click).
+pub fn is_right_click() -> bool {
+    RIGHT_CLICK.with(|r| r.get())
+}
+
+/// Right-clicks (and control-clicks) on the panel's clickable rows run that row's onClick with
+/// `is_right_click()` true, so Tish can open the row's actions instead of the row. Tish rows with
+/// onClick are backed by a borderless button whose action is `jsxClick:`.
+fn install_right_click_monitor() {
+    if RIGHT_MONITOR.with(|m| m.borrow().is_some()) {
+        return;
+    }
+    let block = RcBlock::new(|ev: NonNull<NSEvent>| -> *mut NSEvent {
+        let e = unsafe { ev.as_ref() };
+        let control = e.r#type() == NSEventType::LeftMouseDown && e.modifierFlags().contains(NSEventModifierFlags::Control);
+        if e.r#type() != NSEventType::RightMouseDown && !control {
+            return ev.as_ptr();
+        }
+        let ours = PANEL.with(|p| p.borrow().clone());
+        let Some(mtm) = MainThreadMarker::new() else { return ev.as_ptr() };
+        let (Some(panel), Some(win)) = (ours, e.window(mtm)) else { return ev.as_ptr() };
+        if !std::ptr::eq(&*panel, &*win) {
+            return ev.as_ptr();
+        }
+        let Some(content) = win.contentView() else { return ev.as_ptr() };
+        let mut hit = content.hitTest(e.locationInWindow());
+        while let Some(v) = hit {
+            let action: Option<objc2::runtime::Sel> = if v.isKindOfClass(objc2_app_kit::NSControl::class()) {
+                unsafe { msg_send![&*v, action] }
+            } else {
+                None
+            };
+            if action == Some(sel!(jsxClick:)) {
+                RIGHT_CLICK.with(|r| r.set(true));
+                let _: () = unsafe { msg_send![&*v, performClick: std::ptr::null::<AnyObject>()] };
+                RIGHT_CLICK.with(|r| r.set(false));
+                return std::ptr::null_mut();
+            }
+            hit = unsafe { v.superview() };
+        }
+        ev.as_ptr()
+    });
+    let mask = NSEventMask::RightMouseDown | NSEventMask::LeftMouseDown;
+    let monitor = unsafe { NSEvent::addLocalMonitorForEventsMatchingMask_handler(mask, &block) };
+    RIGHT_MONITOR.with(|m| *m.borrow_mut() = monitor);
 }
 
 /// Trackpad points that make one row; a mouse wheel moves a row per line.

@@ -12,7 +12,7 @@ summary: Every key moo listens to, on one page.
 | [[↑]] [[↓]] [[⌃ P]] [[⌃ N]] | Move the selection |
 | [[⌘ K]] | Action panel |
 | [[⌘ ,]] | Settings |
-| [[⌘ 1]] – [[⌘ 4]] | Applications, Files, Actions, Clipboard |
+| [[⌘ 1]] – [[⌘ 6]] | The bar's pinned items (by default Applications, Files, Actions, Clipboard). Pin any command or app with [[⌘ K]] → Pin to Bar; reorder in Settings → Pinned in Bar |
 | [[⌘ L]] | Grid or list view |
 | [[⌘ Y]] | Quick Look |
 | [[⌘ R]] | Show in Finder |
@@ -38,4 +38,4 @@ Move any panel action to other keys, or to none, with `"keys"` in [shortcuts.jso
 { "keys": { "actions": "cmd+j", "quicklook": "none" } }
 ```
 
-The action names are `actions`, `settings`, `category1` to `category4`, `appsview`, `quicklook`, `reveal`, `openwith` and `hideapp`.
+The action names are `actions`, `settings`, `category1` to `category6`, `appsview`, `quicklook`, `reveal`, `openwith` and `hideapp`.

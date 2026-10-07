@@ -320,6 +320,11 @@ mod natives {
         Value::Array(VmRef::new(items))
     }
 
+    /// `isRightClick()`: whether the onClick running now came from a right-click or control-click.
+    pub fn is_right_click(_a: &[Value]) -> Value {
+        Value::Bool(mac::is_right_click())
+    }
+
     /// `setPanelKeys([spec])`: while the panel has focus these keys arrive as
     /// `onKey("panel:<spec>")` instead of reaching the search field.
     pub fn set_panel_keys(args: &[Value]) -> Value {
@@ -686,6 +691,7 @@ mod natives {
     pub use unsupported as unregister_hotkey;
     pub use unsupported as check_hotkey;
     pub fn set_panel_keys(_a: &[Value]) -> Value { Value::Null }
+    pub fn is_right_click(_a: &[Value]) -> Value { Value::Bool(false) }
     pub use unsupported as cli_serve;
     pub fn hotkey_display(a: &[Value]) -> Value { Value::String(str_arg(a, 0).as_str().into()) }
     pub fn toggle(_a: &[Value]) -> Value { Value::Null }
@@ -744,6 +750,7 @@ pub fn moo_object() -> Value {
     m.insert(Arc::from("recordHotkey"), Value::native(natives::record_hotkey));
     m.insert(Arc::from("toggle"), Value::native(natives::toggle));
     m.insert(Arc::from("setPanelKeys"), Value::native(natives::set_panel_keys));
+    m.insert(Arc::from("isRightClick"), Value::native(natives::is_right_click));
     m.insert(Arc::from("keysError"), Value::native(natives::keys_error));
     m.insert(Arc::from("localDateTime"), Value::native(natives::local_date_time));
     m.insert(Arc::from("runShell"), Value::native(natives::run_shell));

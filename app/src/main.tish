@@ -1,14 +1,15 @@
 // Moo launcher shell: Lattish-style JSX on tish-macos (`tish:macos`), launcher services from
 // packages/moo-macos (`tish:moo`), plugins loaded at runtime as native modules (`tish:ffi`).
-// Follows macOS Spotlight: the hotkey opens a compact bar (search field plus Applications, Files,
-// Actions and Clipboard buttons, ⌘1–⌘4; Applications is a grid of icons or a list, ⌘L);
+// Follows macOS Spotlight: the hotkey opens a compact bar (search field plus up to 6 pinned bubbles,
+// ⌘1–⌘6, by default Applications, Files, Actions and Clipboard; Applications is a grid of icons or a list, ⌘L);
 // typing expands it into results grouped under a Top Hit;
 // ↑ in the empty bar lists recent searches; "/" filters to a category; ⌘R shows in Finder; ⌫ in an
 // empty field or esc leaves a category. tab (or "Ask AI") asks Apple's on-device model.
 
 import { loadModule } from "tish:ffi"
+import { fileExists } from "tish:fs"
 import { macos, useState } from "tish:macos"
-import { setup, setPanelShape, setArrowKeys, setTheme, typeText, registerHotkey, quit, hide, appCount, fuzzy, pluginPaths, loadBytecodePlugin, bundleResources, exeDir, recordUse, frecency, aiAvailability, aiSession, aiEndSession, aiPrewarm, aiAsk, aiCancel, setPanelKeys, onPluginRefresh, fileIndexStart, quickLook, quickLookVisible, fileIndexStatus, show, toggle, unregisterHotkey, checkHotkey, hotkeyDisplay, recordHotkey, runShell, cliMain, cliServe, cliWrite, cliEnd, about } from "tish:moo"
+import { setup, setPanelShape, setArrowKeys, setTheme, typeText, registerHotkey, quit, hide, appCount, fuzzy, pluginPaths, loadBytecodePlugin, bundleResources, exeDir, recordUse, frecency, aiAvailability, aiSession, aiEndSession, aiPrewarm, aiAsk, aiCancel, setPanelKeys, onPluginRefresh, fileIndexStart, quickLook, quickLookVisible, fileIndexStatus, show, toggle, unregisterHotkey, checkHotkey, hotkeyDisplay, recordHotkey, runShell, cliMain, cliServe, cliWrite, cliEnd, about , isRightClick } from "tish:moo"
 import { env } from "tish:process"
 import { THEME } from "./theme.tish"
 import { greeting } from "./greetings.tish"
@@ -204,22 +205,29 @@ let CONTACTS = { name: "Search Contacts", path: "moo:contacts", icon: contactIco
 let SETTINGS = { name: "Settings", path: "moo:settings", icon: settingsIcon, kind: "Command", mode: "settings", pluginTitle: "Moo" }
 let AI_MODELS = { name: "AI Models", path: "moo:ai-models", icon: aiIcon, kind: "Command", mode: "ai-models", pluginTitle: "AI" }
 let HYPERY = { name: "Hypery Account", path: "moo:hypery", icon: symbolIcon(THEME.icon.account), kind: "Command", mode: "hypery", pluginTitle: "Hypery" }
-// Spotlight's four category buttons, in ⌘1–⌘4 order. `symbol` is the SF Symbol on the button.
-let CATEGORIES = [
-  { title: "Applications", command: APPS, symbol: "square.grid.2x2", key: "1" },
-  { title: "Files", command: FILES, symbol: "folder", key: "2" },
-  { title: "Actions", command: ACTIONS, symbol: "square.2.layers.3d", key: "3" },
-  { title: "Clipboard", command: CLIPBOARD, symbol: "doc.on.clipboard", key: "4" }
+// The bar's pinned bubbles, in ⌘1–⌘6 order: up to PIN_MAX commands, shortcuts or apps, by the id
+// runTarget takes, saved in the "pinned" pref. Moo's own categories show an SF Symbol (`symbol`);
+// anything else shows its own icon. CATEGORIES is rebuilt from the pref on every refresh.
+let PIN_MAX = 6
+let DEFAULT_PINS = ["moo:apps", "moo:files", "moo:actions", "moo:clipboard"]
+let PIN_LOOKS = [
+  ["moo:apps", "Applications", "square.grid.2x2"],
+  ["moo:files", "Files", "folder"],
+  ["moo:actions", "Actions", "square.2.layers.3d"],
+  ["moo:clipboard", "Clipboard", "doc.on.clipboard"]
 ]
+let CATEGORIES = []
 // Moo's own keys in the open panel. `key` is the default and the name onKey handles it by;
 // shortcuts.json "keys" moves an action to other keys, or to none.
 let PANEL_ACTIONS = [
   { action: "actions", name: "Action Panel", key: "cmd+k", symbol: "command" },
   { action: "settings", name: "Open Settings", key: "cmd+,", symbol: "gearshape" },
-  { action: "category1", name: "Open Applications", key: "cmd+1", symbol: "square.grid.2x2" },
-  { action: "category2", name: "Open Files", key: "cmd+2", symbol: "folder" },
-  { action: "category3", name: "Open Actions", key: "cmd+3", symbol: "square.2.layers.3d" },
-  { action: "category4", name: "Open Clipboard", key: "cmd+4", symbol: "doc.on.clipboard" },
+  { action: "category1", name: "Open Pinned Item 1", key: "cmd+1", symbol: "1.circle" },
+  { action: "category2", name: "Open Pinned Item 2", key: "cmd+2", symbol: "2.circle" },
+  { action: "category3", name: "Open Pinned Item 3", key: "cmd+3", symbol: "3.circle" },
+  { action: "category4", name: "Open Pinned Item 4", key: "cmd+4", symbol: "4.circle" },
+  { action: "category5", name: "Open Pinned Item 5", key: "cmd+5", symbol: "5.circle" },
+  { action: "category6", name: "Open Pinned Item 6", key: "cmd+6", symbol: "6.circle" },
   { action: "appsview", name: "Grid or List View", key: "cmd+l", symbol: "square.grid.3x2" },
   { action: "quicklook", name: "Quick Look", key: "cmd+y", symbol: "eye" },
   { action: "reveal", name: "Show in Finder", key: "cmd+r", symbol: "folder.badge.gearshape" },
@@ -471,7 +479,6 @@ const PANEL_W = 750
 const HEADER_H = 52
 const CAT_W = 52
 const CAT_GAP = 8
-const FIELD_W = PANEL_W - 4 * (CAT_W + CAT_GAP)
 const SECTION_H = 28
 const ROW_H = 40
 const LINE_H = 32
@@ -526,6 +533,7 @@ fn syncShape() {
 }
 
 fn refresh() {
+  CATEGORIES = loadPins()
   syncShape()
   syncQuickLook()
   setArrowKeys(isGrid())
@@ -1274,6 +1282,7 @@ fn settingsResults(text) {
     { name: "Hotkeys and Aliases", kind: "Every command", icon: symbolIcon("command"), act: "hotkeys", group: "General" },
     { name: "Shortcuts", kind: config.shortcuts.length + (config.shortcuts.length === 1 ? " shortcut" : " shortcuts"), icon: symbolIcon("command.square"), act: "shortcuts", group: "General" },
     { name: "Edit shortcuts.json", kind: "", icon: "NSActionTemplate", act: "edit", group: "General" },
+    { name: "Pinned in Bar", kind: CATEGORIES.length + " of " + PIN_MAX, icon: symbolIcon("pin"), act: "pins", group: "General" },
     { name: "Search Engine", kind: webEngine().name, icon: webIcon, act: "engine", group: "Search" },
     { name: "Applications View", kind: appsView === "grid" ? "Grid" : "List", icon: symbolIcon("square.grid.2x2"), act: "appsview", group: "Search" },
     { name: "AI Model", kind: modelName(currentModel()), icon: aiIcon, act: "ai-models", group: "AI" },
@@ -1295,6 +1304,8 @@ fn openSetting(r) {
     openCommand(commandAt("moo:shortcuts"), "")
   } else if (r.act === "edit") {
     runBuiltin(commandAt("moo:edit-shortcuts"))
+  } else if (r.act === "pins") {
+    enterSub({ name: "Pinned in Bar", mode: "pins", pluginTitle: "Moo", icon: symbolIcon("pin") })
   } else if (r.act === "engine") {
     openCommand(WEB, "")
   } else if (r.act === "appsview") {
@@ -1560,10 +1571,11 @@ fn filterResults(text) {
   let word = (space >= 0 ? text.slice(0, space) : text).toLowerCase()
   let rest = space >= 0 ? text.slice(space + 1).trim() : ""
   let out = []
-  for (let i = 0; i < CATEGORIES.length; i = i + 1) {
-    let c = CATEGORIES[i]
+  let cats = builtinCategories()
+  for (let i = 0; i < cats.length; i = i + 1) {
+    let c = cats[i]
     if (word === "" || c.title.toLowerCase().indexOf(word) === 0) {
-      out.push({ name: rest !== "" ? c.title + ": " + rest : c.title, path: c.command.path, icon: c.command.icon, kind: panelLabel("category" + c.key), mode: "filter", category: c, query: rest })
+      out.push({ name: rest !== "" ? c.title + ": " + rest : c.title, path: c.command.path, icon: c.command.icon, kind: "Category", mode: "filter", category: c, query: rest })
     }
   }
   return out
@@ -1574,24 +1586,106 @@ fn categoryIndex() {
     return -1
   }
   for (let i = 0; i < CATEGORIES.length; i = i + 1) {
-    if (CATEGORIES[i].command.path === shell.mode.path) {
+    if (CATEGORIES[i].command !== null && CATEGORIES[i].command.path === shell.mode.path) {
       return i
     }
   }
   return -1
 }
 
-// Pressing the open category's button (or key) again goes back to the bar.
+// Pressing the open category's button (or key) again goes back to the bar. A pinned app or
+// shortcut just runs.
 fn openCategory(c, query) {
+  if (c.command === null) {
+    let err = runTarget(c.id, query, null)
+    if (err !== "done" && err !== "pending") {
+      shell.hud = err
+      refresh()
+    }
+    return
+  }
   if (shell.mode !== null && shell.mode.path === c.command.path) {
     leaveList()
     return
   }
   leaveToRoot()
-  enterList(c.command)
-  if (query !== "") {
+  openCommand(c.command, "")
+  if (query !== "" && shell.mode !== null) {
     setQuery(query)
   }
+}
+
+fn pinIds() {
+  let saved = getPref("pinned")
+  if (saved === "") {
+    return DEFAULT_PINS.slice(0)
+  }
+  if (saved === "none") {
+    return []
+  }
+  return saved.split("|").filter((id) => id !== "")
+}
+
+fn savePins(ids) {
+  setPref("pinned", ids.length === 0 ? "none" : ids.slice(0, PIN_MAX).join("|"))
+  CATEGORIES = loadPins()
+}
+
+// A bubble for `id` (what hotkeyTarget gives: a command id, shortcut keyword or app path), or null
+// when nothing by that id exists (an uninstalled plugin or deleted app).
+fn pinOf(id) {
+  let title = ""
+  let icon = ""
+  let command = null
+  let s = findShortcut(id)
+  if (s !== null) {
+    title = s.name
+    icon = shortcutIcon(s)
+  } else if (id.indexOf("/") === 0) {
+    if (!fileExists(id)) {
+      return null
+    }
+    let r = appRow(id)
+    title = r.name
+    icon = r.icon
+  } else {
+    command = findCommand(id)
+    if (command === null) {
+      return null
+    }
+    title = command.name
+    icon = command.icon
+  }
+  let symbol = ""
+  for (let i = 0; i < PIN_LOOKS.length; i = i + 1) {
+    if (PIN_LOOKS[i][0] === id) {
+      title = PIN_LOOKS[i][1]
+      symbol = PIN_LOOKS[i][2]
+    }
+  }
+  return { id: id, title: title, command: command, symbol: symbol, icon: icon, key: "" }
+}
+
+fn loadPins() {
+  let ids = pinIds()
+  let out = []
+  for (let i = 0; i < ids.length && out.length < PIN_MAX; i = i + 1) {
+    let p = pinOf(ids[i])
+    if (p !== null) {
+      p.key = "" + (out.length + 1)
+      out.push(p)
+    }
+  }
+  return out
+}
+
+fn isPinned(id) {
+  return id !== "" && pinIds().indexOf(id) >= 0
+}
+
+// Moo's own four categories, whatever is pinned: "/" and `moo category` reach them by name.
+fn builtinCategories() {
+  return DEFAULT_PINS.map((id) => pinOf(id))
 }
 
 // Every app A–Z, as Spotlight's Applications view; typing ranks matches.
@@ -2322,6 +2416,9 @@ fn listResults(text) {
   if (m.mode === "ai-models") {
     return aiModelResults(text)
   }
+  if (m.mode === "pins") {
+    return pinResults(text)
+  }
   if (m.mode === "hypery") {
     return hyperyResults(text)
   }
@@ -2675,6 +2772,16 @@ fn rowActions(r) {
   if (r.mode === "hk-row") {
     return hkActions(r)
   }
+  if (r.mode === "pin-row") {
+    let list = [act("pin-unpin", "Unpin from Bar", "", "pin.slash")]
+    if (r.pinIndex > 0) {
+      list.push(act("pin-left", "Move Left", "", "arrow.left"))
+    }
+    if (r.pinIndex < CATEGORIES.length - 1) {
+      list.push(act("pin-right", "Move Right", "", "arrow.right"))
+    }
+    return list
+  }
   let list = [act("open", primaryAction(r), "↵", "arrow.up.forward.app")]
   if (r.mode === "running-app") {
     list = [act("switch", "Switch To", "↵", "arrow.up.forward.app"), act(r.hidden ? "unhide" : "hide", r.hidden ? "Show" : "Hide", "⌘H", "eye.slash"), act("quit", "Quit", "⌘⌫", "xmark.app"), act("force-quit", "Force Quit", "⌥↵", "exclamationmark.octagon")]
@@ -2696,6 +2803,11 @@ fn rowActions(r) {
     }
     if (r.kind !== "Application") {
       list.push(act("copycli", "Copy CLI Command", "", "terminal"))
+    }
+    if (isPinned(hotkeyTarget(r))) {
+      list.push(act("unpin", "Unpin from Bar", "", "pin.slash"))
+    } else if (CATEGORIES.length < PIN_MAX) {
+      list.push(act("pin", "Pin to Bar", "", "pin"))
     }
   }
   if (r.kind === "Application" && runningPid(r.path) > 0) {
@@ -2721,6 +2833,40 @@ fn rowActions(r) {
     }
   }
   return list
+}
+
+// Settings → Pinned in Bar: the pinned items in order; ⌘K or Return moves or unpins one.
+fn pinResults(text) {
+  let t = text.trim().toLowerCase()
+  let rows = []
+  for (let i = 0; i < CATEGORIES.length; i = i + 1) {
+    let c = CATEGORIES[i]
+    if (t === "" || c.title.toLowerCase().indexOf(t) >= 0) {
+      rows.push({ name: c.title, kind: "⌘" + c.key, icon: c.symbol !== "" ? symbolIcon(c.symbol) : c.icon, mode: "pin-row", path: c.id, pinIndex: i, group: "Pinned" })
+    }
+  }
+  if (t === "") {
+    rows.push({ name: "Pin anything with ⌘K → Pin to Bar", kind: CATEGORIES.length + " of " + PIN_MAX, icon: symbolIcon("info.circle"), mode: "pin-help", group: "More" })
+    rows.push({ name: "Reset to Defaults", kind: "Applications, Files, Actions, Clipboard", icon: symbolIcon("arrow.uturn.backward"), mode: "pin-reset", group: "More" })
+  }
+  return rows
+}
+
+fn pinAction(id, r) {
+  let ids = CATEGORIES.map((c) => c.id)
+  let i = r.pinIndex
+  if (id === "pin-unpin") {
+    ids.splice(i, 1)
+    savePins(ids)
+    finishSub("Unpinned “" + r.name + "”")
+    return
+  }
+  let j = id === "pin-left" ? i - 1 : i + 1
+  let moved = ids[i]
+  ids[i] = ids[j]
+  ids[j] = moved
+  savePins(ids)
+  finishSub("Moved “" + r.name + "” " + (id === "pin-left" ? "left" : "right"))
 }
 
 fn rowActionResults(text) {
@@ -2749,6 +2895,20 @@ fn rowAction(id) {
   let r = m.row
   if (id.indexOf("hk-") === 0) {
     hkAction(id, r)
+    return
+  }
+  if (id.indexOf("pin-") === 0) {
+    pinAction(id, r)
+    return
+  }
+  if (id === "pin" || id === "unpin") {
+    let target = hotkeyTarget(r)
+    let ids = pinIds().filter((x) => x !== target)
+    if (id === "pin") {
+      ids.push(target)
+    }
+    savePins(ids)
+    actionDone(id === "pin" ? "Pinned “" + r.name + "” to the bar" : "Unpinned “" + r.name + "”")
     return
   }
   if (id === "open") {
@@ -2946,7 +3106,7 @@ fn finishSub(msg) {
   if (modeIs("rowactions")) {
     leaveSub()
   }
-  if (modeIs("hotkeys") || modeIs("settings")) {
+  if (modeIs("hotkeys") || modeIs("settings") || modeIs("pins")) {
     shell.apps = listResults(shell.query)
     compose()
   }
@@ -5319,6 +5479,18 @@ fn open(i) {
     openSetting(target)
     return
   }
+  if (target.mode === "pin-row") {
+    openRowActions(target)
+    return
+  }
+  if (target.mode === "pin-reset") {
+    savePins(DEFAULT_PINS)
+    shell.apps = listResults(shell.query)
+    compose()
+    shell.hud = "The bar has its four categories again"
+    refresh()
+    return
+  }
   if (target.mode === "alias") {
     addSearchHistory(shell.query)
     recordUse(target.target.path)
@@ -5442,7 +5614,7 @@ fn open(i) {
   } else if (target.mode === "no-view") {
     runCommand(target)
   } else if (target.mode === "apps" || target.mode === "actions") {
-    openCategory(CATEGORIES[target.mode === "apps" ? 0 : 2], "")
+    openCategory(pinOf(target.mode === "apps" ? "moo:apps" : "moo:actions"), "")
   } else {
     launch(target.path)
     if (shell.mode !== null) {
@@ -5569,8 +5741,11 @@ fn handleKey(name) {
     leaveSub()
     return
   }
-  if (name.indexOf("cmd+") === 0 && name.length === 5 && name[4] >= "1" && name[4] <= "4") {
-    openCategory(CATEGORIES[Number(name[4]) - 1], shell.mode === null ? shell.query : "")
+  if (name.indexOf("cmd+") === 0 && name.length === 5 && name[4] >= "1" && name[4] <= "6") {
+    let n = Number(name[4]) - 1
+    if (n < CATEGORIES.length) {
+      openCategory(CATEGORIES[n], shell.mode === null ? shell.query : "")
+    }
     return
   }
   if (name === "delete-empty") {
@@ -5774,7 +5949,7 @@ fn SlotRow(props) {
   let detail = table && header ? "Hotkey" : kindLabel(r)
   return (
     <row
-      onClick={() => open(slot.index)}
+      onClick={() => clickRow(slot.index)}
       borderRadius={THEME.radius.row}
       backgroundColor={bg}
       hoverBackgroundColor={props.selected ? SELECTED : (row && r !== null && r.line !== true ? C.hover : bg)}
@@ -5800,7 +5975,7 @@ fn GridCell(props) {
   let r = props.result
   let big = props.height > 1
   return (
-    <row onClick={() => open(props.index)} backgroundColor={props.selected ? SELECTED : CLEAR} hoverBackgroundColor={props.selected ? SELECTED : (r !== null && big ? C.hover : CLEAR)} borderRadius={THEME.radius.gridCell} columnWidths={["flex"]} alignItems="center" height={props.height} paddingLeft={4} paddingRight={4}
+    <row onClick={() => clickRow(props.index)} backgroundColor={props.selected ? SELECTED : CLEAR} hoverBackgroundColor={props.selected ? SELECTED : (r !== null && big ? C.hover : CLEAR)} borderRadius={THEME.radius.gridCell} columnWidths={["flex"]} alignItems="center" height={props.height} paddingLeft={4} paddingRight={4}
     ><div><image src={r !== null ? r.icon : ""} height={big ? THEME.icon.grid : 0} /><text
       fontSize={T.gridLabel} color={C.text} textAlign="center" paddingTop={big ? 6 : 0} height={big ? 0 : 1}
     >{r !== null ? shortName(r.name) : ""}</text></div></row>
@@ -5820,24 +5995,27 @@ fn GridRow(props) {
   return <row columnWidths={widths}>{cells}</row>
 }
 
-// A category button of the idle bar, inside the bar's glass. The one selected with
-// tab is filled with the system accent colour. 1 px once expanded.
+// A pinned bubble of the idle bar, inside the bar's glass. The one selected with tab is filled
+// with the system accent colour. 1 px once expanded, and for slots with nothing pinned.
 fn CategoryButton(props) {
   let c = props.category
-  let on = props.compact && props.selected
+  let shown = props.compact && c !== null
+  let on = shown && props.selected
+  let src = !shown ? "" : (c.symbol !== "" ? c.symbol : c.icon)
   return (
-    <row onClick={() => openCategory(c, "")} backgroundColor={on ? C.accent : CLEAR} hoverBackgroundColor={on ? C.accent : (props.compact ? C.hover : CLEAR)} borderRadius={CAT_W / 2} columnWidths={["flex"]} alignItems="center" height={HEADER_H}
-    ><image src={props.compact ? c.symbol : ""} symbol={true} symbolScale={THEME.icon.symbolScale} tint={on ? C.onAccent : C.secondaryText} height={THEME.icon.category} /></row>
+    <row onClick={() => clickPin(c, props.index)} backgroundColor={on ? C.accent : CLEAR} hoverBackgroundColor={on ? C.accent : (shown ? C.hover : CLEAR)} borderRadius={CAT_W / 2} columnWidths={["flex"]} alignItems="center" height={HEADER_H}
+    ><image src={src} symbol={shown && c.symbol !== ""} symbolScale={THEME.icon.symbolScale} tint={on ? C.onAccent : C.secondaryText} height={THEME.icon.category} /></row>
   )
 }
 
 // tab / shift+tab in the idle bar: field → Applications → … → Clipboard → field.
 fn moveBubble(step) {
+  let last = CATEGORIES.length - 1
   let next = shell.bubble + step
-  if (next > 3) {
+  if (next > last) {
     next = -1
   } else if (next < -1) {
-    next = 3
+    next = last
   }
   shell.bubble = next
   refresh()
@@ -5857,6 +6035,34 @@ fn HintLabel(props) {
 
 // Footer key caps are buttons too: a click does what the key does.
 let KEYCAP_KEYS = { "↵": "enter", "⌘↵": "cmd+enter", "⌥↵": "alt+enter", "esc": "escape", "⌘R": "cmd+r", "⌘L": "cmd+l", "⇥": "tab", "⌘⌫": "cmd+delete", "⌘Y": "cmd+y", "⌘K": "cmd+k", "⌘O": "cmd+o" }
+
+// A click on a result row opens it; a right-click (or control-click) selects it and opens its
+// actions, as ⌘K does.
+fn clickRow(i) {
+  if (!isRightClick()) {
+    open(i)
+    return
+  }
+  if (modeIs("rowactions") || modeIs("fileactions") || i >= shell.results.length) {
+    return
+  }
+  shell.selected = i
+  handleKey("cmd+k")
+}
+
+// A click on a pinned bubble opens it; a right-click lists Unpin, Move Left and Move Right.
+fn clickPin(c, i) {
+  if (c === null) {
+    return
+  }
+  if (!isRightClick()) {
+    openCategory(c, "")
+    return
+  }
+  let row = { name: c.title, icon: c.symbol !== "" ? symbolIcon(c.symbol) : c.icon, mode: "pin-row", path: c.id, pinIndex: i }
+  leaveToRoot()
+  openRowActions(row)
+}
 
 fn clickHint(h) {
   if (h === null) {
@@ -6279,17 +6485,34 @@ fn App() {
   // The command whose arguments are being filled in, and the others' values, before the field.
   let chip = argChip()
   let chipW = chip === "" ? 1 : Math.min(ARG_CHIP_MAX, Math.round(chip.length * 7.5) + 18)
-  let headerWidths = compact
-    ? [iconW, spinW, chipW, FIELD_W - 53 - chipW - inset, inset + CAT_GAP, CAT_W, CAT_GAP, CAT_W, CAT_GAP, CAT_W, CAT_GAP, CAT_W]
-    : [iconW, spinW, chipW, "flex", inset, 1, 1, 1, 1, 1, 1, 1]
+  // PIN_MAX gap + bubble column pairs, whatever is pinned (the tree keeps its shape); unused
+  // slots are 1 px, and the field takes the rest.
+  let pinCols = []
+  let pinned = CATEGORIES.length
+  // A local bound: tish lowers `i < GLOBAL` loops to a range over the global's bare name.
+  let slots = PIN_MAX
+  for (let i = 0; i < slots; i = i + 1) {
+    if (!compact) {
+      pinCols.push(i === 0 ? inset : 1)
+      pinCols.push(1)
+    } else if (i < pinned) {
+      pinCols.push(i === 0 ? inset + CAT_GAP : CAT_GAP)
+      pinCols.push(CAT_W)
+    } else {
+      pinCols.push(i === 0 && pinned === 0 ? inset : 1)
+      pinCols.push(1)
+    }
+  }
+  let rest = pinCols.reduce((a, b) => a + b, 0)
+  let headerWidths = [iconW, spinW, chipW, compact ? PANEL_W - iconW - spinW - chipW - rest : "flex"].concat(pinCols)
   let buttons = []
-  for (let i = 0; i < 4; i = i + 1) {
+  for (let i = 0; i < slots; i = i + 1) {
     buttons.push(<space />)
-    buttons.push(<CategoryButton category={CATEGORIES[i]} compact={compact} selected={shell.bubble === i} />)
+    buttons.push(<CategoryButton category={i < pinned ? CATEGORIES[i] : null} index={i} compact={compact} selected={shell.bubble === i} />)
   }
   let header = (
     <row columnWidths={headerWidths} alignItems="center" height={HEADER_H} backgroundColor={CLEAR}
-    ><image src={cat >= 0 ? CATEGORIES[cat].symbol : fieldIcon} symbol={cat >= 0 || fieldIconSymbol} symbolScale={THEME.icon.symbolScale} tint={cat >= 0 ? C.accent : C.secondaryText} height={spin ? 1 : THEME.icon.field} /><progress_bar indeterminate={true} /><text fontSize={T.row} fontWeight={THEME.weight.section} color={C.accent}>{chip}</text><textinput value={shell.query} onChange={onFieldChange} bezeled={false} fontSize={T.field} placeholder={placeholder()} />{buttons}</row>
+    ><image src={cat >= 0 ? (CATEGORIES[cat].symbol !== "" ? CATEGORIES[cat].symbol : CATEGORIES[cat].icon) : fieldIcon} symbol={cat >= 0 ? CATEGORIES[cat].symbol !== "" : fieldIconSymbol} symbolScale={THEME.icon.symbolScale} tint={cat >= 0 ? C.accent : C.secondaryText} height={spin ? 1 : THEME.icon.field} /><progress_bar indeterminate={true} /><text fontSize={T.row} fontWeight={THEME.weight.section} color={C.accent}>{chip}</text><textinput value={shell.query} onChange={onFieldChange} bezeled={false} fontSize={T.field} placeholder={placeholder()} />{buttons}</row>
   )
   let footer = (
     <row columnWidths={widths} alignItems="center" height={FOOTER_H} paddingLeft={18} paddingRight={12} backgroundColor={CLEAR}
@@ -6950,9 +7173,10 @@ fn handleCli(argv, cwd, token) {
     let name = w.length > 1 ? w[1].toLowerCase() : ""
     let text = w.slice(2).join(" ")
     let found = null
-    for (let i = 0; i < CATEGORIES.length; i = i + 1) {
-      if (name !== "" && CATEGORIES[i].title.toLowerCase().indexOf(name) === 0) {
-        found = CATEGORIES[i]
+    let cats = builtinCategories()
+    for (let i = 0; i < cats.length; i = i + 1) {
+      if (name !== "" && cats[i].title.toLowerCase().indexOf(name) === 0) {
+        found = cats[i]
       }
     }
     if (found === null && name !== "recent") {
