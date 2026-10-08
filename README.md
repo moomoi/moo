@@ -99,7 +99,7 @@ Homebrew: `brew upgrade moomoi/moo/moo`. Otherwise download the latest release o
 ## Building from source
 
 ```sh
-git clone --recurse-submodules https://github.com/moomoi/moo.git
+git clone https://github.com/moomoi/moo.git
 cd moo && npm ci && npm run build
 ```
 

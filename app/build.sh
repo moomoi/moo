@@ -5,8 +5,11 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-[ -x ../node_modules/.bin/tish ] || (cd .. && npm ci --no-audit --no-fund)
-npm ci --no-audit --no-fund
+# Install only when the lockfile changed: `npm ci` re-extracts node_modules, and the new file times
+# make cargo rebuild tish-macos (a path dependency there) and then the whole app.
+fresh() { [ -f "$1/node_modules/.package-lock.json" ] && [ ! "$1/package-lock.json" -nt "$1/node_modules/.package-lock.json" ]; }
+fresh .. || (cd .. && npm ci --no-audit --no-fund)
+fresh . || npm ci --no-audit --no-fund
 TISH="${TISH:-$(cd .. && pwd)/node_modules/.bin/tish}"
 mkdir -p dist
 

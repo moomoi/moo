@@ -3,14 +3,14 @@
 # and the icons from packaging/ (see scripts/make-icons.sh).
 # LSUIElement keeps it out of the Dock and app switcher. Signs ad hoc unless SIGN_IDENTITY is set.
 #   SKIP_BUILD=1   reuse what is already built
-#   MOO_BIN, MOO_PLUGIN_DIST   what to bundle (default app/dist/moo, plugins/dist; release builds
+#   MOO_BIN, MOO_PLUGIN_DIST   what to bundle (default app/dist/moo, dist/plugins; release builds
 #                  pass dist/universal/moo and dist/universal/plugins from build-universal.sh)
 #   SIGN_IDENTITY  e.g. "Developer ID Application: ..." (adds hardened runtime + entitlements)
 #   VERSION        CFBundleShortVersionString, e.g. 1.2.0
 #   BUILD          CFBundleVersion; must grow with every release (CI uses the run number)
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-# The compiler comes from npm (package.json); plugins/build.sh and app/build.sh use $TISH.
+# The compiler comes from npm (package.json); app/build.sh uses $TISH; plugins come prebuilt (fetch-plugins.sh).
 [ -n "${TISH:-}" ] || [ -x "$ROOT/node_modules/.bin/tish" ] || (cd "$ROOT" && npm ci --no-audit --no-fund)
 export TISH="${TISH:-$ROOT/node_modules/.bin/tish}"
 VERSION="${VERSION:-0.1.0}"
@@ -18,10 +18,10 @@ BUILD="${BUILD:-$VERSION}"
 BUNDLE_ID="moi.moo.launcher"
 APP="$ROOT/dist/Moo.app"
 BIN="${MOO_BIN:-$ROOT/app/dist/moo}"
-PLUGIN_DIST="${MOO_PLUGIN_DIST:-$ROOT/plugins/dist}"
+PLUGIN_DIST="${MOO_PLUGIN_DIST:-$ROOT/dist/plugins}"
 
 if [ -z "${SKIP_BUILD:-}" ]; then
-  bash "$ROOT/plugins/build.sh"
+  bash "$ROOT/scripts/fetch-plugins.sh"
   bash "$ROOT/app/build.sh"
 fi
 

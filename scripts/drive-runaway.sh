@@ -9,7 +9,7 @@ if [ "${1:-}" = "build" ]; then
   TISH="${TISH:-$ROOT/node_modules/.bin/tish}"
   mkdir -p /tmp/moo-runaway/plugins
   "$TISH" build "$ROOT/scripts/fixtures/runaway.tish" --target bytecode -o /tmp/moo-runaway/plugins/runaway.tishc
-  cp "$ROOT/plugins/dist/convert.tishc" /tmp/moo-runaway/plugins/
+  cp "$ROOT/dist/plugins/convert.tishc" /tmp/moo-runaway/plugins/
   exit 0
 fi
 OUT="${1:-/tmp/moo-runaway/shots}"

@@ -19,21 +19,23 @@
 
 ## Get the code
 
-`plugins/` is a submodule ([moomoi/plugins](https://github.com/moomoi/plugins)), so clone with it:
 
 ```sh
-git clone --recurse-submodules https://github.com/moomoi/moo.git   # or, in a clone: git submodule update --init
+git clone https://github.com/moomoi/moo.git
 npm ci
 ```
 
-A plugin merged into moomoi/plugins ships once this repo points the submodule at it:
-`git -C plugins pull origin main`, then commit `plugins`.
+Plugins are built and released in [moomoi/plugins](https://github.com/moomoi/plugins). Moo ships
+the release named in `plugins.version`: `scripts/fetch-plugins.sh` downloads it into
+`dist/plugins/` (checking its SHA256SUMS) when that version isn't there yet. A merged plugin ships
+once its release is out and `plugins.version` names it. To try a plugins build first, point
+`MOO_PLUGINS_TARBALL` at its `moo-plugins.tar.gz`.
 
 ## Build
 
 ```sh
 npm ci                       # the tish compiler and Lattish (once, and after package.json changes)
-npm run build                # plugins + app: plugins/dist/, app/dist/moo (fast, unoptimized compile)
+npm run build                # plugins + app: dist/plugins/ (downloaded), app/dist/moo (fast compile)
 npm run build:release        # the same, fully optimized like a release (several minutes from cold)
 npm test                     # moo-macos unit tests
 npm run clean                # remove every build output (dist/, target/, app and plugin node_modules)
@@ -42,7 +44,7 @@ npm run clean                # remove every build output (dist/, target/, app an
 Or step by step:
 
 ```sh
-bash plugins/build.sh        # plugins/dist/convert.tishc, plugins/dist/utils.lib
+bash scripts/fetch-plugins.sh  # dist/plugins/: the moomoi/plugins release in plugins.version
 bash app/build.sh            # app/dist/moo
 bash scripts/bundle-macos.sh # both of the above, then dist/Moo.app
 npm run build:web            # the moo.moi site with Orbit (see web.md)

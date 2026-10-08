@@ -2,7 +2,7 @@
 
 A Moo plugin is Tish code that adds commands to the root search. This page documents contract
 v0, which every plugin implements, and then what is planned next. The official plugins live in
-[moomoi/plugins](https://github.com/moomoi/plugins), checked out here as the `plugins/` submodule;
+[moomoi/plugins](https://github.com/moomoi/plugins), which releases them built for Moo to download;
 the user-facing version of this page is [moo.moi/docs/plugin-api](https://moo.moi/docs/plugin-api).
 
 ## Layout
@@ -13,7 +13,7 @@ plugins/<name>/
   src/plugin.tish
 ```
 
-`plugins/build.sh` builds every plugin into `plugins/dist/` according to its tier:
+moomoi/plugins' `build.sh` builds every plugin into its `dist/` according to its tier:
 
 | Tier | Build | Output | Runs as |
 | --- | --- | --- | --- |
@@ -21,7 +21,7 @@ plugins/<name>/
 | B | `tish build <entry> --target native --crate-type cdylib` | `<id>.lib` | native module loaded in-process via `tish:ffi` |
 
 The shell loads every `.tishc`, `.lib` and `.dylib` in its plugin folder: `MOO_PLUGINS` if set,
-otherwise `Contents/Resources/plugins` inside `Moo.app`, otherwise `../plugins/dist` when run
+otherwise `Contents/Resources/plugins` inside `Moo.app`, otherwise `../dist/plugins` when run
 from `app/`.
 
 ## Contract v0

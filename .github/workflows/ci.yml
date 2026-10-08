@@ -27,16 +27,14 @@ jobs:
       MOO_SIGN_IDENTITY: "-"
     steps:
       - uses: actions/checkout@v7
-        with:
-          submodules: true
 
       - uses: ./.github/actions/toolchain
 
       - name: Lint
         run: npm run lint
 
-      - name: Plugins
-        run: bash plugins/build.sh
+      - name: Plugins (moomoi/plugins release)
+        run: bash scripts/fetch-plugins.sh
 
       - name: Unit tests
         working-directory: packages/moo-macos
