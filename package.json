@@ -15,5 +15,9 @@
     "@tishlang/tish": "4.0.1",
     "@tishlang/tish-lint": "^4.0.1",
     "lattish": "4.0.4"
+  },
+  "allowScripts": {
+    "@tishlang/tish": true,
+    "@tishlang/tish-lint": true
   }
 }

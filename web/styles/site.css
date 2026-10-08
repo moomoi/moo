@@ -23,7 +23,9 @@ a { color: inherit; }
 @keyframes drift { to { transform: translate(8vmax, 6vmax) scale(1.15); } }
 
 /* nav */
-nav { position: sticky; top: 0; z-index: 10; backdrop-filter: blur(18px) saturate(1.6); -webkit-backdrop-filter: blur(18px) saturate(1.6); background: color-mix(in srgb, var(--bg) 60%, transparent); border-bottom: 1px solid var(--line); }
+nav { position: sticky; top: 0; z-index: 10; border-bottom: 1px solid var(--line); }
+/* The blur and tint live on a layer behind the nav, not on the sticky element itself: Chrome flickers when a sticky element with backdrop-filter scrolls over content that has its own backdrop-filter and animates (the home page demo). */
+nav::before { content: ""; position: absolute; inset: 0; z-index: -1; backdrop-filter: blur(18px) saturate(1.6); -webkit-backdrop-filter: blur(18px) saturate(1.6); background: color-mix(in srgb, var(--bg) 60%, transparent); }
 nav .in { width: min(1120px, 100% - 32px); margin: 0 auto; height: 60px; display: flex; align-items: center; gap: 24px; }
 nav .brand { display: flex; align-items: center; gap: 10px; font-weight: 800; letter-spacing: -.03em; font-size: 20px; text-decoration: none; }
 nav .brand img { width: 28px; height: 28px; border-radius: 7px; }
