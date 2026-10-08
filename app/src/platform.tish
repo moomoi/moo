@@ -604,7 +604,7 @@ export fn runShell(command, cwd, cb, values) {
 // Returns `{ ok, message }` for the HUD.
 export fn windowAction(pid, name, action) {
   let r = macos.accessibility.windowAction(pid, action)
-  if (r.error !== undefined) {
+  if ('error' in r) {
     return { ok: false, message: name + ' ' + r.error }
   }
   let done = {
