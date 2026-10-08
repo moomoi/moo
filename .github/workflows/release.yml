@@ -1,9 +1,8 @@
 # On a main push whose commits warrant a release (feat / fix / perf / BREAKING CHANGE, see
 # CONTRIBUTING.md), build Moo for Apple silicon and Intel, sign it with the Developer ID, notarize
-# it, and publish a PRERELEASE here in the PRIVATE repo (knoeone/moo) with the assets attached.
-# Promote it (Edit release -> uncheck "Set as a pre-release") to trigger publish-public.yml, which
-# mirrors it to the PUBLIC download repo (moomoi/moo) and bumps the Homebrew cask. Same pattern as
-# dune-ide and popcraft-desktop.
+# it, and publish a PRERELEASE here with the assets attached. Promote it (Edit release -> uncheck
+# "Set as a pre-release") to make it the download; release-promoted.yml then rewrites its notes to
+# cover everything since the last full release and bumps the Homebrew cask.
 #
 #   version -> build-mac (universal, signed, notarized) -> release (sem tags vX.Y.Z, prerelease)
 #
@@ -188,5 +187,5 @@ jobs:
             echo "## Moo ${{ needs.version.outputs.version }} prerelease"
             echo ""
             echo "Test it, then promote it: Releases -> v${{ needs.version.outputs.version }} -> Edit -> uncheck **Set as a pre-release**."
-            echo "Promoting publishes it to moomoi/moo and the Homebrew cask (publish-public.yml)."
+            echo "Promoting makes it the download and bumps the Homebrew cask (release-promoted.yml)."
           } >> "$GITHUB_STEP_SUMMARY"

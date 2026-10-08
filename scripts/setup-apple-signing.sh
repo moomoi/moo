@@ -18,7 +18,7 @@
 # Requires: macOS, and `gh` authenticated (brew install gh && gh auth login).
 set -euo pipefail
 
-REPO="${REPO:-knoeone/moo}"
+REPO="${REPO:-moomoi/moo}"
 WORK="${TMPDIR:-/tmp}/moo-apple-signing"
 CSR="$WORK/DeveloperID.certSigningRequest"
 KEY="$WORK/DeveloperID.key"
@@ -50,8 +50,8 @@ This provisions six repository secrets:
 You need a paid Apple Developer Program membership. Without one, stop here: the
 release workflow refuses to publish an unsigned build.
 
-The same values are already on knoeone/popcraft-desktop (Developer ID: Knoeone
-LLC). GitHub never shows a secret again, so they are entered once more here.
+If another repo already uses this Developer ID, the values have to be entered again:
+GitHub never shows a secret once it's saved.
 INTRO
 
 # ── 1. reuse an existing identity if there is one ──────────────────────────────

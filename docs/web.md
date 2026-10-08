@@ -86,7 +86,7 @@ OAuth app, so for real Hypery this only works with `https://moo.moi/callback`.
 
 ## Deploy
 
-moo.moi is the Vercel project `moo-web` (team Knoeone), connected to this repo with `web/` as its
+moo.moi is the Vercel project `moo-web`, connected to this repo with `web/` as its
 root: every push to `main` deploys production, and every PR gets a preview deployment (the
 **Vercel** check on the PR). `web/vercel.json` runs `npm ci` and `npm run build`. On Vercel,
 `orbit build` writes the Build Output API (`.vercel/output`): the static pages and one function for

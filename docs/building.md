@@ -22,7 +22,7 @@
 `plugins/` is a submodule ([moomoi/plugins](https://github.com/moomoi/plugins)), so clone with it:
 
 ```sh
-git clone --recurse-submodules git@github.com:knoeone/moo.git   # or, in a clone: git submodule update --init
+git clone --recurse-submodules https://github.com/moomoi/moo.git   # or, in a clone: git submodule update --init
 npm ci
 ```
 

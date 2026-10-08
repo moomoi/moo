@@ -2,14 +2,13 @@
 
 Versions come from conventional commits ([CONTRIBUTING.md](../CONTRIBUTING.md)) through
 [`tishlang/sem`](https://github.com/tishlang/sem). Merging to `main` builds a signed, notarized,
-universal Moo and publishes it as a prerelease in this private repo. Promoting the prerelease
-publishes it to everyone. Same pattern as dune-ide and popcraft-desktop.
+universal Moo and publishes it as a prerelease in this repo. Promoting the prerelease makes it the
+download everyone gets.
 
-| Repo | Visibility | Holds | Gets |
-|------|-----------|-------|------|
-| `knoeone/moo` | private | source, CI, all workflows | a prerelease for every release-worthy push to `main` |
-| `moomoi/moo` | public | README, LICENSE and release downloads, no source | full releases (notes since the last public one) |
-| `moomoi/homebrew-moo` | public | the Homebrew tap (`Casks/moo.rb`) | regenerated on every public release |
+| Repo | Holds | Gets |
+|------|-------|------|
+| `moomoi/moo` | source, CI, releases | a prerelease for every release-worthy push to `main`; promoted ones are the downloads |
+| `moomoi/homebrew-moo` | the Homebrew tap (`Casks/moo.rb`) | regenerated on every promoted release |
 
 ```
 PR               ci.yml       build + unit tests; "Release check" says what the merge releases
@@ -17,7 +16,7 @@ merge to main    release.yml  version (sem dry run) -> build-mac -> release
                               build-mac: arm64 + x86_64 builds, lipo, Developer ID + hardened
                               runtime, notarize + staple the app, DMG + zip, notarize + staple
                               the DMG, verify. release: sem tags vX.Y.Z, publishes the prerelease
-promote          publish-public.yml  copy to moomoi/moo, then repository_dispatch to the tap
+promote          release-promoted.yml  notes since the last full release, repository_dispatch to the tap
                  homebrew-moo update-formulas.yml  rewrite Casks/moo.rb with the new sha256
 ```
 
@@ -31,24 +30,22 @@ Assets, under fixed names so `releases/latest/download/…` links never change:
 
 ## One-time setup
 
-1. **Signing secrets on `knoeone/moo`.** Run `bash scripts/setup-apple-signing.sh`. It uploads
+1. **Signing secrets on `moomoi/moo`.** Run `bash scripts/setup-apple-signing.sh`. It uploads
    `APPLE_CERTIFICATE`, `APPLE_CERTIFICATE_PASSWORD`, `APPLE_SIGNING_IDENTITY`, `APPLE_TEAM_ID`,
-   `APPLE_ID` and `APPLE_PASSWORD` (an app-specific password). The Developer ID is Knoeone LLC's,
-   the same identity as popcraft-desktop and dune.
-2. **Release GitHub App.** The private repo's `GITHUB_TOKEN` can't write to `moomoi/*`.
+   `APPLE_ID` and `APPLE_PASSWORD` (an app-specific password).
+2. **Release GitHub App.** The repo's `GITHUB_TOKEN` can't write to `moomoi/homebrew-moo`.
    1. At <https://github.com/organizations/moomoi/settings/apps>, choose **New GitHub App**. Any
       name ("Moo Release"), no webhook, **Repository → Contents: Read and write**.
    2. Note the **App ID** and generate a **private key** (`.pem`).
-   3. **Install App** → `moomoi` → only `moomoi/moo` and `moomoi/homebrew-moo`.
+   3. **Install App** → `moomoi` → only `moomoi/homebrew-moo`.
    4. Set the secrets:
 
       ```sh
-      gh secret set MOO_RELEASE_APP_ID --repo knoeone/moo --body "<app id>"
-      gh secret set MOO_RELEASE_APP_PRIVATE_KEY --repo knoeone/moo < moo-release.private-key.pem
+      gh secret set MOO_RELEASE_APP_ID --repo moomoi/moo --body "<app id>"
+      gh secret set MOO_RELEASE_APP_PRIVATE_KEY --repo moomoi/moo < moo-release.private-key.pem
       ```
-3. **Public repos.** `moomoi/moo` and `moomoi/homebrew-moo` must be public, with a first commit on
-   `main`: the README and LICENSE in one, the tap workflow in the other.
-4. **Merges.** On `knoeone/moo`, allow squash merging only, and require the `Build and test` and
+3. **The tap.** `moomoi/homebrew-moo` must be public, with its tap workflow on `main`.
+4. **Merges.** On `moomoi/moo`, allow squash merging only, and require the `Build and test` and
    `Release check` checks on `main`.
 5. **First release.** There are no tags yet, and the history before CI isn't conventional, so sem
    would propose 1.0.0. Run **Release** from the Actions tab (workflow_dispatch) with `force` set
@@ -58,18 +55,19 @@ Assets, under fixed names so `releases/latest/download/…` links never change:
 
 1. **Merge** a PR whose title is `feat:`, `fix:` or `perf:` (or breaking). The PR's Release check
    already said which version that makes.
-2. **Wait for Release.** Its summary links the prerelease `vX.Y.Z` on `knoeone/moo`. It takes about
+2. **Wait for Release.** Its summary links the prerelease `vX.Y.Z`. It takes about
    20 minutes warm; notarization is usually 2 to 10 of them.
 3. **Test the prerelease DMG.** `bash scripts/verify-release.sh ~/Downloads/Moo-macos-universal.dmg`
    checks the signature, entitlements, both architectures and the notarization tickets.
 4. **Promote:** Releases → vX.Y.Z → Edit → uncheck **Set as a pre-release** → Update release.
-   `publish-public.yml` mirrors it to `moomoi/moo` and bumps the cask.
+   `release-promoted.yml` rewrites its notes to cover everything since the last full release and
+   bumps the cask.
 5. **Check:** `brew update && brew upgrade moomoi/moo/moo`, and `https://moo.moi/download`.
 
 ## Re-running
 
 - **Rebuild a prerelease:** re-run the failed Release jobs. sem replaces same-named assets.
-- **Re-mirror a public release:** run **Publish public release** with the tag (`v0.1.0`).
+- **Redo a promoted release's notes and cask bump:** run **Release promoted** with the tag (`v0.4.0`).
 - **Re-bump Homebrew:** run **Update formulas** in `moomoi/homebrew-moo` with the version.
 - **Release without a feat or fix commit:** run **Release** with `force` set to `patch`, `minor`,
   `major` or an exact version.
