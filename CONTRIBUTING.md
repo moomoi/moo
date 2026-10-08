@@ -42,7 +42,7 @@ BREAKING CHANGE: the `args` manifest field is now `arguments`.
 ## Before opening a PR
 
 ```sh
-bash plugins/build.sh
+bash scripts/fetch-plugins.sh
 (cd packages/moo-macos && cargo test --lib)
 bash app/build.sh
 ```

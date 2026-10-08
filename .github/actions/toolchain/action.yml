@@ -1,7 +1,7 @@
 name: Moo toolchain
 description: >-
   Rust (both Mac targets) and the tish compiler from npm (package.json), with the cargo registry
-  and Moo's native builds cached. Exports TISH for plugins/build.sh and app/build.sh.
+  and Moo's native builds cached. Exports TISH for app/build.sh.
 
 runs:
   using: composite

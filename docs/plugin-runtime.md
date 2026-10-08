@@ -27,7 +27,7 @@ reconstructed from the code.
 The Tier A pipeline:
 
 1. `index.rs` lists `*.tishc` in the plugin folder (`MOO_PLUGINS`, `Contents/Resources/plugins`,
-   or `plugins/dist`).
+   or `dist/plugins`).
 2. `main.tish` `loadPlugin` calls `loadBytecodePlugin(path)` (`vmplug.rs`). This:
    - deserializes the chunk
    - creates a `Vm` with **no capabilities** (no fs, process, http, ffi, timers) and the JIT off

@@ -2,7 +2,6 @@ target/
 *.lib
 app/dist/
 app/node_modules/
-plugins/dist/
 web/dist/
 web/.vercel/
 /dist/

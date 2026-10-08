@@ -262,10 +262,10 @@ mod tests {
         get(v, "id")
     }
 
-    /// Lattish views from @moo/ui, end to end in a Tier A VM. Needs `plugins/build.sh` first.
+    /// Lattish views from @moo/ui, end to end in a Tier A VM. Needs `scripts/fetch-plugins.sh` first.
     #[test]
     fn lattish_view_plugin_opens_and_dispatches() {
-        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../plugins/dist/hello-list.tishc");
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../dist/plugins/hello-list.tishc");
         if !std::path::Path::new(path).exists() {
             eprintln!("skip: {path} not built");
             return;
@@ -319,11 +319,11 @@ mod tests {
     }
 
     /// The Slack plugin's commands, their arguments and its network permission, as the shell reads
-    /// them. Only the manifest: no Keychain, no network. Needs `plugins/build.sh` first.
+    /// them. Only the manifest: no Keychain, no network. Needs `scripts/fetch-plugins.sh` first.
     #[cfg(target_os = "macos")]
     #[test]
     fn slack_plugin_declares_arguments_and_network() {
-        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../plugins/dist/slack.tishc");
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../dist/plugins/slack.tishc");
         if !std::path::Path::new(path).exists() {
             eprintln!("skip: {path} not built");
             return;
