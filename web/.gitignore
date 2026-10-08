@@ -1,3 +1,4 @@
 .orbit/
 .vercel/
 node_modules/
+.env*
