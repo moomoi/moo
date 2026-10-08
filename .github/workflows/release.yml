@@ -120,7 +120,11 @@ jobs:
           # shellcheck disable=SC2046
           security list-keychains -d user -s "$KC" $(security list-keychains -d user | tr -d '"')
           rm -f "$P12"
-          security find-identity -v -p codesigning "$KC" | head -3
+          # Logs are public: say only that the Developer ID is there, not which identities are.
+          if ! security find-identity -v -p codesigning "$KC" | grep -q "Developer ID Application"; then
+            echo "::error::APPLE_CERTIFICATE has no Developer ID Application identity"; exit 1
+          fi
+          echo "Developer ID Application identity imported."
 
       - name: Build (arm64 + x86_64, lipo)
         env:

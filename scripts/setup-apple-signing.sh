@@ -126,9 +126,28 @@ if [ ! -f "$P12" ]; then
   step "Exporting the identity as a .p12"
   P12_PASS="$(openssl rand -base64 24)"
   warn "Keychain will prompt for your LOGIN password to release the private key."
-  security export -t identities -f pkcs12 -o "$P12" -P "$P12_PASS" \
+  # `security export` can only export every identity in the keychain, so export them all to a
+  # scratch file, keep the Developer ID Application certificate and its own private key (matched by
+  # localKeyID), and pack just those two into the .p12 CI gets.
+  ALL="$WORK/all-identities.p12"
+  security export -t identities -f pkcs12 -o "$ALL" -P "$P12_PASS" \
     || die "export failed. If the identity has no private key it cannot sign — recreate it with this script."
+  chmod 600 "$ALL"
+  dump() { openssl pkcs12 -in "$ALL" -passin pass:"$P12_PASS" "$@" -legacy 2>/dev/null || openssl pkcs12 -in "$ALL" -passin pass:"$P12_PASS" "$@" 2>/dev/null; }
+  # Print the PEM block (with its bag attributes) whose attributes contain $1.
+  pick() { awk -v want="$1" '/^Bag Attributes/ { if (keep) printf "%s", blk; blk=""; keep=0 } { blk = blk $0 "\n"; if (index($0, want)) keep=1 } END { if (keep) printf "%s", blk }'; }
+  dump -nokeys -clcerts | pick "Developer ID Application" > "$WORK/devid-cert.pem"
+  KEYID="$(grep -m1 localKeyID "$WORK/devid-cert.pem" | sed 's/.*localKeyID: *//')"
+  [ -n "$KEYID" ] || die "no Developer ID Application certificate with a private key in the export."
+  dump -nocerts -nodes | pick "$KEYID" > "$WORK/devid-key.pem"
+  chmod 600 "$WORK/devid-key.pem"
+  grep -q "PRIVATE KEY" "$WORK/devid-key.pem" || die "the Developer ID certificate's private key was not in the export."
+  openssl pkcs12 -export -legacy -inkey "$WORK/devid-key.pem" -in "$WORK/devid-cert.pem" -out "$P12" -passout pass:"$P12_PASS" 2>/dev/null \
+    || openssl pkcs12 -export -inkey "$WORK/devid-key.pem" -in "$WORK/devid-cert.pem" -out "$P12" -passout pass:"$P12_PASS"
+  rm -f "$ALL" "$WORK/devid-key.pem" "$WORK/devid-cert.pem"
   chmod 600 "$P12"
+  COUNT="$(openssl pkcs12 -in "$P12" -passin pass:"$P12_PASS" -nokeys -legacy 2>/dev/null | grep -c "BEGIN CERTIFICATE" || openssl pkcs12 -in "$P12" -passin pass:"$P12_PASS" -nokeys 2>/dev/null | grep -c "BEGIN CERTIFICATE")"
+  [ "$COUNT" = "1" ] || die "the .p12 should hold exactly one certificate, found $COUNT."
 fi
 
 # ── 4. validate before uploading ──────────────────────────────────────────────
