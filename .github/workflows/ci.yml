@@ -1,21 +1,19 @@
-# Tests on every PR and main push, plus the sem dry run that tells a PR what its merge releases.
-# Releasing itself is release.yml.
+# Tests on every PR, plus the sem dry run that tells a PR what its merge releases. A merge to main
+# isn't built again here: release.yml builds it (signed, both architectures).
 
 name: CI
 
 on:
   pull_request:
     branches: [main]
-  push:
-    branches: [main]
 
 permissions:
   contents: read
 
-# PRs: one run per PR, superseded pushes cancelled. main: one run per commit.
+# One run per PR; a newer push cancels the older run.
 concurrency:
-  group: ci-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || github.sha }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: ci-pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
 
 jobs:
   test:
@@ -45,7 +43,6 @@ jobs:
 
   release_check:
     name: Release check (sem dry run)
-    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
