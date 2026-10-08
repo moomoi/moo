@@ -1,0 +1,27 @@
+// moo.moi on Orbit: the pages in pages/, the docs in content/docs, styles/site.css on top of no
+// Tailwind preflight. Everything is prerendered except /callback, the sign-in relay.
+
+export let site = {
+  title: 'Moo',
+  description: 'The launcher for macOS. One hotkey, then type anything: apps, files, math, clipboard, windows and AI.',
+  url: 'https://moo.moi',
+  lang: 'en',
+  author: 'The Tish Project Authors',
+  icon: '/favicon.png',
+  image: '/icon.png',
+  themeColor: '#07070a',
+  titleTemplate: '%s · Moo',
+  trailingSlash: false,
+  prefetch: false,
+  styles: ['styles/site.css'],
+  tailwind: { preflight: false },
+  collections: {
+    docs: { dir: 'content/docs', route: '/docs/:slug', sortBy: 'order', desc: false, html: true }
+  },
+  redirects: [
+    // Promoted releases are mirrored to the public repo under a fixed asset name (docs/release.md).
+    { from: '/download', to: 'https://github.com/moomoi/moo/releases/latest/download/Moo-macos-universal.dmg', status: 302 },
+    { from: '/index.html', to: '/', status: 301 }
+  ],
+  sitemapExclude: ['/callback']
+}

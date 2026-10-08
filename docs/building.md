@@ -45,7 +45,7 @@ Or step by step:
 bash plugins/build.sh        # plugins/dist/convert.tishc, plugins/dist/utils.lib
 bash app/build.sh            # app/dist/moo
 bash scripts/bundle-macos.sh # both of the above, then dist/Moo.app
-bash web/build.sh            # web/dist/moo-web, the moo.moi server (see web.md)
+npm run build:web            # the moo.moi site with Orbit (see web.md)
 ```
 
 `app/build.sh` installs the npm packages on first run (`npm ci` here and in `app/`). tish-macos,
@@ -62,7 +62,7 @@ The icons come from one image, `packaging/icon.png` (1024×1024, full bleed). Af
 `bash scripts/make-icons.sh` (needs ImageMagick) and commit what it writes:
 `packaging/AppIcon.icns` (the app icon), `packaging/MenuBarIcon.tiff` (the menu bar template),
 `packaging/SearchIcon.png` (the search field's icon) and
-`web/site/icon.tish` (the site's logo and favicon). Dev runs from `app/` load the icons from
+`web/public/icon.png` and `favicon.png` (the site's logo and favicon). Dev runs from `app/` load the icons from
 `../packaging`; the bundle carries them in `Contents/Resources`.
 
 Release builds (universal, notarized DMG) are `scripts/build-universal.sh` then

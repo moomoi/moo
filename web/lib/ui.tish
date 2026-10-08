@@ -1,0 +1,52 @@
+// Small shared pieces: the inner pages' hero heading and the home page's launcher demo.
+import { Icon } from './icons.tish'
+
+export fn Hero(props) {
+  return (
+    <div class="wrap hero" style={props.style ? props.style : null}>
+      <span class="eyebrow up"><b></b>{props.eyebrow}</span>
+      {props.children}
+    </div>
+  )
+}
+
+fn Query(props) {
+  return (
+    <div class="q">
+      <div class="field"><Icon name="search" /><span class="type" style={'--n:' + props.text.length}>{props.text}</span><span class="keys"><kbd>⌘</kbd><kbd>Space</kbd></span></div>
+      <div class="rows">{props.children}</div>
+    </div>
+  )
+}
+
+fn Row(props) {
+  return <div class={props.hit ? 'row hit' : 'row'}><span class="ic">{props.icon}</span><span>{props.children}</span><small>{props.meta}</small></div>
+}
+
+// Four queries and their results, cycled by CSS.
+export fn Demo() {
+  return (
+    <div class="stage up d4"><div class="win"><div class="glass"><div class="deck">
+      <Query text="12% of 3,400">
+        <Row icon="=" meta="↵ copy" hit={true}><span class="big">408</span></Row>
+        <Row icon="⇄" meta="math"><em>3,400 × 0.12</em></Row>
+        <Row icon="⌘" meta="app">Open Calculator</Row>
+      </Query>
+      <Query text="slack design">
+        <Row icon="#" meta="↵ open" hit={true}>#design <em>· Moo HQ</em></Row>
+        <Row icon="✉" meta="slack">Send to #design…</Row>
+        <Row icon="⌕" meta="slack">Search Slack for “design”</Row>
+      </Query>
+      <Query text="5 mi in km">
+        <Row icon="⇄" meta="↵ copy" hit={true}><span class="big">8.047 km</span></Row>
+        <Row icon="⇄" meta="convert"><em>26,400 ft · 8,046.7 m</em></Row>
+        <Row icon="◫" meta="plugin">Units & currencies</Row>
+      </Query>
+      <Query text="ask why is the sky">
+        <Row icon="✦" meta="↵ ask" hit={true}>Ask AI: “why is the sky blue?”</Row>
+        <Row icon="⎘" meta="clip">Clipboard: “sky-hero.png”</Row>
+        <Row icon="◐" meta="system">Toggle dark mode</Row>
+      </Query>
+    </div></div></div></div>
+  )
+}

@@ -1,0 +1,16 @@
+import { Legal } from '../../lib/legal.tish'
+
+export fn head(ctx) { return { title: 'Legal' } }
+
+export fn page(ctx) {
+  return (
+    <Legal active="index">
+      <h1>Legal</h1>
+      <p>The short version: moo runs on your Mac, keeps your stuff on your Mac, and doesn't sell anything about you to anyone.</p>
+      <div class="legal-cards">
+        <a class="card" href="/legal/terms"><h3 style="margin-top:0">Terms of Use</h3><p>The rules for using moo and this site.</p></a>
+        <a class="card" href="/legal/privacy"><h3 style="margin-top:0">Privacy</h3><p>What moo touches, and what it never does.</p></a>
+      </div>
+    </Legal>
+  )
+}

@@ -2,9 +2,20 @@
   "name": "moo-web",
   "private": true,
   "version": "0.1.0",
-  "description": "moo.moi: the site (Lattish components in site/, rendered at build time) and the Hypery sign-in relay, served by a native Tish server. Build: ./build.sh",
+  "type": "module",
+  "description": "moo.moi: the site, the docs and the Hypery sign-in relay, on Orbit (markdown-first Tish framework). Prerendered pages plus one server route; builds to Vercel's Build Output API.",
+  "scripts": {
+    "dev": "orbit dev",
+    "build": "orbit build",
+    "start": "orbit start"
+  },
+  "dependencies": {
+    "@tishlang/orbit": "^0.1.3"
+  },
   "devDependencies": {
-    "@tishlang/tish": "4.0.1",
-    "lattish": "4.0.4"
+    "@tishlang/tish": "4.0.1"
+  },
+  "allowScripts": {
+    "@tishlang/tish": true
   }
 }

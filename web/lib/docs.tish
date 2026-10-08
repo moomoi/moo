@@ -1,0 +1,14 @@
+// The docs sidebar: every page, grouped under its section, in reading order. <details> stays open
+// on wide screens (its summary is hidden there) and folds into a menu on phones.
+export fn Sidebar(props) {
+  let items = []
+  let section = ''
+  for (let d of props.docs) {
+    if (d.data.section !== section) {
+      section = d.data.section
+      items.push(<h4>{section}</h4>)
+    }
+    items.push(<a href={d.url} class={d.slug === props.current ? 'on' : null}>{d.title}</a>)
+  }
+  return <details class="side" open={true}><summary>Docs menu</summary><div>{items}</div></details>
+}

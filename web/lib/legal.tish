@@ -1,0 +1,16 @@
+// The legal pages' frame: a side menu and the text.
+import { REPO_URL } from './links.tish'
+
+export fn Legal(props) {
+  let link = (href, name, label) => <a href={href} class={props.active === name ? 'on' : null}>{label}</a>
+  return (
+    <div class="wrap doc">
+      <aside>{link('/legal', 'index', 'Overview')}{link('/legal/terms', 'terms', 'Terms of Use')}{link('/legal/privacy', 'privacy', 'Privacy')}</aside>
+      <article class="prose up">{props.children}</article>
+    </div>
+  )
+}
+
+export fn Contact() {
+  return <><h2>Contact</h2><p>Questions? Open an issue on <a href={REPO_URL}>GitHub</a>.</p></>
+}

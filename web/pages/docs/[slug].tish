@@ -1,0 +1,39 @@
+import { raw } from '@tishlang/orbit'
+import { Sidebar } from '../../lib/docs.tish'
+
+export fn paths(ctx) { return ctx.collections.docs.map(d => ({ params: { slug: d.slug } })) }
+
+export fn load(ctx) {
+  let docs = ctx.collections.docs
+  let i = docs.findIndex(d => d.slug === ctx.params.slug)
+  if (i < 0) { return { notFound: true } }
+  return { props: { docs: docs, doc: docs[i], prev: i > 0 ? docs[i - 1] : null, next: i + 1 < docs.length ? docs[i + 1] : null } }
+}
+
+export fn head(ctx, props) { return { title: props.doc.title + ' · Moo Docs', rawTitle: true, description: props.doc.description } }
+
+fn Toc(props) {
+  let hs = props.headings.filter(x => x.level === 2 || x.level === 3)
+  if (hs.length === 0) { return <div></div> }
+  return <aside class="toc"><b>On this page</b>{hs.map(x => <a class={'l' + x.level} href={'#' + x.id}>{x.text}</a>)}</aside>
+}
+
+export fn page(ctx, props) {
+  let d = props.doc
+  return (
+    <div class="wrap docs">
+      <Sidebar docs={props.docs} current={d.slug} />
+      <article class="article up">
+        <span class="eyebrow">{d.data.section}</span>
+        <h1>{d.title}</h1>
+        <p class="sum">{d.description}</p>
+        <div class="md">{raw(d.html)}</div>
+        <div class="pn">
+          {props.prev !== null ? <a href={props.prev.url}><span>← Previous</span><b>{props.prev.title}</b></a> : null}
+          {props.next !== null ? <a class="next" href={props.next.url}><span>Next →</span><b>{props.next.title}</b></a> : null}
+        </div>
+      </article>
+      <Toc headings={d.headings} />
+    </div>
+  )
+}

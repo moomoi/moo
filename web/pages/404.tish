@@ -1,0 +1,12 @@
+export fn head(ctx) { return { title: 'Not found', noindex: true } }
+
+export fn page(ctx) {
+  return (
+    <div class="bare"><div class="solo up"><div class="win"><div class="glass">
+      <p class="four grad">404</p>
+      <h1>moo? Nothing here.</h1>
+      <p>That page wandered off the pasture.</p>
+      <a class="btn go" href="/">Take me home</a>
+    </div></div></div></div>
+  )
+}

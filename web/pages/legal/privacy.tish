@@ -1,0 +1,23 @@
+import { Legal, Contact } from '../../lib/legal.tish'
+
+export fn head(ctx) { return { title: 'Privacy' } }
+
+export fn page(ctx) {
+  return (
+    <Legal active="privacy">
+      <h1>Privacy</h1>
+      <p class="date">Last updated October 2026</p>
+      <h2>Local first</h2>
+      <p>moo is a native app. Your searches, files, clipboard history and settings <b>stay on your Mac</b>. We don't run analytics or collect telemetry.</p>
+      <h2>Sign-in</h2>
+      <p>When you sign in, your browser passes briefly through <b>moo.moi/callback</b>, which forwards it straight back to moo on your Mac. The relay keeps no state and logs nothing about requests. The sign-in code can't be redeemed without a secret that never leaves your Mac.</p>
+      <h2>AI</h2>
+      <p>On-device Apple Intelligence never leaves your machine. If you choose an external provider, your prompts go directly to that provider under its privacy policy.</p>
+      <h2>Plugins</h2>
+      <p>Plugins run in a sandbox with no file, network or process access unless granted. A plugin that connects to a service, like Slack, talks to that service directly.</p>
+      <h2>This website</h2>
+      <p>moo.moi serves plain HTML and CSS. No scripts, no cookies, no trackers.</p>
+      <Contact />
+    </Legal>
+  )
+}

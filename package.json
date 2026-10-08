@@ -5,11 +5,11 @@
   "scripts": {
     "build": "TISH=\"$PWD/node_modules/.bin/tish\" bash plugins/build.sh && TISH_FAST_NATIVE_BUILD=1 bash app/build.sh",
     "build:release": "TISH=\"$PWD/node_modules/.bin/tish\" bash plugins/build.sh && bash app/build.sh",
-    "build:web": "bash web/build.sh",
+    "build:web": "npm --prefix web ci && npm --prefix web run build",
     "bundle": "bash scripts/bundle-macos.sh",
     "test": "cd packages/moo-macos && cargo test --lib",
     "clean": "rm -rf app/dist plugins/dist web/dist dist target packages/moo-macos/target app/node_modules plugins/node_modules",
-    "lint": "tish-lint --deny-warnings app/src web/site web/src web/render.tish"
+    "lint": "tish-lint --deny-warnings app/src web/pages web/lib web/orbit.config.tish"
   },
   "devDependencies": {
     "@tishlang/tish": "4.0.1",

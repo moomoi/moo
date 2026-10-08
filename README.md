@@ -9,7 +9,7 @@ Intel, macOS 14 or later), or `brew install moomoi/moo/moo`.
 
 ## Docs
 
-User docs are at [moo.moi/docs](https://moo.moi/docs) (source in `web/docs/`). Developer notes:
+User docs are at [moo.moi/docs](https://moo.moi/docs) (source in `web/content/docs/`). Developer notes:
 
 | | |
 |---|---|

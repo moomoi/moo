@@ -1,0 +1,4 @@
+// Where the site points.
+export let REPO_URL = 'https://github.com/moomoi/moo'
+export let PLUGINS_REPO = 'https://github.com/moomoi/plugins'
+export let BREW = 'brew install moomoi/moo/moo'

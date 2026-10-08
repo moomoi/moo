@@ -1,0 +1,50 @@
+import { Icon } from '../lib/icons.tish'
+import { Demo } from '../lib/ui.tish'
+import { BREW } from '../lib/links.tish'
+
+export fn head(ctx) { return { title: 'Moo — the launcher for macOS', rawTitle: true } }
+
+fn Feature(props) {
+  return (
+    <div class={props.size ? 'card ' + props.size : 'card'}>
+      {props.icon ? <div class="glyph"><Icon name={props.icon} /></div> : null}
+      {props.stat ? <div class="stat grad">{props.stat}</div> : null}
+      <h3>{props.title}</h3>
+      {props.children}
+    </div>
+  )
+}
+
+export fn page(ctx) {
+  return (
+    <>
+      <div class="wrap hero">
+        <span class="eyebrow up"><b></b>Native · Instant · Yours</span>
+        <h1 class="up d1"><span>moo</span></h1>
+        <p class="lede up d2">One hotkey. Then <b>type anything</b>. Apps, files, math, clipboard, windows and AI — before you finish thinking it.</p>
+        <div class="ctas up d3"><a class="btn go" href="/get"><Icon name="down" />Download for Mac</a><code class="chip">{BREW}</code></div>
+        <p class="fine up d3">Free · macOS 14+ · Apple silicon & Intel</p>
+        <Demo />
+      </div>
+      <section class="wrap" id="features">
+        <div class="head"><span class="eyebrow">Why moo</span><h2>Fast is a <span class="grad">feeling</span>.</h2><p>No webviews. No Electron. No spinner. Just your Mac, answering at the speed of your fingers.</p></div>
+        <div class="bento">
+          <Feature size="x" icon="chip" title="Native all the way down"><p>AppKit from the first pixel to the last. It opens before your hand leaves the keyboard and sips memory while it waits.</p></Feature>
+          <Feature stat="0ms" title="Spinners"><p>Answers appear as you type.</p></Feature>
+          <Feature icon="bolt" title="Instant answers"><p>Math, units, currencies, time zones and definitions.</p></Feature>
+          <Feature icon="key" title="Your Mac, by keyboard"><p>Windows, volume, dark mode, running apps, system commands.</p></Feature>
+          <Feature icon="spark" title="AI built in"><p>On-device Apple Intelligence, or bring your own provider.</p></Feature>
+          <Feature size="w" icon="puzzle" title="Plugins, sandboxed">
+            <p>Extend moo with tiny plugins that run in their own VM — no files, no network unless you say so.</p>
+            <p style="margin-top:16px"><a href="/marketplace" style="color:var(--fg)">Browse the marketplace →</a></p>
+          </Feature>
+          <Feature size="w" icon="search" title="Clipboard that remembers"><p>Everything you copied, searchable, a keystroke away. Stays on your Mac.</p></Feature>
+        </div>
+      </section>
+      <div class="wrap final">
+        <h2 class="t">Hit <span class="grad">⌘ Space</span>.<br />Never leave the keyboard.</h2>
+        <div class="ctas" style="margin-top:32px"><a class="btn go" href="/get"><Icon name="down" />Download moo</a></div>
+      </div>
+    </>
+  )
+}

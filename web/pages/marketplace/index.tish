@@ -1,0 +1,35 @@
+import { Icon } from '../../lib/icons.tish'
+import { Hero } from '../../lib/ui.tish'
+import { PLUGINS, tagLabel } from '../../lib/plugins.tish'
+
+export fn head(ctx) { return { title: 'Marketplace', description: 'Small, fast, sandboxed plugins for moo.' } }
+
+fn PluginCard(props) {
+  let p = props.plugin
+  return (
+    <a class="card plug" href={'/marketplace/' + p.id}>
+      <div class="top"><div class="glyph">{p.glyph}</div><div><h3>{p.name}</h3><span class="by">{'by ' + p.by}</span></div></div>
+      <p>{p.text}</p>
+      <span class={p.tag === 'core' ? 'tag core' : 'tag'}>{tagLabel(p)}</span>
+    </a>
+  )
+}
+
+export fn page(ctx) {
+  return (
+    <>
+      <Hero eyebrow="Marketplace" style="padding-bottom:48px">
+        <h2 class="t up d1" style="font-size:clamp(48px,9vw,104px)">Teach moo<br /><span class="grad">new tricks</span>.</h2>
+        <p class="lede up d2">Small, fast, sandboxed plugins. Each one runs in its own VM with only the access you grant.</p>
+      </Hero>
+      <div class="wrap market up d3">
+        {PLUGINS.map(p => <PluginCard plugin={p} />)}
+        <a class="card plug ghost" href="/docs/first-plugin">
+          <div class="glyph"><Icon name="puzzle" /></div>
+          <h3 style="margin-top:16px">Build a plugin</h3>
+          <p style="flex:none;margin:6px 0 0">Write it in Tish. Open a PR on moomoi/plugins.</p>
+        </a>
+      </div>
+    </>
+  )
+}

@@ -1,0 +1,34 @@
+import { Hero } from '../../lib/ui.tish'
+
+export fn head(ctx) { return { title: 'Docs', description: 'From your first hotkey to writing plugins. Everything moo does, on a few short pages.' } }
+
+// One card per section, listing its pages.
+fn sectionCards(docs) {
+  let cards = []
+  let section = ''
+  let links = []
+  for (let i = 0; i <= docs.length; i = i + 1) {
+    if (i === docs.length || docs[i].data.section !== section) {
+      if (section !== '') { cards.push(<div class="card"><h3>{section}</h3><ul>{links}</ul></div>) }
+      if (i === docs.length) { break }
+      section = docs[i].data.section
+      links = []
+    }
+    links.push(<li><a href={docs[i].url}>{docs[i].title}</a></li>)
+  }
+  return cards
+}
+
+export fn page(ctx) {
+  let docs = ctx.collections.docs
+  return (
+    <>
+      <Hero eyebrow="Documentation" style="padding-bottom:56px">
+        <h2 class="t up d1" style="font-size:clamp(48px,9vw,104px)">Learn <span class="grad">moo</span>.</h2>
+        <p class="lede up d2">From your first hotkey to writing plugins. Everything moo does, on a few short pages.</p>
+        <div class="ctas up d3"><a class="btn go" href={docs[0].url}>Get started →</a><a class="chip" style="text-decoration:none" href="/docs/plugin-api">Plugin API</a></div>
+      </Hero>
+      <div class="wrap dhome up d4">{sectionCards(docs)}</div>
+    </>
+  )
+}
