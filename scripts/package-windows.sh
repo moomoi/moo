@@ -1,12 +1,11 @@
 #!/usr/bin/env bash
 # Package Moo for Windows (x64):
-#   dist/windows/Moo/            moo.exe, moo.com, plugins\ (bytecode plugins), AppIcon.ico
+#   dist/windows/Moo/            moo.exe, moo.com, plugins\ (the plugins release's Windows build), AppIcon.ico
 #   dist/release/Moo-windows-x64.zip
 # Runs on Windows (Git Bash) or cross from macOS/Linux with cargo-xwin and LLVM
 # (`cargo install cargo-xwin`, `brew install llvm lld`). moo.exe is a GUI program: no console
 # window. moo.com is the same binary marked as a console program, for the `moo` command: a shell
 # runs `moo` as moo.com (.COM comes first in PATHEXT), waits for it and shows its output.
-# Native (.lib) plugins aren't built for Windows yet, so only bytecode plugins ship.
 #   TISH          the compiler (default: node_modules/.bin/tish)
 #   MOO_VERSION   baked into the binary (default "dev")
 set -euo pipefail
@@ -45,8 +44,15 @@ b.writeUInt16LE(3, at);
 fs.writeFileSync(com, b);
 ' "$OUT/moo.exe" "$OUT/moo.com"
 
-bash "$ROOT/scripts/fetch-plugins.sh" >/dev/null
-cp "$ROOT"/dist/plugins/*.tishc "$OUT/plugins/"
+# The plugins release's Windows build (bytecode plugins and native DLLs). A release from before
+# Windows builds has none: ship its bytecode plugins then.
+if bash "$ROOT/scripts/fetch-plugins.sh" windows >/dev/null 2>&1; then
+  cp "$ROOT"/dist/plugins-windows/* "$OUT/plugins/"
+else
+  echo "note: plugins v$(cat "$ROOT/plugins.version") has no Windows build; shipping its bytecode plugins only" >&2
+  bash "$ROOT/scripts/fetch-plugins.sh" mac >/dev/null
+  cp "$ROOT"/dist/plugins/*.tishc "$OUT/plugins/"
+fi
 cp "$ROOT/packaging/AppIcon.ico" "$OUT/"
 
 ZIP="$ROOT/dist/release/Moo-windows-x64.zip"
