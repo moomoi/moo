@@ -33,6 +33,8 @@ export let DEFAULT_HOTKEYS = ['alt+space', 'ctrl+alt+space', 'ctrl+shift+space']
 // ── The panel ───────────────────────────────────────────────────────────────
 
 let panel = { width: 750, height: 480, onKey: null, onShow: null, onHotkey: null, hidden: false }
+// The last height asked for: Moo sets the idle bar's before the window exists.
+let shapeHeight = 0
 let arrows = false
 let recording = false
 let panelKeys = []
@@ -48,7 +50,7 @@ export let panelRunOptions = (opts) => {
   return {
     title: 'Moo',
     width: panel.width,
-    height: panel.height,
+    height: shapeHeight > 0 ? shapeHeight : panel.height,
     borderless: true,
     toolWindow: true,
     topmost: true,
@@ -68,6 +70,7 @@ export fn setArrowKeys(on) {
 
 // The panel's height changes as results come and go; its width and top edge stay.
 export let setPanelShape = (height, segments) => {
+  shapeHeight = height
   windows.window.setSize(panel.width, height)
   return null
 }

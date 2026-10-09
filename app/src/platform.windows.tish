@@ -60,15 +60,19 @@ export let openWith = (path, app) => ({ ok: false, message: '', error: NOT_YET }
 
 export let onOpenUrl = (cb) => null
 
-// ── Icons (not drawn yet on Windows) ────────────────────────────────────────
+// ── Icons ───────────────────────────────────────────────────────────────────
 
-export let fileIcon = (path) => ''
+export fn fileIcon(path) {
+  return windows.icons.file(path)
+}
 
-export let symbolIcon = (name) => ''
+export fn symbolIcon(name) {
+  return windows.icons.symbol(name)
+}
 
-export let imageFile = (path, template) => ''
+export let imageFile = (path, template) => windows.icons.image(path)
 
-export let onIconsLoaded = (cb) => null
+export let onIconsLoaded = (cb) => windows.icons.onLoaded(cb)
 
 // ── Apps and files ──────────────────────────────────────────────────────────
 
@@ -78,7 +82,7 @@ export fn reindex() {
 }
 
 export fn search(text, limit) {
-  return searchApps(text, limit).map((a) => ({ name: a.name, path: a.path, icon: '', kind: a.kind, score: a.score }))
+  return searchApps(text, limit).map((a) => ({ name: a.name, path: a.path, icon: windows.icons.file(a.path), kind: a.kind, score: a.score }))
 }
 
 export let findFiles = (text, limit, icons) => ({ ready: false, results: [], ms: 0 })

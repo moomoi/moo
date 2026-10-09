@@ -10,11 +10,10 @@ export let useState = hostUseState
 export let macos = {
   run: (App, opts) => windows.run(App, panelRunOptions(opts)),
   whenSettled: (promise, cb) => windows.whenSettled(promise, cb),
-  // Icons aren't drawn yet on Windows: rows show a placeholder.
   icons: {
-    image: (path, template, reload) => '',
-    file: (path) => '',
-    symbol: (name) => '',
-    onLoaded: (cb) => null
+    image: (path, template, reload) => windows.icons.image(path),
+    file: (path) => windows.icons.file(path),
+    symbol: (name) => windows.icons.symbol(name),
+    onLoaded: (cb) => windows.icons.onLoaded(cb)
   }
 }
