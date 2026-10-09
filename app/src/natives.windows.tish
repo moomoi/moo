@@ -290,7 +290,6 @@ export fn quickLookVisible() {
 
 export let watchTyped = (keywords, cb) => null
 
-export let windowAction = (pid, name, action) => ({ ok: false, message: NOT_YET })
 
 export fn aiAvailability() {
   return "Apple's on-device model is only on macOS"
