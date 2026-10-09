@@ -10,7 +10,7 @@
 import { loadModule } from 'tish:ffi'
 import { fileExists } from 'tish:fs'
 import { macos, useState } from './host.tish'
-import { setup, setPanelShape, setArrowKeys, setTheme, typeText, registerHotkey, quit, hide, appCount, fuzzy, pluginPaths, loadBytecodePlugin, bundleResources, exeDir, recordUse, frecency, aiAvailability, aiSession, aiEndSession, aiPrewarm, aiAsk, aiCancel, setPanelKeys, onPluginRefresh, fileIndexStart, quickLook, quickLookVisible, fileIndexStatus, show, toggle, unregisterHotkey, checkHotkey, hotkeyDisplay, recordHotkey, runShell, cliMain, cliServe, cliWrite, cliEnd, about , windowAction, isRightClick, DEFAULT_HOTKEYS } from './natives.tish'
+import { setup, setPanelShape, setArrowKeys, setTheme, typeText, registerHotkey, quit, hide, appCount, fuzzy, pluginPaths, loadBytecodePlugin, bundleResources, exeDir, recordUse, frecency, aiAvailability, aiSession, aiEndSession, aiPrewarm, aiAsk, aiCancel, setPanelKeys, onPluginRefresh, fileIndexStart, quickLook, quickLookVisible, fileIndexStatus, show, toggle, unregisterHotkey, checkHotkey, hotkeyDisplay, recordHotkey, runShell, cliMain, cliServe, cliWrite, cliEnd, about , windowAction, isRightClick, DEFAULT_HOTKEYS, HAS_ON_DEVICE_AI } from './natives.tish'
 import { env } from 'tish:process'
 import { THEME } from './theme.tish'
 import { greeting } from './greetings.tish'
@@ -3604,7 +3604,7 @@ fn currentModel() {
   if (config.aiModel) {
     return config.aiModel
   }
-  return hyperyCredential() !== '' ? HYPERY_MODEL : APPLE_MODEL
+  return hyperyCredential() !== '' || !HAS_ON_DEVICE_AI ? HYPERY_MODEL : APPLE_MODEL
 }
 
 fn isRemote(model) {
@@ -3749,7 +3749,7 @@ fn aiModelResults(text) {
   let ms = aiCatalog.models
   let apple = { name: AI_TITLE, kind: (current === APPLE_MODEL ? 'Current · ' : '') + 'On-device · Free', icon: aiIcon, mode: 'ai-model', model: APPLE_MODEL, group: 'On This Mac' }
   if (t !== '') {
-    let rows = (AI_TITLE + ' apple on-device').toLowerCase().indexOf(t) >= 0 ? [apple] : []
+    let rows = HAS_ON_DEVICE_AI && (AI_TITLE + ' apple on-device').toLowerCase().indexOf(t) >= 0 ? [apple] : []
     let hits = fuzzy(t, ms.map((e) => e.name + ' ' + e.model + ' ' + ownerLabel(e.owner)), MODEL_ROWS)
     return rows.concat(hits.map((h) => modelRow(ms[h.index], current, 'Models')))
   }
@@ -3757,7 +3757,7 @@ fn aiModelResults(text) {
   let latest = hy.filter((e) => e.model.indexOf('hypery:~') === 0).map((e) => modelRow(e, current, 'Hypery · Latest'))
   let local = ms.filter((e) => e.provider !== 'hypery').map((e) => modelRow(e, current, e.providerTitle))
   let rest = hy.filter((e) => e.model.indexOf('hypery:~') !== 0).slice(0, MODEL_ROWS).map((e) => modelRow(e, current, 'Hypery · Popular'))
-  let rows = latest.concat([apple]).concat(local).concat(rest)
+  let rows = latest.concat(HAS_ON_DEVICE_AI ? [apple] : []).concat(local).concat(rest)
   if (aiCatalog.loading && ms.length === 0) {
     rows.push(infoRow('Loading models…', 'Hypery'))
   }
@@ -7054,7 +7054,7 @@ fn cliAiModels(token, query, flags) {
     onCatalog(lists)
     let q = query.toLowerCase()
     let current = currentModel()
-    let all = [{ model: APPLE_MODEL, name: AI_TITLE, owner: 'apple', tier: 'Free', context: 0 }].concat(aiCatalog.models)
+    let all = (HAS_ON_DEVICE_AI ? [{ model: APPLE_MODEL, name: AI_TITLE, owner: 'apple', tier: 'Free', context: 0 }] : []).concat(aiCatalog.models)
     let hits = all.filter((e) => q === '' || (e.model + ' ' + e.name + ' ' + ownerLabel(e.owner)).toLowerCase().indexOf(q) >= 0)
     let shown = flags.n > 0 ? hits.slice(0, flags.n) : hits
     if (flags.json) {

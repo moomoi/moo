@@ -64,4 +64,7 @@ export let windowAction = n_windowAction
 export let withUi = n_withUi
 
 // The launcher hotkeys to try, first free one wins (before shortcuts.json's `launcher` and MOO_HOTKEY).
+// Apple's on-device model (macOS 26).
+export let HAS_ON_DEVICE_AI = true
+
 export let DEFAULT_HOTKEYS = ['cmd+space', 'alt+space', 'ctrl+alt+space', 'cmd+shift+space']

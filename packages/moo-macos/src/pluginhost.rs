@@ -275,7 +275,7 @@ fn sign_in(host: &Shared, args: &[Value]) {
             |url| {
                 let url = url.to_string();
                 bridge::on_main(move || {
-                    crate::mac::launch(&url);
+                    crate::sys::launch(&url);
                 });
             },
             &cancel,
@@ -405,7 +405,7 @@ pub fn object(host: Shared) -> Value {
             "log",
             native(&host, |h, a| {
                 // Plugins log what they like (tokens included), so it only goes out with MOO_DEBUG.
-                crate::mac::debug_log(&format!("plugin {}: {}", id_of(h), arg(a, 0)));
+                crate::sys::debug_log(&format!("plugin {}: {}", id_of(h), arg(a, 0)));
                 Value::Null
             }),
         ),

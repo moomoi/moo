@@ -27,6 +27,9 @@ export let search = n_search
 
 let NOT_YET = 'not on Windows yet'
 
+// No on-device model: Ask AI defaults to Hypery and doesn't list Apple's.
+export let HAS_ON_DEVICE_AI = false
+
 // Alt+Space first, as PowerToys Run; Ctrl+Space ("cmd+space") toggles input methods on Windows.
 export let DEFAULT_HOTKEYS = ['alt+space', 'ctrl+alt+space', 'ctrl+shift+space']
 

@@ -6,6 +6,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 
+#[cfg(target_os = "macos")]
 use dispatch2::DispatchQueue;
 use tishlang_core::Value;
 thread_local! {
@@ -16,6 +17,8 @@ static NEXT: AtomicU64 = AtomicU64::new(1);
 
 /// Keep `cb` (main thread) and return its id. A non-function is held too, and ignored on delivery.
 pub fn hold(cb: Option<Value>) -> u64 {
+    #[cfg(windows)]
+    crate::win::ensure_window();
     let id = NEXT.fetch_add(1, Ordering::Relaxed);
     if let Some(cb) = cb {
         CALLBACKS.with(|c| c.borrow_mut().insert(id, cb));
@@ -31,7 +34,7 @@ pub fn release(id: u64) {
 pub fn call(id: u64, v: Value, last: bool) {
     let cb = CALLBACKS.with(|c| if last { c.borrow_mut().remove(&id) } else { c.borrow().get(&id).cloned() });
     if let Some(Value::Function(f)) = cb {
-        crate::mac::with_ui(|| {
+        crate::sys::with_ui(|| {
             let _ = f.call(&[v]);
         });
     }
@@ -39,10 +42,13 @@ pub fn call(id: u64, v: Value, last: bool) {
 
 /// From any thread: on the main queue, turn `data` into a value with `make` and pass it to `id`.
 pub fn post<T: Send + 'static>(id: u64, data: T, make: fn(T) -> Value, last: bool) {
-    DispatchQueue::main().exec_async(move || call(id, make(data), last));
+    on_main(move || call(id, make(data), last));
 }
 
-/// Run `f` on the main queue (from a worker thread).
+/// Run `f` on the main queue (from a worker thread). Windows: the UI thread's message window.
 pub fn on_main(f: impl FnOnce() + Send + 'static) {
+    #[cfg(target_os = "macos")]
     DispatchQueue::main().exec_async(f);
+    #[cfg(windows)]
+    crate::win::on_main(f);
 }

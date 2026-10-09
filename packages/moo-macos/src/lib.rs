@@ -9,7 +9,7 @@ pub const VERSION: &str = match option_env!("MOO_VERSION") {
 
 #[cfg(target_os = "macos")]
 mod ai;
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", windows))]
 mod bridge;
 #[cfg(target_os = "macos")]
 mod cli;
@@ -17,11 +17,26 @@ mod frecency;
 mod fsindex;
 #[cfg(target_os = "macos")]
 mod fslive;
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", windows))]
 mod http;
 mod index;
 #[cfg(target_os = "macos")]
 mod keychain;
+#[cfg(windows)]
+#[path = "keychain_win.rs"]
+mod keychain;
+#[cfg(windows)]
+mod win;
+
+/// What the plugin host and the bridge need from the platform: `launch`, `debug_log`, `with_ui`
+/// (mac.rs on macOS, win.rs on Windows).
+#[cfg(any(target_os = "macos", windows))]
+mod sys {
+    #[cfg(target_os = "macos")]
+    pub(crate) use crate::mac::{debug_log, launch, with_ui};
+    #[cfg(windows)]
+    pub(crate) use crate::win::{debug_log, launch, with_ui};
+}
 #[cfg(target_os = "macos")]
 mod keymap;
 #[cfg(target_os = "macos")]
@@ -30,9 +45,9 @@ mod keys;
 mod winctl;
 #[cfg(target_os = "macos")]
 mod mac;
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", windows))]
 mod oauth;
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", windows))]
 mod pluginhost;
 #[cfg(target_os = "macos")]
 mod shell;
@@ -771,6 +786,13 @@ mod natives {
             _ => Value::Null,
         }
     }
+    #[cfg(windows)]
+    pub fn on_plugin_refresh(args: &[Value]) -> Value {
+        let cb = args.first().filter(|v| matches!(v, Value::Function(_))).cloned();
+        crate::pluginhost::on_refresh(cb);
+        Value::Null
+    }
+    #[cfg(not(windows))]
     pub fn on_plugin_refresh(_a: &[Value]) -> Value { Value::Null }
 }
 

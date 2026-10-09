@@ -33,15 +33,35 @@ pub struct Tokens {
     pub expires_at: f64,
 }
 
+#[cfg(target_os = "macos")]
 extern "C" {
     fn CC_SHA256(data: *const u8, len: u32, md: *mut u8) -> *mut u8;
     fn getentropy(buf: *mut u8, len: usize) -> i32;
 }
 
+#[cfg(target_os = "macos")]
 pub fn sha256(data: &[u8]) -> [u8; 32] {
     let mut out = [0u8; 32];
     unsafe { CC_SHA256(data.as_ptr(), data.len() as u32, out.as_mut_ptr()) };
     out
+}
+
+#[cfg(windows)]
+pub fn sha256(data: &[u8]) -> [u8; 32] {
+    use sha2::Digest;
+    sha2::Sha256::digest(data).into()
+}
+
+/// Fill `b` from the system's secure random source; false on failure.
+#[cfg(target_os = "macos")]
+fn fill_random(b: &mut [u8]) -> bool {
+    unsafe { getentropy(b.as_mut_ptr(), b.len()) == 0 }
+}
+
+#[cfg(windows)]
+fn fill_random(b: &mut [u8]) -> bool {
+    use windows::Win32::Security::Cryptography::{BCryptGenRandom, BCRYPT_USE_SYSTEM_PREFERRED_RNG};
+    unsafe { BCryptGenRandom(None, b, BCRYPT_USE_SYSTEM_PREFERRED_RNG).is_ok() }
 }
 
 pub fn base64url(data: &[u8]) -> String {
@@ -61,7 +81,7 @@ pub fn base64url(data: &[u8]) -> String {
 /// verifier or state.
 fn random(n: usize) -> Result<Vec<u8>, String> {
     let mut b = vec![0u8; n];
-    if unsafe { getentropy(b.as_mut_ptr(), n) } != 0 {
+    if !fill_random(&mut b) {
         return Err("couldn't get random bytes for sign-in".into());
     }
     Ok(b)
