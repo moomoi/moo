@@ -819,7 +819,13 @@ mod natives {
     }
     #[cfg(not(windows))]
     pub fn watch_typed(_a: &[Value]) -> Value { Value::Null }
+    #[cfg(windows)]
+    pub fn quick_look(args: &[Value]) -> Value { Value::Bool(crate::win::quick_look(&str_arg(args, 0))) }
+    #[cfg(windows)]
+    pub fn quick_look_visible(_a: &[Value]) -> Value { Value::Bool(crate::win::quick_look_visible()) }
+    #[cfg(not(windows))]
     pub fn quick_look(_a: &[Value]) -> Value { Value::Bool(false) }
+    #[cfg(not(windows))]
     pub fn quick_look_visible(_a: &[Value]) -> Value { Value::Bool(false) }
     #[cfg(windows)]
     pub fn file_index_status(_a: &[Value]) -> Value {

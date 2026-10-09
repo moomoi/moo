@@ -1,7 +1,7 @@
-// Windows: Moo's use of tish-windows's services, with platform.tish's exports and shapes. What
-// Windows has no counterpart for yet (dictionary, contacts, window layouts, Spotlight-style
-// file search, typed-keyword snippets) answers empty or "not on Windows yet", so those features
-// simply don't show up.
+// Windows: Moo's use of tish-windows's services, with platform.tish's exports and shapes (most of
+// the code is platform.tish's own, on the matching tish-windows service). Windows has no system
+// dictionary (Define Word isn't offered) and no Spotlight-style content search (file search is
+// Moo's own index); contacts need the MSIX package.
 
 import { windows } from 'tish:windows'
 import { fileExists, mkdir } from 'tish:fs'
@@ -200,20 +200,8 @@ export fn bytesText(n) {
 
 
 
-export fn contactsAccess() {
-  return 'denied'
-}
 
-export let contactsRequest = (cb) => {
-  setTimeout(() => cb(false), 0)
-  return null
-}
 
-export let searchContacts = (query, limit, cb) => {
-  let q = '' + query
-  setTimeout(() => cb({ query: q, results: [], error: NOT_YET }), 0)
-  return 0
-}
 
 
 
@@ -473,4 +461,29 @@ export fn windowAction(pid, name, action) {
     unminimize: 'Restored ' + r.count + ' ' + name + ' window' + (r.count === 1 ? '' : 's'),
   }
   return { ok: true, message: done[action] }
+}
+
+// ── Contacts (People; needs the MSIX package) ───────────────────────────────
+
+let contactsGeneration = 0
+
+export fn contactsAccess() {
+  return windows.contacts.status()
+}
+
+export fn contactsRequest(cb) {
+  windows.contacts.request((granted) => withUi(() => cb(granted)))
+}
+
+// `cb({ query, results, error })` for the newest search only. Returns its generation.
+export fn searchContacts(query, limit, cb) {
+  contactsGeneration = contactsGeneration + 1
+  let mine = contactsGeneration
+  let q = '' + query
+  windows.contacts.query(q, Math.min(Math.max(limit, 1), 500), (r) => {
+    if (mine === contactsGeneration) {
+      withUi(() => cb({ query: q, results: r.contacts, error: r.error }))
+    }
+  })
+  return mine
 }
