@@ -21,6 +21,7 @@ thread_local! {
     static MATCHER: RefCell<Matcher> = RefCell::new(Matcher::new(Config::DEFAULT));
 }
 
+#[cfg(not(windows))]
 fn roots() -> Vec<PathBuf> {
     let mut r: Vec<PathBuf> = [
         "/Applications",
@@ -38,6 +39,22 @@ fn roots() -> Vec<PathBuf> {
     r
 }
 
+/// The Start menu's programs, for all users and this one.
+#[cfg(windows)]
+fn roots() -> Vec<PathBuf> {
+    ["ProgramData", "APPDATA"]
+        .iter()
+        .filter_map(std::env::var_os)
+        .map(|d| Path::new(&d).join(r"Microsoft\Windows\Start Menu\Programs"))
+        .collect()
+}
+
+/// How deep below a root apps are found: Start menu folders nest (`Programs\Vendor\Tool`).
+#[cfg(not(windows))]
+const SCAN_DEPTH: u32 = 1;
+#[cfg(windows)]
+const SCAN_DEPTH: u32 = 3;
+
 pub fn root_strings() -> Vec<String> {
     roots().iter().map(|p| p.to_string_lossy().into_owned()).collect()
 }
@@ -46,8 +63,17 @@ pub fn app_count() -> usize {
     APPS.with(|a| a.borrow().len())
 }
 
+#[cfg(not(windows))]
 fn is_app(p: &Path) -> bool {
     p.extension().is_some_and(|e| e == "app")
+}
+
+/// A Start menu shortcut to a program: not an uninstaller, readme or help link.
+#[cfg(windows)]
+fn is_app(p: &Path) -> bool {
+    let ext_ok = p.extension().is_some_and(|e| e.eq_ignore_ascii_case("lnk") || e.eq_ignore_ascii_case("url") || e.eq_ignore_ascii_case("appref-ms"));
+    let name = p.file_stem().map(|s| s.to_string_lossy().to_lowercase()).unwrap_or_default();
+    ext_ok && !["uninstall", "readme", "read me", "help", "documentation", "release notes", "license", "website"].iter().any(|w| name.contains(w))
 }
 
 /// `depth` lets folders such as `/Applications/Setapp/` contribute their bundles.
@@ -72,7 +98,7 @@ pub fn reindex() -> (usize, f64) {
     let mut seen = HashSet::new();
     let mut out = Vec::new();
     for root in roots() {
-        scan_dir(&root, 1, &mut seen, &mut out);
+        scan_dir(&root, SCAN_DEPTH, &mut seen, &mut out);
     }
     let finder = Path::new("/System/Library/CoreServices/Finder.app");
     if finder.exists() && seen.insert("finder".into()) {

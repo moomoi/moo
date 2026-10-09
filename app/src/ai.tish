@@ -10,10 +10,10 @@
 // Note for the native compiler: a parameter that is only stored in an object literal gets typed as
 // a number (and panics on a string), so such parameters go through `"" + x` first.
 
-import { macos } from 'tish:macos'
+import { macos } from './host.tish'
 import { fetch } from 'tish:http'
 import { env } from 'tish:process'
-import { keychainGet, keychainSet, keychainDelete, keychainHas, oauthSignIn, oauthCancel, oauthRefresh, withUi } from 'tish:moo'
+import { keychainGet, keychainSet, keychainDelete, keychainHas, oauthSignIn, oauthCancel, oauthRefresh, withUi } from './natives.tish'
 import { aiConfig } from './shortcutsfile.tish'
 import { providers, splitModel, origin, endpoints, oauthAccount, noCredential, newLines, feedLines, newStream, streamLine, errorMessage, parseModels, parseOrgs, activeOrg, dollars, parseTokens, tokensJson, staleTokens, ORG_HEADER, utf8 } from './aicore.tish'
 

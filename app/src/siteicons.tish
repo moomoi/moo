@@ -2,7 +2,7 @@
 // `~/Library/Caches/Moo/icons` (`MOO_ICONS`), refetched in the background when over a week old, and
 // registered as a named image (`macos.icons.image`) so `<image src={name}>` finds it.
 
-import { macos } from 'tish:macos'
+import { macos } from './host.tish'
 import { fetch } from 'tish:http'
 import { writeFile, mkdir, rename, fileExists, stat } from 'tish:fs'
 import { env } from 'tish:process'

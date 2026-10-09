@@ -52,9 +52,9 @@ fn run_chunk(chunk: &Chunk, label: &str) -> Result<Value, String> {
     let mut vm = Vm::with_capabilities(HashSet::new());
     vm.set_jit_enabled(false);
     vm.set_global(Arc::from("register"), Value::native(register));
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", windows))]
     let host: crate::pluginhost::Shared = Arc::new(std::sync::Mutex::new(crate::pluginhost::Host { id: label.to_string(), network: Vec::new(), sign_in_cancel: None }));
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", windows))]
     vm.set_global(Arc::from("moo"), crate::pluginhost::object(host.clone()));
     REGISTERED.with(|r| r.borrow_mut().take());
     set_thread_execution_deadline(Some(LOAD_BUDGET_MS));
@@ -70,7 +70,7 @@ fn run_chunk(chunk: &Chunk, label: &str) -> Result<Value, String> {
         .with(|r| r.borrow_mut().take())
         .ok_or_else(|| "plugin never called register()".to_string())?;
     let exports = budgeted_exports(&exports, label);
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", windows))]
     if let Some(Value::Function(manifest)) = field(&exports, "manifest") {
         let m = manifest.call(&[]);
         take_pending_throw();
@@ -88,7 +88,7 @@ fn run_chunk(chunk: &Chunk, label: &str) -> Result<Value, String> {
     Ok(exports)
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", windows))]
 fn field(v: &Value, key: &str) -> Option<Value> {
     match v {
         Value::Object(o) => o.borrow().strings.get(key).cloned(),
@@ -145,7 +145,7 @@ mod tests {
     }
 
     /// A plugin can't take another's identity: its manifest id must be its file name.
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", windows))]
     #[test]
     fn manifest_id_must_match_the_file_name() {
         let src = |id: &str| format!("register({{ manifest: () => ({{ id: \"{id}\", title: \"T\", commands: [] }}), run: (c) => null, list: (c, q) => [] }})");
@@ -320,7 +320,7 @@ mod tests {
 
     /// The Slack plugin's commands, their arguments and its network permission, as the shell reads
     /// them. Only the manifest: no Keychain, no network. Needs `scripts/fetch-plugins.sh` first.
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", windows))]
     #[test]
     fn slack_plugin_declares_arguments_and_network() {
         let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../dist/plugins/slack.tishc");

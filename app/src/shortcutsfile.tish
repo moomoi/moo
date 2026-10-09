@@ -4,7 +4,7 @@
 
 import { readFile, writeFile, mkdir, rename, fileExists } from 'tish:fs'
 import { env } from 'tish:process'
-import { keysError, localDateTime } from 'tish:moo'
+import { keysError, localDateTime } from './natives.tish'
 import { clipboardText, selectedText } from './platform.tish'
 import { parse, toJson, emptyConfig, shortcut, needsQuery, expand, shellValues as argsOf, upsert, remove, bind, unbind, checkKeyword as keywordError, checkAlias as aliasError, setAlias as putAlias, setDisabled as putDisabled, setPanelKey as putPanelKey, setProvider } from './shortcuts.tish'
 

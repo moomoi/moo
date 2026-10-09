@@ -19,11 +19,7 @@ use std::time::{Duration, Instant};
 
 use tishlang_core::{json_parse, Value};
 
-/// Release builds set `MOO_VERSION` (scripts/build-universal.sh); local builds say "dev".
-pub const VERSION: &str = match option_env!("MOO_VERSION") {
-    Some(v) => v,
-    None => "dev",
-};
+pub use crate::VERSION;
 
 const MAX_REQUEST: u64 = 1 << 20;
 

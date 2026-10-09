@@ -907,13 +907,25 @@ pub fn default_roots() -> Vec<Root> {
             })
             .collect();
     }
-    let Some(home) = std::env::var_os("HOME").map(|h| h.to_string_lossy().into_owned()) else { return Vec::new() };
-    let mut roots = vec![Root { path: home.clone(), skip_top: vec!["Library".into()], label: "~".into() }];
-    let icloud = format!("{home}/Library/Mobile Documents/com~apple~CloudDocs");
-    if Path::new(&icloud).is_dir() {
-        roots.push(Root { path: icloud, skip_top: Vec::new(), label: "iCloud Drive".into() });
+    // Windows: the user profile without AppData (its ~/Library), as a `/`-separated path: the index
+    // joins and splits on `/`, and Windows takes either separator.
+    #[cfg(windows)]
+    {
+        let Some(home) = std::env::var_os("USERPROFILE").map(|h| h.to_string_lossy().replace('\\', "/")) else { return Vec::new() };
+        vec![Root { path: home, skip_top: vec!["AppData".into()], label: "~".into() }]
     }
-    roots
+    #[cfg(not(windows))]
+    let Some(home) = std::env::var_os("HOME").map(|h| h.to_string_lossy().into_owned()) else { return Vec::new() };
+    #[cfg(not(windows))]
+    let mut roots = vec![Root { path: home.clone(), skip_top: vec!["Library".into()], label: "~".into() }];
+    #[cfg(not(windows))]
+    {
+        let icloud = format!("{home}/Library/Mobile Documents/com~apple~CloudDocs");
+        if Path::new(&icloud).is_dir() {
+            roots.push(Root { path: icloud, skip_top: Vec::new(), label: "iCloud Drive".into() });
+        }
+        roots
+    }
 }
 
 #[cfg(test)]

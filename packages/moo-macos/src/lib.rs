@@ -1,9 +1,15 @@
 //! `moo-macos`: native launcher services for the Moo shell, imported from Tish as
 //! `import { reindex, search, launch, setup, ... } from "moo-macos"`.
 
+/// Release builds set `MOO_VERSION` (scripts/build-universal.sh); local builds say "dev".
+pub const VERSION: &str = match option_env!("MOO_VERSION") {
+    Some(v) => v,
+    None => "dev",
+};
+
 #[cfg(target_os = "macos")]
 mod ai;
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", windows))]
 mod bridge;
 #[cfg(target_os = "macos")]
 mod cli;
@@ -11,11 +17,29 @@ mod frecency;
 mod fsindex;
 #[cfg(target_os = "macos")]
 mod fslive;
-#[cfg(target_os = "macos")]
+#[cfg(windows)]
+#[path = "fslive_win.rs"]
+mod fslive;
+#[cfg(any(target_os = "macos", windows))]
 mod http;
 mod index;
 #[cfg(target_os = "macos")]
 mod keychain;
+#[cfg(windows)]
+#[path = "keychain_win.rs"]
+mod keychain;
+#[cfg(windows)]
+mod win;
+
+/// What the plugin host and the bridge need from the platform: `launch`, `debug_log`, `with_ui`
+/// (mac.rs on macOS, win.rs on Windows).
+#[cfg(any(target_os = "macos", windows))]
+mod sys {
+    #[cfg(target_os = "macos")]
+    pub(crate) use crate::mac::{debug_log, launch, with_ui};
+    #[cfg(windows)]
+    pub(crate) use crate::win::{debug_log, launch, with_ui};
+}
 #[cfg(target_os = "macos")]
 mod keymap;
 #[cfg(target_os = "macos")]
@@ -23,9 +47,9 @@ mod keys;
 #[cfg(target_os = "macos")]
 #[cfg(target_os = "macos")]
 mod mac;
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", windows))]
 mod oauth;
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", windows))]
 mod pluginhost;
 #[cfg(target_os = "macos")]
 #[cfg(target_os = "macos")]
@@ -112,8 +136,29 @@ fn native_load_bytecode_plugin(args: &[Value]) -> Value {
 }
 
 /// `bundleResources()` -> `Moo.app/Contents/Resources` when running from an app bundle, else null.
+/// The running binary's path, resolved. On Windows without the `\\?\` prefix canonicalize
+/// adds: such paths take no forward slashes, and Tish code joins paths with `/`.
+fn current_exe() -> Option<std::path::PathBuf> {
+    let p = std::env::current_exe().ok()?.canonicalize().ok()?;
+    #[cfg(windows)]
+    if let Some(s) = p.to_str().and_then(|s| s.strip_prefix(r"\\?\")) {
+        return Some(std::path::PathBuf::from(s));
+    }
+    Some(p)
+}
+
+#[cfg(windows)]
 fn native_bundle_resources(_args: &[Value]) -> Value {
-    let exe = std::env::current_exe().ok().and_then(|p| p.canonicalize().ok());
+    // An installed Moo is moo.exe with plugins\ beside it; a dev build has neither.
+    match current_exe().as_deref().and_then(|p| p.parent()).filter(|d| d.join("plugins").is_dir()) {
+        Some(d) => Value::String(d.to_string_lossy().as_ref().into()),
+        None => Value::Null,
+    }
+}
+
+#[cfg(not(windows))]
+fn native_bundle_resources(_args: &[Value]) -> Value {
+    let exe = current_exe();
     let contents = exe.as_deref().and_then(|p| p.parent()).filter(|d| d.ends_with("MacOS")).and_then(|d| d.parent());
     match contents {
         Some(c) if c.ends_with("Contents") && c.parent().is_some_and(|b| b.extension().is_some_and(|e| e == "app")) => {
@@ -126,7 +171,7 @@ fn native_bundle_resources(_args: &[Value]) -> Value {
 /// `exeDir()` -> the folder holding the running binary, so paths don't depend on the working
 /// directory (the CLI starts the app from that folder).
 fn native_exe_dir(_args: &[Value]) -> Value {
-    let exe = std::env::current_exe().ok().and_then(|p| p.canonicalize().ok());
+    let exe = current_exe();
     match exe.as_deref().and_then(|p| p.parent()) {
         Some(d) => Value::String(d.to_string_lossy().as_ref().into()),
         None => Value::String(".".into()),
@@ -137,7 +182,7 @@ fn native_exe_dir(_args: &[Value]) -> Value {
 /// builds), the running binary, and the `.app` bundle holding it (null outside one). For debugging
 /// which Moo is running.
 fn native_about(_args: &[Value]) -> Value {
-    let exe = std::env::current_exe().ok().and_then(|p| p.canonicalize().ok());
+    let exe = current_exe();
     let app = exe
         .as_deref()
         .and_then(|p| p.ancestors().find(|a| a.extension().is_some_and(|e| e == "app")))
@@ -145,7 +190,7 @@ fn native_about(_args: &[Value]) -> Value {
         .unwrap_or(Value::Null);
     let exe = exe.map(|p| p.to_string_lossy().into_owned()).unwrap_or_default();
     let mut m = ObjectMap::default();
-    m.insert(Arc::from("version"), Value::String(crate::cli::VERSION.into()));
+    m.insert(Arc::from("version"), Value::String(VERSION.into()));
     m.insert(Arc::from("exe"), Value::String(exe.as_str().into()));
     m.insert(Arc::from("app"), app);
     Value::object(m)
@@ -663,7 +708,7 @@ mod natives {
     }
     pub fn show(_a: &[Value]) -> Value { Value::Null }
     pub fn hide(_a: &[Value]) -> Value { Value::Null }
-    fn unsupported(_a: &[Value]) -> Value {
+    pub fn unsupported(_a: &[Value]) -> Value {
         obj(vec![("ok", Value::Bool(false)), ("error", Value::String("macOS only".into()))])
     }
     pub use unsupported as unregister_hotkey;
@@ -680,14 +725,62 @@ mod natives {
     pub fn cli_write(_a: &[Value]) -> Value { Value::Bool(false) }
     pub fn cli_end(_a: &[Value]) -> Value { Value::Bool(false) }
     pub fn quit(_a: &[Value]) -> Value { Value::Null }
+    #[cfg(windows)]
+    pub fn file_index_start(_a: &[Value]) -> Value { Value::Bool(fslive::start()) }
+    #[cfg(not(windows))]
     pub fn file_index_start(_a: &[Value]) -> Value { Value::Bool(false) }
+    #[cfg(windows)]
+    fn file_rows(hits: Vec<crate::fsindex::FileHit>) -> Value {
+        let rows: Vec<Value> = hits
+            .into_iter()
+            .map(|h| {
+                obj(vec![
+                    ("name", Value::String(h.name.as_str().into())),
+                    ("path", Value::String(h.path.as_str().into())),
+                    ("icon", Value::String("".into())),
+                    ("kind", Value::String(if h.is_dir { "Folder" } else { "File" }.into())),
+                    ("detail", Value::String(h.detail.as_str().into())),
+                    ("score", Value::Number(h.score as f64)),
+                ])
+            })
+            .collect();
+        Value::Array(VmRef::new(rows))
+    }
+    #[cfg(windows)]
+    pub fn find_files(args: &[Value]) -> Value {
+        let limit = num_arg(args, 1, 8.0).max(0.0) as usize;
+        match fslive::search(&str_arg(args, 0), limit) {
+            Some((hits, ms)) => obj(vec![("ready", Value::Bool(true)), ("results", file_rows(hits)), ("ms", Value::Number(ms))]),
+            None => obj(vec![("ready", Value::Bool(false)), ("results", Value::Array(VmRef::new(vec![]))), ("ms", Value::Number(0.0))]),
+        }
+    }
+    #[cfg(windows)]
+    pub fn recent_files(args: &[Value]) -> Value {
+        file_rows(fslive::recent(num_arg(args, 0, 8.0).max(0.0) as usize))
+    }
+    #[cfg(not(windows))]
     pub fn find_files(_a: &[Value]) -> Value {
         obj(vec![("ready", Value::Bool(false)), ("results", Value::Array(VmRef::new(vec![]))), ("ms", Value::Number(0.0))])
     }
+    #[cfg(not(windows))]
     pub fn recent_files(_a: &[Value]) -> Value { Value::Array(VmRef::new(vec![])) }
     pub fn watch_typed(_a: &[Value]) -> Value { Value::Null }
     pub fn quick_look(_a: &[Value]) -> Value { Value::Bool(false) }
     pub fn quick_look_visible(_a: &[Value]) -> Value { Value::Bool(false) }
+    #[cfg(windows)]
+    pub fn file_index_status(_a: &[Value]) -> Value {
+        let s = fslive::status();
+        obj(vec![
+            ("state", Value::String(s.state.into())),
+            ("entries", Value::Number(s.entries as f64)),
+            ("folders", Value::Number(s.dirs as f64)),
+            ("bytes", Value::Number(s.bytes as f64)),
+            ("buildMs", Value::Number(s.build_ms)),
+            ("fromSnapshot", Value::Bool(s.from_snapshot)),
+            ("updates", Value::Number(s.updates as f64)),
+        ])
+    }
+    #[cfg(not(windows))]
     pub fn file_index_status(_a: &[Value]) -> Value { obj(vec![("state", Value::String("idle".into()))]) }
     pub fn ai_availability(_a: &[Value]) -> Value { Value::String("macOS only".into()) }
     pub fn ai_session(_a: &[Value]) -> Value { Value::Number(0.0) }
@@ -708,6 +801,13 @@ mod natives {
             _ => Value::Null,
         }
     }
+    #[cfg(windows)]
+    pub fn on_plugin_refresh(args: &[Value]) -> Value {
+        let cb = args.first().filter(|v| matches!(v, Value::Function(_))).cloned();
+        crate::pluginhost::on_refresh(cb);
+        Value::Null
+    }
+    #[cfg(not(windows))]
     pub fn on_plugin_refresh(_a: &[Value]) -> Value { Value::Null }
 }
 

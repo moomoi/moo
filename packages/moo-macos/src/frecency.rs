@@ -37,11 +37,12 @@ pub fn store_path() -> Option<PathBuf> {
     if let Some(p) = std::env::var_os("MOO_FRECENCY") {
         return Some(PathBuf::from(p));
     }
-    let home = PathBuf::from(std::env::var_os("HOME")?);
     #[cfg(target_os = "macos")]
-    let dir = home.join("Library/Application Support/Moo");
-    #[cfg(not(target_os = "macos"))]
-    let dir = home.join(".local/share/moo");
+    let dir = PathBuf::from(std::env::var_os("HOME")?).join("Library/Application Support/Moo");
+    #[cfg(windows)]
+    let dir = PathBuf::from(std::env::var_os("APPDATA")?).join("Moo");
+    #[cfg(not(any(target_os = "macos", windows)))]
+    let dir = PathBuf::from(std::env::var_os("HOME")?).join(".local/share/moo");
     Some(dir.join("frecency.tsv"))
 }
 

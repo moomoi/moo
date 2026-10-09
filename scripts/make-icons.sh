@@ -2,6 +2,7 @@
 # Make every Moo icon from the one square source, packaging/icon.png (1024x1024, full bleed):
 #
 #   packaging/AppIcon.icns       app icon: the macOS rounded square with the standard margin
+#   packaging/AppIcon.ico        the Windows app and tray icon: 16 to 256 px
 #   packaging/MenuBarIcon.tiff   menu bar template: the snout as a black line icon on clear, 1x and 2x
 #   packaging/SearchIcon.png     the same line snout, a little heavier, for the search field
 #   web/public/icon.png, favicon.png   the site's logo and favicon
@@ -33,6 +34,9 @@ for size in 16 32 128 256 512; do
   magick "$WORK/app.png" -resize "$((size * 2))x$((size * 2))" "PNG32:$WORK/AppIcon.iconset/icon_${size}x${size}@2x.png"
 done
 iconutil -c icns "$WORK/AppIcon.iconset" -o "$ROOT/packaging/AppIcon.icns"
+
+# Windows: the same rounded square in every size Windows asks for (tray 16/20/24/32, Start 48+).
+magick "$WORK/app.png" -define icon:auto-resize=256,64,48,40,32,24,20,16 "$ROOT/packaging/AppIcon.ico"
 
 # The snout as a line icon, drawn rather than traced: an outline `$1` points thick with solid
 # nostrils, tilted like the app icon, on a 22x18pt canvas. Drawn at 16 pixels per point into `$2`;
@@ -70,4 +74,4 @@ magick "$SRC" -resize 64x64 \
 cp "$WORK/logo.png" "$ROOT/web/public/icon.png"
 cp "$WORK/favicon.png" "$ROOT/web/public/favicon.png"
 
-ls -la "$ROOT/packaging/AppIcon.icns" "$ROOT/packaging/MenuBarIcon.tiff" "$ROOT/packaging/SearchIcon.png" "$ROOT/web/public/icon.png" "$ROOT/web/public/favicon.png"
+ls -la "$ROOT/packaging/AppIcon.icns" "$ROOT/packaging/AppIcon.ico" "$ROOT/packaging/MenuBarIcon.tiff" "$ROOT/packaging/SearchIcon.png" "$ROOT/web/public/icon.png" "$ROOT/web/public/favicon.png"

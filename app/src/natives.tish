@@ -1,0 +1,68 @@
+// Moo's native services. macOS: packages/moo-macos (`tish:moo`), as is. Windows:
+// natives.windows.tish, the same names on tish-windows plus moo's portable natives.
+
+import { about as n_about, aiAsk as n_aiAsk, aiAvailability as n_aiAvailability, aiCancel as n_aiCancel, aiEndSession as n_aiEndSession, aiPrewarm as n_aiPrewarm, aiSession as n_aiSession, appCount as n_appCount, appFolders as n_appFolders, appPaths as n_appPaths, bundleResources as n_bundleResources, checkHotkey as n_checkHotkey, cliEnd as n_cliEnd, cliMain as n_cliMain, cliServe as n_cliServe, cliWrite as n_cliWrite, exeDir as n_exeDir, fileIndexStart as n_fileIndexStart, fileIndexStatus as n_fileIndexStatus, findFiles as n_findFiles, frecency as n_frecency, fuzzy as n_fuzzy, hide as n_hide, hotkeyDisplay as n_hotkeyDisplay, isRightClick as n_isRightClick, keychainDelete as n_keychainDelete, keychainGet as n_keychainGet, keychainHas as n_keychainHas, keychainSet as n_keychainSet, keysError as n_keysError, loadBytecodePlugin as n_loadBytecodePlugin, localDateTime as n_localDateTime, oauthCancel as n_oauthCancel, oauthRefresh as n_oauthRefresh, oauthSignIn as n_oauthSignIn, onPluginRefresh as n_onPluginRefresh, pluginPaths as n_pluginPaths, quickLook as n_quickLook, quickLookVisible as n_quickLookVisible, quit as n_quit, recentFiles as n_recentFiles, recordHotkey as n_recordHotkey, recordUse as n_recordUse, registerHotkey as n_registerHotkey, reindex as n_reindex, search as n_search, setArrowKeys as n_setArrowKeys, setPanelKeys as n_setPanelKeys, setPanelShape as n_setPanelShape, setTheme as n_setTheme, setup as n_setup, show as n_show, toggle as n_toggle, typeText as n_typeText, unregisterHotkey as n_unregisterHotkey, watchTyped as n_watchTyped, withUi as n_withUi } from 'tish:moo'
+
+export let about = n_about
+export let aiAsk = n_aiAsk
+export let aiAvailability = n_aiAvailability
+export let aiCancel = n_aiCancel
+export let aiEndSession = n_aiEndSession
+export let aiPrewarm = n_aiPrewarm
+export let aiSession = n_aiSession
+export let appCount = n_appCount
+export let appFolders = n_appFolders
+export let appPaths = n_appPaths
+export let bundleResources = n_bundleResources
+export let checkHotkey = n_checkHotkey
+export let cliEnd = n_cliEnd
+export let cliMain = n_cliMain
+export let cliServe = n_cliServe
+export let cliWrite = n_cliWrite
+export let exeDir = n_exeDir
+export let fileIndexStart = n_fileIndexStart
+export let fileIndexStatus = n_fileIndexStatus
+export let findFiles = n_findFiles
+export let frecency = n_frecency
+export let fuzzy = n_fuzzy
+export let hide = n_hide
+export let hotkeyDisplay = n_hotkeyDisplay
+export let isRightClick = n_isRightClick
+export let keychainDelete = n_keychainDelete
+export let keychainGet = n_keychainGet
+export let keychainHas = n_keychainHas
+export let keychainSet = n_keychainSet
+export let keysError = n_keysError
+export let loadBytecodePlugin = n_loadBytecodePlugin
+export let localDateTime = n_localDateTime
+export let oauthCancel = n_oauthCancel
+export let oauthRefresh = n_oauthRefresh
+export let oauthSignIn = n_oauthSignIn
+export let onPluginRefresh = n_onPluginRefresh
+export let pluginPaths = n_pluginPaths
+export let quickLook = n_quickLook
+export let quickLookVisible = n_quickLookVisible
+export let quit = n_quit
+export let recentFiles = n_recentFiles
+export let recordHotkey = n_recordHotkey
+export let recordUse = n_recordUse
+export let registerHotkey = n_registerHotkey
+export let reindex = n_reindex
+export let search = n_search
+export let setArrowKeys = n_setArrowKeys
+export let setPanelKeys = n_setPanelKeys
+export let setPanelShape = n_setPanelShape
+export let setTheme = n_setTheme
+export let setup = n_setup
+export let show = n_show
+export let toggle = n_toggle
+export let typeText = n_typeText
+export let unregisterHotkey = n_unregisterHotkey
+export let watchTyped = n_watchTyped
+export let withUi = n_withUi
+
+// The launcher hotkeys to try, first free one wins (before shortcuts.json's `launcher` and MOO_HOTKEY).
+// Apple's on-device model (macOS 26).
+export let HAS_ON_DEVICE_AI = true
+
+export let DEFAULT_HOTKEYS = ['cmd+space', 'alt+space', 'ctrl+alt+space', 'cmd+shift+space']

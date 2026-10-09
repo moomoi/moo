@@ -1,0 +1,333 @@
+// Windows: Moo's natives (see natives.tish). The app index, fuzzy matching, frecency and plugin
+// loading are moo's portable natives; the panel, hotkeys, keys, shell and credentials are
+// tish-windows; the file index is moo's too (live through ReadDirectoryChangesW). What macOS alone
+// has (Quick Look, Apple's on-device model,
+// typed-keyword snippets, window actions, the moo CLI socket) answers "not on Windows yet".
+//
+// Key specs stay in macOS form ("cmd+k", "shift+cmd+return") everywhere in Moo; on Windows Ctrl
+// stands in for Cmd, so Ctrl+K is "cmd+k".
+
+import { windows } from 'tish:windows'
+import { about as n_about, appCount as n_appCount, appFolders as n_appFolders, appPaths as n_appPaths, bundleResources as n_bundleResources, exeDir as n_exeDir, frecency as n_frecency, fuzzy as n_fuzzy, loadBytecodePlugin as n_loadBytecodePlugin, localDateTime as n_localDateTime, onPluginRefresh as n_onPluginRefresh, pluginPaths as n_pluginPaths, recordUse as n_recordUse, reindex as n_reindex, search as n_search, fileIndexStart as n_fileIndexStart, findFiles as n_findFiles, recentFiles as n_recentFiles, fileIndexStatus as n_fileIndexStatus } from 'tish:moo'
+
+export let about = n_about
+export let fileIndexStart = n_fileIndexStart
+export let findFiles = n_findFiles
+export let recentFiles = n_recentFiles
+export let fileIndexStatus = n_fileIndexStatus
+export let appCount = n_appCount
+export let appFolders = n_appFolders
+export let appPaths = n_appPaths
+export let bundleResources = n_bundleResources
+export let exeDir = n_exeDir
+export let frecency = n_frecency
+export let fuzzy = n_fuzzy
+export let loadBytecodePlugin = n_loadBytecodePlugin
+export let localDateTime = n_localDateTime
+export let onPluginRefresh = n_onPluginRefresh
+export let pluginPaths = n_pluginPaths
+export let recordUse = n_recordUse
+export let reindex = n_reindex
+export let search = n_search
+
+let NOT_YET = 'not on Windows yet'
+
+// No on-device model: Ask AI defaults to Hypery and doesn't list Apple's.
+export let HAS_ON_DEVICE_AI = false
+
+// Alt+Space first, as PowerToys Run; Ctrl+Space ("cmd+space") toggles input methods on Windows.
+export let DEFAULT_HOTKEYS = ['alt+space', 'ctrl+alt+space', 'ctrl+shift+space']
+
+// ── The panel ───────────────────────────────────────────────────────────────
+
+let panel = { width: 750, height: 480, onKey: null, onShow: null, onHotkey: null, hidden: false }
+// The last height asked for: Moo sets the idle bar's before the window exists.
+let shapeHeight = 0
+let arrows = false
+let recording = false
+let panelKeys = []
+
+// `setup({ width, height, onKey, onShow, onHotkey, hidden })`, before `macos.run`.
+export fn setup(opts) {
+  panel = { width: opts.width, height: opts.height, onKey: opts.onKey, onShow: opts.onShow, onHotkey: opts.onHotkey, hidden: opts.hidden === true }
+  return null
+}
+
+// The window options for host.windows.tish's `run`: the panel is the window.
+export let panelRunOptions = (opts) => {
+  return {
+    title: 'Moo',
+    width: panel.width,
+    height: shapeHeight > 0 ? shapeHeight : panel.height,
+    borderless: true,
+    toolWindow: true,
+    topmost: true,
+    hideOnBlur: true,
+    backdrop: 'acrylic',
+    autoShow: !panel.hidden,
+    onKey: onWindowKey
+  }
+}
+
+export let setTheme = (theme) => null
+
+export fn setArrowKeys(on) {
+  arrows = on === true
+  return null
+}
+
+// The panel's height changes as results come and go; its width and top edge stay.
+export let setPanelShape = (height, segments) => {
+  shapeHeight = height
+  windows.window.setSize(panel.width, height)
+  return null
+}
+
+export fn setPanelKeys(specs) {
+  panelKeys = specs
+  return null
+}
+
+export fn recordHotkey(on) {
+  recording = on === true
+  return null
+}
+
+export fn show() {
+  windows.window.show()
+  if (panel.onShow !== null) {
+    panel.onShow()
+  }
+  return null
+}
+
+export fn hide() {
+  windows.window.hide()
+  return null
+}
+
+export fn toggle() {
+  if (windows.window.visible()) {
+    return hide()
+  }
+  return show()
+}
+
+export fn quit() {
+  windows.quit()
+  return null
+}
+
+export fn withUi(f) {
+  return f()
+}
+
+export let typeText = (text) => null
+
+export fn isRightClick() {
+  return false
+}
+
+// ── Keys ────────────────────────────────────────────────────────────────────
+
+// A tish-windows key name ("ctrl+shift+enter") as a Moo spec ("shift+cmd+return").
+fn macSpec(name) {
+  let parts = name.split('+')
+  let key = parts[parts.length - 1]
+  let mods = parts.slice(0, parts.length - 1)
+  let keyName = key === 'enter' ? 'return' : (key === 'backspace' ? 'delete' : (key === 'delete' ? 'forwarddelete' : key))
+  let out = []
+  if (mods.indexOf('alt') >= 0) {
+    out.push('alt')
+  }
+  if (mods.indexOf('shift') >= 0) {
+    out.push('shift')
+  }
+  if (mods.indexOf('ctrl') >= 0) {
+    out.push('cmd')
+  }
+  out.push(keyName)
+  return out.join('+')
+}
+
+// The panel keys macOS's key monitor sends Moo, by tish-windows key name.
+fn launcherKey(name, fieldText) {
+  if (name === 'down' || name === 'ctrl+n') {
+    return 'down'
+  }
+  if (name === 'up' || name === 'ctrl+p') {
+    return 'up'
+  }
+  if (arrows && (name === 'left' || name === 'right')) {
+    return name
+  }
+  if (name === 'ctrl+enter') {
+    return 'cmd+enter'
+  }
+  if (name === 'enter' || name === 'alt+enter' || name === 'escape' || name === 'tab' || name === 'shift+tab') {
+    return name
+  }
+  if (name === 'ctrl+backspace') {
+    return 'cmd+delete'
+  }
+  if (name === 'backspace' && fieldText === '') {
+    return 'delete-empty'
+  }
+  return ''
+}
+
+fn onWindowKey(name, fieldText) {
+  if (panel.onKey === null) {
+    return false
+  }
+  let spec = macSpec(name)
+  if (recording) {
+    panel.onKey('record:' + spec)
+    return true
+  }
+  if (panelKeys.indexOf(spec) >= 0) {
+    panel.onKey('panel:' + spec)
+    return true
+  }
+  let k = launcherKey(name, fieldText)
+  if (k === '') {
+    return false
+  }
+  panel.onKey(k)
+  return true
+}
+
+// ── Hotkeys ─────────────────────────────────────────────────────────────────
+
+// A Moo spec ("cmd+space", "opt+space") as a Windows one: Cmd is Ctrl, Option is Alt.
+fn winSpec(spec) {
+  return spec.split('+').map((p) => {
+    let t = p.trim().toLowerCase()
+    if (t === 'cmd' || t === 'command' || t === '⌘') {
+      return 'ctrl'
+    }
+    if (t === 'opt' || t === 'option' || t === '⌥') {
+      return 'alt'
+    }
+    if (t === 'return') {
+      return 'enter'
+    }
+    return t
+  }).join('+')
+}
+
+// `registerHotkey(spec, action?)` -> `{ ok, id, display, registered }` or `{ ok: false, error }`.
+export fn registerHotkey(spec, action) {
+  let w = winSpec(spec)
+  let r = windows.hotkeys.register(w, () => {
+    if (panel.onHotkey !== null) {
+      panel.onHotkey(action ?? '')
+    }
+  })
+  if (typeof r !== 'number') {
+    return { ok: false, error: r.error }
+  }
+  return { ok: true, id: r, display: windows.hotkeys.display(w), registered: [spec] }
+}
+
+export fn unregisterHotkey(id) {
+  windows.hotkeys.unregister(id)
+  return null
+}
+
+export fn checkHotkey(spec) {
+  let w = winSpec(spec)
+  let e = windows.hotkeys.check(w)
+  if (e !== null) {
+    return { ok: false, error: e }
+  }
+  return { ok: true, display: windows.hotkeys.display(w) }
+}
+
+export fn hotkeyDisplay(spec) {
+  return windows.hotkeys.display(winSpec(spec))
+}
+
+export fn keysError(spec) {
+  let e = windows.hotkeys.check(winSpec(spec))
+  return e !== null && e.indexOf('in use') < 0 ? e : null
+}
+
+// ── Shell and credentials ───────────────────────────────────────────────────
+
+// `runShell(command, cwd, cb, values?)`: PowerShell on Windows; `values` are `$args[0]`, ….
+export fn runShell(command, cwd, cb, values) {
+  return windows.shell.run(command, { cwd: cwd, args: values ?? [] }, cb)
+}
+
+export fn keychainGet(account) {
+  return windows.credentials.get('Moo:' + account)
+}
+
+export fn keychainSet(account, secret) {
+  return windows.credentials.set('Moo:' + account, secret)
+}
+
+export fn keychainDelete(account) {
+  return windows.credentials.delete('Moo:' + account)
+}
+
+export fn keychainHas(account) {
+  return windows.credentials.has('Moo:' + account)
+}
+
+// ── Not on Windows yet ──────────────────────────────────────────────────────
+
+
+
+
+
+export let quickLook = (path) => false
+
+export fn quickLookVisible() {
+  return false
+}
+
+export let watchTyped = (keywords, cb) => null
+
+export let windowAction = (pid, name, action) => ({ ok: false, message: NOT_YET })
+
+export fn aiAvailability() {
+  return "Apple's on-device model is only on macOS"
+}
+
+export let aiSession = (instructions, toolsJson, onTool) => 0
+
+export let aiEndSession = (id) => null
+
+export fn aiPrewarm() {
+  return null
+}
+
+export let aiAsk = (session, prompt, onEvent) => 0
+
+export let aiCancel = (id) => null
+
+export let oauthSignIn = (endpoints, cb) => {
+  cb({ error: 'browser sign-in is ' + NOT_YET + '; paste an API key instead' })
+  return null
+}
+
+export fn oauthCancel() {
+  return null
+}
+
+export let oauthRefresh = (endpoints, refreshToken, cb) => {
+  cb({ error: NOT_YET })
+  return null
+}
+
+export fn cliMain() {
+  return false
+}
+
+export let cliServe = (onCli) => ({ ok: false, error: 'the moo command is ' + NOT_YET })
+
+export let cliWrite = (token, text, stream) => false
+
+export let cliEnd = (token, code) => false

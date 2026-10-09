@@ -1,0 +1,19 @@
+// Windows: the `macos`-shaped host object on tish-windows (see host.tish). Only what Moo calls:
+// `run`, `whenSettled` and `icons`. The launcher panel's options come from natives.windows.tish's
+// `setup`, as the panel does on macOS.
+
+import { windows, useState as hostUseState } from 'tish:windows'
+import { panelRunOptions } from './natives.windows.tish'
+
+export let useState = hostUseState
+
+export let macos = {
+  run: (App, opts) => windows.run(App, panelRunOptions(opts)),
+  whenSettled: (promise, cb) => windows.whenSettled(promise, cb),
+  icons: {
+    image: (path, template, reload) => windows.icons.image(path),
+    file: (path) => windows.icons.file(path),
+    symbol: (name) => windows.icons.symbol(name),
+    onLoaded: (cb) => windows.icons.onLoaded(cb)
+  }
+}
