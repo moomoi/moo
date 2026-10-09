@@ -41,6 +41,53 @@ jobs:
       - name: App
         run: bash app/build.sh
 
+  windows:
+    name: Windows build
+    # Cross-built on Linux (cheaper than a Windows runner): proves moo.exe still compiles and links.
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      TISH_FAST_NATIVE_BUILD: "1"
+      XWIN_ACCEPT_LICENSE: "1"
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            app/package-lock.json
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cache/cargo-xwin
+            target/tish-native-win
+          key: moo-windows-${{ hashFiles('package-lock.json', 'app/package-lock.json', 'packages/moo-macos/Cargo.lock') }}-${{ github.sha }}
+          restore-keys: |
+            moo-windows-${{ hashFiles('package-lock.json', 'app/package-lock.json', 'packages/moo-macos/Cargo.lock') }}-
+            moo-windows-
+      - name: Cross tools (LLVM, cargo-xwin)
+        run: |
+          sudo apt-get install -y clang lld llvm >/dev/null
+          cargo install cargo-xwin --locked
+      - name: Tish compiler and packages (npm)
+        run: |
+          npm ci --no-audit --no-fund
+          (cd app && npm ci --no-audit --no-fund)
+      - name: Package
+        run: bash scripts/package-windows.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: moo-windows-x64
+          path: dist/release/Moo-windows-x64.zip
+          if-no-files-found: error
+
   release_check:
     name: Release check (sem dry run)
     runs-on: ubuntu-latest
