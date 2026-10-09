@@ -120,8 +120,29 @@ fn native_load_bytecode_plugin(args: &[Value]) -> Value {
 }
 
 /// `bundleResources()` -> `Moo.app/Contents/Resources` when running from an app bundle, else null.
+/// The running binary's path, resolved. On Windows without the `\\?\` prefix canonicalize
+/// adds: such paths take no forward slashes, and Tish code joins paths with `/`.
+fn current_exe() -> Option<std::path::PathBuf> {
+    let p = std::env::current_exe().ok()?.canonicalize().ok()?;
+    #[cfg(windows)]
+    if let Some(s) = p.to_str().and_then(|s| s.strip_prefix(r"\\?\")) {
+        return Some(std::path::PathBuf::from(s));
+    }
+    Some(p)
+}
+
+#[cfg(windows)]
 fn native_bundle_resources(_args: &[Value]) -> Value {
-    let exe = std::env::current_exe().ok().and_then(|p| p.canonicalize().ok());
+    // An installed Moo is moo.exe with plugins\ beside it; a dev build has neither.
+    match current_exe().as_deref().and_then(|p| p.parent()).filter(|d| d.join("plugins").is_dir()) {
+        Some(d) => Value::String(d.to_string_lossy().as_ref().into()),
+        None => Value::Null,
+    }
+}
+
+#[cfg(not(windows))]
+fn native_bundle_resources(_args: &[Value]) -> Value {
+    let exe = current_exe();
     let contents = exe.as_deref().and_then(|p| p.parent()).filter(|d| d.ends_with("MacOS")).and_then(|d| d.parent());
     match contents {
         Some(c) if c.ends_with("Contents") && c.parent().is_some_and(|b| b.extension().is_some_and(|e| e == "app")) => {
@@ -134,7 +155,7 @@ fn native_bundle_resources(_args: &[Value]) -> Value {
 /// `exeDir()` -> the folder holding the running binary, so paths don't depend on the working
 /// directory (the CLI starts the app from that folder).
 fn native_exe_dir(_args: &[Value]) -> Value {
-    let exe = std::env::current_exe().ok().and_then(|p| p.canonicalize().ok());
+    let exe = current_exe();
     match exe.as_deref().and_then(|p| p.parent()) {
         Some(d) => Value::String(d.to_string_lossy().as_ref().into()),
         None => Value::String(".".into()),
@@ -145,7 +166,7 @@ fn native_exe_dir(_args: &[Value]) -> Value {
 /// builds), the running binary, and the `.app` bundle holding it (null outside one). For debugging
 /// which Moo is running.
 fn native_about(_args: &[Value]) -> Value {
-    let exe = std::env::current_exe().ok().and_then(|p| p.canonicalize().ok());
+    let exe = current_exe();
     let app = exe
         .as_deref()
         .and_then(|p| p.ancestors().find(|a| a.extension().is_some_and(|e| e == "app")))
