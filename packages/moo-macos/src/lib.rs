@@ -807,6 +807,17 @@ mod natives {
     }
     #[cfg(not(windows))]
     pub fn recent_files(_a: &[Value]) -> Value { Value::Array(VmRef::new(vec![])) }
+    /// `watchTyped(keywords, cb)`: `cb(keyword)` when one is typed in another app.
+    #[cfg(windows)]
+    pub fn watch_typed(args: &[Value]) -> Value {
+        let keywords: Vec<String> = match args.first() {
+            Some(Value::Array(a)) => a.borrow().iter().filter_map(|v| if let Value::String(k) = v { Some(k.to_string()) } else { None }).collect(),
+            _ => Vec::new(),
+        };
+        crate::win::watch_snippets(keywords, args.get(1).cloned().unwrap_or(Value::Null));
+        Value::Null
+    }
+    #[cfg(not(windows))]
     pub fn watch_typed(_a: &[Value]) -> Value { Value::Null }
     pub fn quick_look(_a: &[Value]) -> Value { Value::Bool(false) }
     pub fn quick_look_visible(_a: &[Value]) -> Value { Value::Bool(false) }

@@ -71,3 +71,135 @@ pub fn debug_log(msg: &str) {
 pub fn with_ui<R>(f: impl FnOnce() -> R) -> R {
     f()
 }
+
+// ── Snippet keywords typed in other apps ────────────────────────────────────
+
+use std::cell::RefCell;
+
+use tishlang_core::Value;
+use windows::Win32::UI::Input::KeyboardAndMouse::*;
+
+thread_local! {
+    static TYPED: RefCell<crate::snippets::Typed> = RefCell::new(Default::default());
+    static ON_SNIPPET: RefCell<Option<Value>> = const { RefCell::new(None) };
+    static HOOKS: RefCell<Option<(HHOOK, HHOOK)>> = const { RefCell::new(None) };
+}
+
+fn foreground_is_us() -> bool {
+    unsafe {
+        let mut pid = 0u32;
+        GetWindowThreadProcessId(GetForegroundWindow(), Some(&mut pid));
+        pid == std::process::id()
+    }
+}
+
+/// The characters key `vk` types in the foreground app's keyboard layout, given the modifiers held.
+fn chars_for(vk: u32, scan: u32) -> String {
+    unsafe {
+        let mut state = [0u8; 256];
+        for k in [VK_SHIFT, VK_LSHIFT, VK_RSHIFT, VK_CAPITAL] {
+            let s = GetAsyncKeyState(k.0 as i32) as u16;
+            state[k.0 as usize] = if s & 0x8000 != 0 { 0x80 } else { 0 };
+        }
+        if GetKeyState(VK_CAPITAL.0 as i32) & 1 != 0 {
+            state[VK_CAPITAL.0 as usize] |= 1;
+        }
+        let layout = GetKeyboardLayout(GetWindowThreadProcessId(GetForegroundWindow(), None));
+        let mut buf = [0u16; 8];
+        // Flag 0x4: don't change the keyboard state (dead keys stay pending for the app).
+        let n = ToUnicodeEx(vk, scan, &state, &mut buf, 0x4, Some(layout));
+        if n > 0 { String::from_utf16_lossy(&buf[..n as usize]) } else { String::new() }
+    }
+}
+
+fn held(vk: VIRTUAL_KEY) -> bool {
+    unsafe { GetAsyncKeyState(vk.0 as i32) as u16 & 0x8000 != 0 }
+}
+
+unsafe extern "system" fn keyboard_hook(code: i32, wp: WPARAM, lp: LPARAM) -> LRESULT {
+    if code >= 0 && (wp.0 as u32 == WM_KEYDOWN || wp.0 as u32 == WM_SYSKEYDOWN) {
+        let k = &*(lp.0 as *const KBDLLHOOKSTRUCT);
+        // Our own expansions (SendInput) and typing into Moo itself don't count.
+        if k.flags.0 & LLKHF_INJECTED.0 == 0 && !foreground_is_us() {
+            let vk = VIRTUAL_KEY(k.vkCode as u16);
+            let hit = TYPED.with(|t| {
+                let mut t = t.borrow_mut();
+                if held(VK_CONTROL) || held(VK_MENU) || held(VK_LWIN) || held(VK_RWIN) {
+                    t.reset();
+                    return None;
+                }
+                match vk {
+                    VK_BACK => {
+                        t.backspace();
+                        None
+                    }
+                    VK_SHIFT | VK_LSHIFT | VK_RSHIFT | VK_CAPITAL => None,
+                    VK_LEFT | VK_RIGHT | VK_UP | VK_DOWN | VK_HOME | VK_END | VK_PRIOR | VK_NEXT | VK_ESCAPE | VK_RETURN | VK_TAB | VK_DELETE => {
+                        t.reset();
+                        None
+                    }
+                    _ => {
+                        let s = chars_for(k.vkCode, k.scanCode);
+                        if s.is_empty() {
+                            None
+                        } else {
+                            t.push(&s)
+                        }
+                    }
+                }
+            });
+            if let Some(keyword) = hit {
+                // Let the app take the keyword's last key before replacing it (as on macOS).
+                std::thread::spawn(move || {
+                    std::thread::sleep(std::time::Duration::from_millis(40));
+                    on_main(move || {
+                        if let Some(Value::Function(f)) = ON_SNIPPET.with(|c| c.borrow().clone()) {
+                            let _ = f.call(&[Value::String(keyword.as_str().into())]);
+                        }
+                    });
+                });
+            }
+        }
+    }
+    CallNextHookEx(None, code, wp, lp)
+}
+
+unsafe extern "system" fn mouse_hook(code: i32, wp: WPARAM, lp: LPARAM) -> LRESULT {
+    if code >= 0 && matches!(wp.0 as u32, WM_LBUTTONDOWN | WM_RBUTTONDOWN | WM_MBUTTONDOWN) {
+        // A click may move the cursor: what was typed before is no longer before it.
+        TYPED.with(|t| t.borrow_mut().reset());
+    }
+    CallNextHookEx(None, code, wp, lp)
+}
+
+/// Watch for `keywords` typed in other apps; `cb(keyword)` on the UI thread. An empty list stops
+/// watching. Low-level hooks run on this (the UI) thread's message loop.
+pub fn watch_snippets(keywords: Vec<String>, cb: Value) {
+    ensure_window();
+    TYPED.with(|t| t.borrow_mut().set_keywords(keywords));
+    ON_SNIPPET.with(|c| *c.borrow_mut() = Some(cb));
+    let watching = !TYPED.with(|t| t.borrow().is_empty());
+    HOOKS.with(|h| {
+        let mut h = h.borrow_mut();
+        match (watching, h.is_some()) {
+            (false, true) => {
+                if let Some((k, m)) = h.take() {
+                    unsafe {
+                        let _ = UnhookWindowsHookEx(k);
+                        let _ = UnhookWindowsHookEx(m);
+                    }
+                }
+            }
+            (true, false) => unsafe {
+                let module = GetModuleHandleW(None).ok().map(|m| m.into());
+                if let (Ok(k), Ok(m)) = (
+                    SetWindowsHookExW(WH_KEYBOARD_LL, Some(keyboard_hook), module, 0),
+                    SetWindowsHookExW(WH_MOUSE_LL, Some(mouse_hook), module, 0),
+                ) {
+                    *h = Some((k, m));
+                }
+            },
+            _ => {}
+        }
+    });
+}

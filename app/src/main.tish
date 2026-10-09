@@ -26,6 +26,7 @@ import { timeAnswer } from './tz.tish'
 import { reindex, search, findFiles, recentFiles, fileIcon, symbolIcon, imageFile, statusItem, onIconsLoaded, searchFiles, searchContents, queryFiles, arrangeWindow, selectedText, watchSnippets, replaceTyped, accessibilityTrusted, systemInfo, systemCommand, runningApps, appAction, contactsAccess, contactsRequest, searchContacts, launch, watchApps, copyText, watchClipboard, onOpenUrl, dictionaryEntries, dictionaryWarm, trashFile, appsFor, openWith, revealFile, watchShortcuts, runShell, windowAction, ZONES } from './platform.tish'
 import { define as defineFrom } from './dict.tish'
 import { record as recordClip, clearClips, clipboardHistory as clipRows } from './clip.tish'
+import { HOME } from './paths.tish'
 
 // Clipboard history rows: `[{ text, preview, app, icon, ago }]`, newest first.
 fn clipboardHistory(query, limit) {
@@ -62,7 +63,6 @@ const FILE_LIST_MAX = 100
 // Characters per answer row at 14 pt across the panel.
 const AI_WRAP = 92
 const AI_TITLE = 'Apple Intelligence'
-let HOME = env.HOME ? env.HOME : ''
 let AI_INSTRUCTIONS = 'You are the assistant inside Moo, a macOS launcher. Answer briefly and plainly in a few short sentences. Do not use Markdown. '
   + 'Most questions, such as how to do something, general facts, advice or writing, need no tool: answer them from what you know. '
   + 'Use a tool only when the question is about this Mac (its files, apps, clipboard history, settings or system facts) or is exactly what a tool does, call it once, then answer from its reply. Never say you searched without calling a tool. '

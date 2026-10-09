@@ -1,0 +1,15 @@
+// Where Moo keeps things. macOS defaults; paths.windows.tish replaces them on Windows.
+
+import { env } from 'tish:process'
+
+// The user's home folder ("" when unknown).
+export let HOME = env.HOME ? env.HOME : ''
+
+// Preferences, history, frecency and other stores.
+export let DATA_DIR = HOME !== '' ? HOME + '/Library/Application Support/Moo' : ''
+
+// Things Moo can rebuild: currency rates, site icons.
+export let CACHE_DIR = HOME !== '' ? HOME + '/Library/Caches/Moo' : ''
+
+// shortcuts.json's folder: $XDG_CONFIG_HOME/moo, else ~/.config/moo.
+export let CONFIG_DIR = env.XDG_CONFIG_HOME ? env.XDG_CONFIG_HOME + '/moo' : (HOME !== '' ? HOME + '/.config/moo' : '')

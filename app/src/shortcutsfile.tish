@@ -7,20 +7,18 @@ import { env } from 'tish:process'
 import { keysError, localDateTime } from './natives.tish'
 import { clipboardText, selectedText } from './platform.tish'
 import { parse, toJson, emptyConfig, shortcut, needsQuery, expand, shellValues as argsOf, upsert, remove, bind, unbind, checkKeyword as keywordError, checkAlias as aliasError, setAlias as putAlias, setDisabled as putDisabled, setPanelKey as putPanelKey, setProvider } from './shortcuts.tish'
+import { HOME, CONFIG_DIR } from './paths.tish'
 
 export fn configPath() {
   if (env.MOO_CONFIG) {
     return env.MOO_CONFIG
   }
-  if (env.XDG_CONFIG_HOME) {
-    return env.XDG_CONFIG_HOME + '/moo/shortcuts.json'
-  }
-  return env.HOME ? env.HOME + '/.config/moo/shortcuts.json' : ''
+  return CONFIG_DIR !== '' ? CONFIG_DIR + '/shortcuts.json' : ''
 }
 
 export fn configDir() {
   let p = configPath()
-  let i = p.lastIndexOf('/')
+  let i = Math.max(p.lastIndexOf('/'), p.lastIndexOf('\\'))
   return i > 0 ? p.slice(0, i) : ''
 }
 
@@ -224,8 +222,8 @@ fn varsFor(template, query) {
 // `~/` at the start becomes the home folder for `open`.
 export fn expandTemplate(template, query, kind) {
   let out = expand(template, varsFor(template, query), kind)
-  if (kind === 'open' && (out === '~' || out.startsWith('~/')) && env.HOME) {
-    out = env.HOME + out.slice(1)
+  if (kind === 'open' && (out === '~' || out.startsWith('~/')) && HOME !== '') {
+    out = HOME + out.slice(1)
   }
   return out
 }

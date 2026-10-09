@@ -1,16 +1,16 @@
 // Windows: Moo's natives (see natives.tish). The app index, fuzzy matching, frecency and plugin
 // loading are moo's portable natives; the panel, hotkeys, keys, shell and credentials are
 // tish-windows; the file index is moo's too (live through ReadDirectoryChangesW). What macOS alone
-// has (Quick Look, Apple's on-device model,
-// typed-keyword snippets) answers "not on Windows yet".
+// has (Quick Look, Apple's on-device model) answers "not on Windows yet".
 //
 // Key specs stay in macOS form ("cmd+k", "shift+cmd+return") everywhere in Moo; on Windows Ctrl
 // stands in for Cmd, so Ctrl+K is "cmd+k".
 
 import { windows } from 'tish:windows'
-import { about as n_about, appCount as n_appCount, appFolders as n_appFolders, appPaths as n_appPaths, bundleResources as n_bundleResources, exeDir as n_exeDir, frecency as n_frecency, fuzzy as n_fuzzy, loadBytecodePlugin as n_loadBytecodePlugin, localDateTime as n_localDateTime, onPluginRefresh as n_onPluginRefresh, pluginPaths as n_pluginPaths, recordUse as n_recordUse, reindex as n_reindex, search as n_search, fileIndexStart as n_fileIndexStart, findFiles as n_findFiles, recentFiles as n_recentFiles, fileIndexStatus as n_fileIndexStatus, cliMain as n_cliMain, cliServe as n_cliServe, cliWrite as n_cliWrite, cliEnd as n_cliEnd } from 'tish:moo'
+import { about as n_about, appCount as n_appCount, appFolders as n_appFolders, appPaths as n_appPaths, bundleResources as n_bundleResources, exeDir as n_exeDir, frecency as n_frecency, fuzzy as n_fuzzy, loadBytecodePlugin as n_loadBytecodePlugin, localDateTime as n_localDateTime, onPluginRefresh as n_onPluginRefresh, pluginPaths as n_pluginPaths, recordUse as n_recordUse, reindex as n_reindex, search as n_search, fileIndexStart as n_fileIndexStart, findFiles as n_findFiles, recentFiles as n_recentFiles, fileIndexStatus as n_fileIndexStatus, cliMain as n_cliMain, cliServe as n_cliServe, cliWrite as n_cliWrite, cliEnd as n_cliEnd, watchTyped as n_watchTyped } from 'tish:moo'
 
 export let about = n_about
+export let watchTyped = n_watchTyped
 export let cliMain = n_cliMain
 export let cliWrite = n_cliWrite
 export let cliEnd = n_cliEnd
@@ -313,7 +313,6 @@ export fn quickLookVisible() {
   return false
 }
 
-export let watchTyped = (keywords, cb) => null
 
 
 export fn aiAvailability() {

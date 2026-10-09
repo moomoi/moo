@@ -7,7 +7,7 @@ import { windows } from 'tish:windows'
 import { fileExists, mkdir } from 'tish:fs'
 import { env } from 'tish:process'
 import { layoutTitle, layoutFrame, moveToScreen, screenFor } from './windowlayout.tish'
-import { about, hide, quit, show, reindex as reindexApps, search as searchApps, appFolders, bundleResources, exeDir, findFiles as findIndexed, recentFiles as recentIndexed, runShell as nativeRunShell, withUi, setUrlHandler } from './natives.tish'
+import { about, hide, quit, show, reindex as reindexApps, search as searchApps, appFolders, bundleResources, exeDir, findFiles as findIndexed, recentFiles as recentIndexed, runShell as nativeRunShell, withUi, setUrlHandler, watchTyped } from './natives.tish'
 
 let NOT_YET = 'not on Windows yet'
 
@@ -218,8 +218,16 @@ export let searchContacts = (query, limit, cb) => {
 
 
 
-// Snippets need a system-wide keyboard hook; there's none yet, so expanding keywords is macOS-only.
-export let watchSnippets = (keywords, cb) => (keywords.length === 0 ? { ok: true, error: '' } : { ok: false, error: 'expanding snippets in other apps is ' + NOT_YET })
+// Watch for snippet keywords typed in other apps -> { ok, error }; asks for Accessibility when
+// there are keywords to watch.
+export fn watchSnippets(keywords, cb) {
+  watchTyped(keywords, cb)
+  if (keywords.length > 0 && !windows.accessibility.trusted(false)) {
+    windows.accessibility.trusted(true)
+    return { ok: false, error: 'needs Accessibility' }
+  }
+  return { ok: true, error: '' }
+}
 
 // ── System, windows and selection (as platform.tish, on tish-windows) ─────────
 
