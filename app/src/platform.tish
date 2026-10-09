@@ -4,19 +4,23 @@
 // keeps the Trash untouched.
 
 import { macos } from 'tish:macos'
-import { mkdir } from 'tish:fs'
+import { mkdir, fileExists } from 'tish:fs'
 import { env } from 'tish:process'
 import { about, hide, quit, reindex as reindexApps, search as searchApps, findFiles as findIndexed, recentFiles as recentIndexed, appFolders, appPaths, withUi, watchTyped, fuzzy, show } from 'tish:moo'
 import { nameQuery, filterQuery, dateAttr, wanted, wantedIn, detailFor, fileName } from './spotlightquery.tish'
 import { layoutTitle, layoutFrame, moveToScreen, screenFor } from './windowlayout.tish'
 
-// Open a URL, file, folder or app; hides the launcher when macOS took it.
+// Open a URL, file, folder or app. The launcher hides at once and macOS opens it on the next
+// run-loop turn: NSWorkspace's open waits for Launch Services, which can take a second for an app
+// that isn't running. Returns whether the target can be opened (a URL, or a path that exists).
 export fn launch(target) {
-  let ok = macos.workspace.open(target)
-  if (ok) {
-    hide()
+  let isUrl = target.indexOf(':') > 0 && !target.startsWith('/')
+  if (target === '' || (!isUrl && !fileExists(target))) {
+    return false
   }
-  return ok
+  hide()
+  setTimeout(() => macos.workspace.open(target), 0)
+  return true
 }
 
 // Select `path` in Finder; hides the launcher when it exists.
