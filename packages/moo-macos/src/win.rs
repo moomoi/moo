@@ -79,6 +79,9 @@ use std::cell::RefCell;
 use tishlang_core::Value;
 use windows::Win32::UI::Input::KeyboardAndMouse::*;
 
+/// tish-windows's tag on the keystrokes it types (accessibility.rs, SYNTHETIC_KEY_TAG): "MOO\0".
+const SYNTHETIC_KEY_TAG: usize = 0x004F_4F4D;
+
 thread_local! {
     static TYPED: RefCell<crate::snippets::Typed> = RefCell::new(Default::default());
     static ON_SNIPPET: RefCell<Option<Value>> = const { RefCell::new(None) };
@@ -119,8 +122,9 @@ fn held(vk: VIRTUAL_KEY) -> bool {
 unsafe extern "system" fn keyboard_hook(code: i32, wp: WPARAM, lp: LPARAM) -> LRESULT {
     if code >= 0 && (wp.0 as u32 == WM_KEYDOWN || wp.0 as u32 == WM_SYSKEYDOWN) {
         let k = &*(lp.0 as *const KBDLLHOOKSTRUCT);
-        // Our own expansions (SendInput) and typing into Moo itself don't count.
-        if k.flags.0 & LLKHF_INJECTED.0 == 0 && !foreground_is_us() {
+        // Our own expansions (tagged by tish-windows's SendInput) and typing into Moo itself don't
+        // count; other tools' synthesized typing (AutoHotkey, remote desktop) does.
+        if k.dwExtraInfo != SYNTHETIC_KEY_TAG && !foreground_is_us() {
             let vk = VIRTUAL_KEY(k.vkCode as u16);
             let hit = TYPED.with(|t| {
                 let mut t = t.borrow_mut();
