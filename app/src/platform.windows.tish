@@ -7,7 +7,7 @@ import { windows } from 'tish:windows'
 import { fileExists, mkdir } from 'tish:fs'
 import { env } from 'tish:process'
 import { layoutTitle, layoutFrame, moveToScreen, screenFor } from './windowlayout.tish'
-import { about, hide, quit, show, reindex as reindexApps, search as searchApps, appFolders, bundleResources, exeDir, findFiles as findIndexed, recentFiles as recentIndexed, runShell as nativeRunShell, withUi } from './natives.tish'
+import { about, hide, quit, show, reindex as reindexApps, search as searchApps, appFolders, bundleResources, exeDir, findFiles as findIndexed, recentFiles as recentIndexed, runShell as nativeRunShell, withUi, setUrlHandler } from './natives.tish'
 
 let NOT_YET = 'not on Windows yet'
 
@@ -63,7 +63,21 @@ export let appsFor = (path) => []
 
 export let openWith = (path, app) => ({ ok: false, message: '', error: NOT_YET })
 
-export let onOpenUrl = (cb) => null
+// moo:// links: registered for this user (HKCU, no admin) to run this moo.exe with the URL, which
+// forwards it here (natives.windows.tish).
+export fn onOpenUrl(cb) {
+  setUrlHandler(cb)
+  let exe = exeDir() + '\\moo.exe'
+  let script = "$k = 'HKCU:\\Software\\Classes\\moo'; New-Item -Path \"$k\\shell\\open\\command\" -Force | Out-Null; " +
+    "Set-ItemProperty -Path $k -Name '(default)' -Value 'URL:Moo'; Set-ItemProperty -Path $k -Name 'URL Protocol' -Value ''; " +
+    "Set-ItemProperty -Path \"$k\\shell\\open\\command\" -Name '(default)' -Value ('\"' + $args[0] + '\" \"%1\"')"
+  windows.shell.run(script, { args: [exe] }, (r) => {
+    if (r.code !== 0) {
+      console.log('moo: registering moo:// failed: ' + r.stderr)
+    }
+  })
+  return true
+}
 
 // ── Icons ───────────────────────────────────────────────────────────────────
 

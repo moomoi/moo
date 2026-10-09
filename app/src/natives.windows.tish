@@ -2,15 +2,18 @@
 // loading are moo's portable natives; the panel, hotkeys, keys, shell and credentials are
 // tish-windows; the file index is moo's too (live through ReadDirectoryChangesW). What macOS alone
 // has (Quick Look, Apple's on-device model,
-// typed-keyword snippets, window actions, the moo CLI socket) answers "not on Windows yet".
+// typed-keyword snippets) answers "not on Windows yet".
 //
 // Key specs stay in macOS form ("cmd+k", "shift+cmd+return") everywhere in Moo; on Windows Ctrl
 // stands in for Cmd, so Ctrl+K is "cmd+k".
 
 import { windows } from 'tish:windows'
-import { about as n_about, appCount as n_appCount, appFolders as n_appFolders, appPaths as n_appPaths, bundleResources as n_bundleResources, exeDir as n_exeDir, frecency as n_frecency, fuzzy as n_fuzzy, loadBytecodePlugin as n_loadBytecodePlugin, localDateTime as n_localDateTime, onPluginRefresh as n_onPluginRefresh, pluginPaths as n_pluginPaths, recordUse as n_recordUse, reindex as n_reindex, search as n_search, fileIndexStart as n_fileIndexStart, findFiles as n_findFiles, recentFiles as n_recentFiles, fileIndexStatus as n_fileIndexStatus } from 'tish:moo'
+import { about as n_about, appCount as n_appCount, appFolders as n_appFolders, appPaths as n_appPaths, bundleResources as n_bundleResources, exeDir as n_exeDir, frecency as n_frecency, fuzzy as n_fuzzy, loadBytecodePlugin as n_loadBytecodePlugin, localDateTime as n_localDateTime, onPluginRefresh as n_onPluginRefresh, pluginPaths as n_pluginPaths, recordUse as n_recordUse, reindex as n_reindex, search as n_search, fileIndexStart as n_fileIndexStart, findFiles as n_findFiles, recentFiles as n_recentFiles, fileIndexStatus as n_fileIndexStatus, cliMain as n_cliMain, cliServe as n_cliServe, cliWrite as n_cliWrite, cliEnd as n_cliEnd } from 'tish:moo'
 
 export let about = n_about
+export let cliMain = n_cliMain
+export let cliWrite = n_cliWrite
+export let cliEnd = n_cliEnd
 export let fileIndexStart = n_fileIndexStart
 export let findFiles = n_findFiles
 export let recentFiles = n_recentFiles
@@ -276,6 +279,28 @@ export fn keychainHas(account) {
   return windows.credentials.has('Moo:' + account)
 }
 
+// ── The moo command and moo:// links ──────────────────────────────────────
+
+// Windows opens a moo:// link by running `moo.exe <url>`; that client hands it to this Moo
+// through the CLI pipe, where it goes to the `onOpenUrl` callback instead of `onCli`.
+let urlHandler = null
+
+export fn setUrlHandler(cb) {
+  urlHandler = cb
+}
+
+export fn cliServe(onCli) {
+  // `argv`, not `args`: tish names the closure's own argument slice `args` (tishlang/tish#742).
+  return n_cliServe((argv, cwd, token) => {
+    if (argv.length === 1 && argv[0].indexOf('moo:') === 0 && urlHandler !== null) {
+      urlHandler(argv[0])
+      n_cliEnd(token, 0)
+      return
+    }
+    onCli(argv, cwd, token)
+  })
+}
+
 // ── Not on Windows yet ──────────────────────────────────────────────────────
 
 
@@ -321,12 +346,6 @@ export let oauthRefresh = (endpoints, refreshToken, cb) => {
   return null
 }
 
-export fn cliMain() {
-  return false
-}
 
-export let cliServe = (onCli) => ({ ok: false, error: 'the moo command is ' + NOT_YET })
 
-export let cliWrite = (token, text, stream) => false
 
-export let cliEnd = (token, code) => false
