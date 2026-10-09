@@ -1,9 +1,9 @@
 // Live web search suggestions while typing: waits 120 ms for typing to pause, fetches the engine's
 // suggest URL, and answers only for the newest request.
 
-import { macos } from 'tish:macos'
+import { macos } from './host.tish'
 import { fetch } from 'tish:http'
-import { withUi } from 'tish:moo'
+import { withUi } from './natives.tish'
 import { parseSuggestions } from './suggest.tish'
 
 let DELAY_MS = 120

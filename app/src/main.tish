@@ -1,5 +1,6 @@
-// Moo launcher shell: Lattish-style JSX on tish-macos (`tish:macos`), launcher services from
-// packages/moo-macos (`tish:moo`), plugins loaded at runtime as native modules (`tish:ffi`).
+// Moo launcher shell: Lattish-style JSX on the platform's UI host (host.tish: tish-macos on macOS,
+// tish-windows on Windows), launcher services from natives.tish (packages/moo-macos, `tish:moo`, plus
+// natives.windows.tish on Windows), plugins loaded at runtime as native modules (`tish:ffi`).
 // Follows macOS Spotlight: the hotkey opens a compact bar (search field plus up to 6 pinned bubbles,
 // ⌘1–⌘6, by default Applications, Files, Actions and Clipboard; Applications is a grid of icons or a list, ⌘L);
 // typing expands it into results grouped under a Top Hit;
@@ -8,8 +9,8 @@
 
 import { loadModule } from 'tish:ffi'
 import { fileExists } from 'tish:fs'
-import { macos, useState } from 'tish:macos'
-import { setup, setPanelShape, setArrowKeys, setTheme, typeText, registerHotkey, quit, hide, appCount, fuzzy, pluginPaths, loadBytecodePlugin, bundleResources, exeDir, recordUse, frecency, aiAvailability, aiSession, aiEndSession, aiPrewarm, aiAsk, aiCancel, setPanelKeys, onPluginRefresh, fileIndexStart, quickLook, quickLookVisible, fileIndexStatus, show, toggle, unregisterHotkey, checkHotkey, hotkeyDisplay, recordHotkey, runShell, cliMain, cliServe, cliWrite, cliEnd, about , windowAction, isRightClick } from 'tish:moo'
+import { macos, useState } from './host.tish'
+import { setup, setPanelShape, setArrowKeys, setTheme, typeText, registerHotkey, quit, hide, appCount, fuzzy, pluginPaths, loadBytecodePlugin, bundleResources, exeDir, recordUse, frecency, aiAvailability, aiSession, aiEndSession, aiPrewarm, aiAsk, aiCancel, setPanelKeys, onPluginRefresh, fileIndexStart, quickLook, quickLookVisible, fileIndexStatus, show, toggle, unregisterHotkey, checkHotkey, hotkeyDisplay, recordHotkey, runShell, cliMain, cliServe, cliWrite, cliEnd, about , windowAction, isRightClick, DEFAULT_HOTKEYS } from './natives.tish'
 import { env } from 'tish:process'
 import { THEME } from './theme.tish'
 import { greeting } from './greetings.tish'
@@ -131,7 +132,7 @@ fn aiTools() {
 }
 
 // Keys as printed on the keyboard; registerHotkey applies System Settings' modifier key mappings.
-let HOTKEYS = ['cmd+space', 'alt+space', 'ctrl+alt+space', 'cmd+shift+space']
+let HOTKEYS = DEFAULT_HOTKEYS
 // shortcuts.json: user shortcuts, their hotkeys, other hotkey bindings and the launcher hotkey.
 let config = loadShortcuts()
 if (config.launcher !== '') {

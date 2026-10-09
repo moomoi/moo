@@ -1,0 +1,8 @@
+// The UI host Moo runs on. macOS: tish-macos, as is. Windows: host.windows.tish, which gives the
+// same `macos`-shaped object (run, whenSettled, icons) on top of tish-windows, so the rest of the
+// app imports from here and doesn't care which it got.
+
+import { macos as host, useState as hostUseState } from 'tish:macos'
+
+export let macos = host
+export let useState = hostUseState

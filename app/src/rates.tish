@@ -2,7 +2,7 @@
 // `~/Library/Caches/Moo/rates.txt` (`MOO_RATES`) and refetched in the background when over 12
 // hours old. The file is `date\nfetched\nCODE rate\n…`.
 
-import { macos } from 'tish:macos'
+import { macos } from './host.tish'
 import { fetch } from 'tish:http'
 import { readFile, writeFile, mkdir, rename, fileExists } from 'tish:fs'
 import { env } from 'tish:process'

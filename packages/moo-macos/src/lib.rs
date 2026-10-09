@@ -1,6 +1,12 @@
 //! `moo-macos`: native launcher services for the Moo shell, imported from Tish as
 //! `import { reindex, search, launch, setup, ... } from "moo-macos"`.
 
+/// Release builds set `MOO_VERSION` (scripts/build-universal.sh); local builds say "dev".
+pub const VERSION: &str = match option_env!("MOO_VERSION") {
+    Some(v) => v,
+    None => "dev",
+};
+
 #[cfg(target_os = "macos")]
 mod ai;
 #[cfg(target_os = "macos")]
@@ -147,7 +153,7 @@ fn native_about(_args: &[Value]) -> Value {
         .unwrap_or(Value::Null);
     let exe = exe.map(|p| p.to_string_lossy().into_owned()).unwrap_or_default();
     let mut m = ObjectMap::default();
-    m.insert(Arc::from("version"), Value::String(crate::cli::VERSION.into()));
+    m.insert(Arc::from("version"), Value::String(VERSION.into()));
     m.insert(Arc::from("exe"), Value::String(exe.as_str().into()));
     m.insert(Arc::from("app"), app);
     Value::object(m)
@@ -697,7 +703,7 @@ mod natives {
     }
     pub fn show(_a: &[Value]) -> Value { Value::Null }
     pub fn hide(_a: &[Value]) -> Value { Value::Null }
-    fn unsupported(_a: &[Value]) -> Value {
+    pub fn unsupported(_a: &[Value]) -> Value {
         obj(vec![("ok", Value::Bool(false)), ("error", Value::String("macOS only".into()))])
     }
     pub use unsupported as unregister_hotkey;
