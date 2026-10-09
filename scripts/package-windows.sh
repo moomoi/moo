@@ -57,5 +57,9 @@ cp "$ROOT/packaging/AppIcon.ico" "$OUT/"
 
 ZIP="$ROOT/dist/release/Moo-windows-x64.zip"
 rm -f "$ZIP"
-(cd "$ROOT/dist/windows" && zip -qr "$ZIP" Moo)
-unzip -l "$ZIP"
+if command -v zip >/dev/null; then
+  (cd "$ROOT/dist/windows" && zip -qr "$ZIP" Moo)
+else # Git Bash on Windows has no zip
+  powershell -NoProfile -Command "Compress-Archive -Path '$(cygpath -w "$ROOT/dist/windows/Moo")' -DestinationPath '$(cygpath -w "$ZIP")'"
+fi
+ls -l "$ZIP"
