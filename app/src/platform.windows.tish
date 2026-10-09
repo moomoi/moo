@@ -6,7 +6,7 @@
 import { windows } from 'tish:windows'
 import { fileExists, mkdir } from 'tish:fs'
 import { env } from 'tish:process'
-import { about, hide, quit, show, reindex as reindexApps, search as searchApps, appFolders, bundleResources, exeDir } from './natives.tish'
+import { about, hide, quit, show, reindex as reindexApps, search as searchApps, appFolders, bundleResources, exeDir, findFiles as findIndexed, recentFiles as recentIndexed } from './natives.tish'
 
 let NOT_YET = 'not on Windows yet'
 
@@ -23,7 +23,8 @@ export fn launch(target) {
 
 // Select `path` in Explorer; hides the launcher when it exists.
 export fn revealFile(path) {
-  let ok = windows.workspace.reveal(path)
+  // The file index keeps `/`-separated paths; Explorer's /select wants backslashes.
+  let ok = windows.workspace.reveal(winPath(path))
   if (ok) {
     hide()
   }
@@ -62,8 +63,13 @@ export let onOpenUrl = (cb) => null
 
 // ── Icons ───────────────────────────────────────────────────────────────────
 
+// The shell wants backslashes; the file index keeps `/`-separated paths.
+fn winPath(path) {
+  return path.split('/').join('\\')
+}
+
 export fn fileIcon(path) {
-  return windows.icons.file(path)
+  return windows.icons.file(winPath(path))
 }
 
 export fn symbolIcon(name) {
@@ -85,9 +91,24 @@ export fn search(text, limit) {
   return searchApps(text, limit).map((a) => ({ name: a.name, path: a.path, icon: windows.icons.file(a.path), kind: a.kind, score: a.score }))
 }
 
-export let findFiles = (text, limit, icons) => ({ ready: false, results: [], ms: 0 })
+// The file index's matches; the first `icons` rows get icons.
+export fn findFiles(text, limit, icons) {
+  let r = findIndexed(text, limit)
+  if (r.ready) {
+    for (let i = 0; i < r.results.length && i < icons; i = i + 1) {
+      r.results[i].icon = fileIcon(r.results[i].path)
+    }
+  }
+  return r
+}
 
-export let recentFiles = (limit) => []
+// Recently opened files from the file index, with icons.
+export fn recentFiles(limit) {
+  return recentIndexed(limit).map((f) => {
+    f.icon = fileIcon(f.path)
+    return f
+  })
+}
 
 // `cb({ query, results, ms })` once, empty: no file search on Windows yet. Returns its generation.
 let filesGeneration = 0

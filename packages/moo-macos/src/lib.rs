@@ -17,6 +17,9 @@ mod frecency;
 mod fsindex;
 #[cfg(target_os = "macos")]
 mod fslive;
+#[cfg(windows)]
+#[path = "fslive_win.rs"]
+mod fslive;
 #[cfg(any(target_os = "macos", windows))]
 mod http;
 mod index;
@@ -758,14 +761,62 @@ mod natives {
     pub fn cli_write(_a: &[Value]) -> Value { Value::Bool(false) }
     pub fn cli_end(_a: &[Value]) -> Value { Value::Bool(false) }
     pub fn quit(_a: &[Value]) -> Value { Value::Null }
+    #[cfg(windows)]
+    pub fn file_index_start(_a: &[Value]) -> Value { Value::Bool(fslive::start()) }
+    #[cfg(not(windows))]
     pub fn file_index_start(_a: &[Value]) -> Value { Value::Bool(false) }
+    #[cfg(windows)]
+    fn file_rows(hits: Vec<crate::fsindex::FileHit>) -> Value {
+        let rows: Vec<Value> = hits
+            .into_iter()
+            .map(|h| {
+                obj(vec![
+                    ("name", Value::String(h.name.as_str().into())),
+                    ("path", Value::String(h.path.as_str().into())),
+                    ("icon", Value::String("".into())),
+                    ("kind", Value::String(if h.is_dir { "Folder" } else { "File" }.into())),
+                    ("detail", Value::String(h.detail.as_str().into())),
+                    ("score", Value::Number(h.score as f64)),
+                ])
+            })
+            .collect();
+        Value::Array(VmRef::new(rows))
+    }
+    #[cfg(windows)]
+    pub fn find_files(args: &[Value]) -> Value {
+        let limit = num_arg(args, 1, 8.0).max(0.0) as usize;
+        match fslive::search(&str_arg(args, 0), limit) {
+            Some((hits, ms)) => obj(vec![("ready", Value::Bool(true)), ("results", file_rows(hits)), ("ms", Value::Number(ms))]),
+            None => obj(vec![("ready", Value::Bool(false)), ("results", Value::Array(VmRef::new(vec![]))), ("ms", Value::Number(0.0))]),
+        }
+    }
+    #[cfg(windows)]
+    pub fn recent_files(args: &[Value]) -> Value {
+        file_rows(fslive::recent(num_arg(args, 0, 8.0).max(0.0) as usize))
+    }
+    #[cfg(not(windows))]
     pub fn find_files(_a: &[Value]) -> Value {
         obj(vec![("ready", Value::Bool(false)), ("results", Value::Array(VmRef::new(vec![]))), ("ms", Value::Number(0.0))])
     }
+    #[cfg(not(windows))]
     pub fn recent_files(_a: &[Value]) -> Value { Value::Array(VmRef::new(vec![])) }
     pub fn watch_typed(_a: &[Value]) -> Value { Value::Null }
     pub fn quick_look(_a: &[Value]) -> Value { Value::Bool(false) }
     pub fn quick_look_visible(_a: &[Value]) -> Value { Value::Bool(false) }
+    #[cfg(windows)]
+    pub fn file_index_status(_a: &[Value]) -> Value {
+        let s = fslive::status();
+        obj(vec![
+            ("state", Value::String(s.state.into())),
+            ("entries", Value::Number(s.entries as f64)),
+            ("folders", Value::Number(s.dirs as f64)),
+            ("bytes", Value::Number(s.bytes as f64)),
+            ("buildMs", Value::Number(s.build_ms)),
+            ("fromSnapshot", Value::Bool(s.from_snapshot)),
+            ("updates", Value::Number(s.updates as f64)),
+        ])
+    }
+    #[cfg(not(windows))]
     pub fn file_index_status(_a: &[Value]) -> Value { obj(vec![("state", Value::String("idle".into()))]) }
     pub fn ai_availability(_a: &[Value]) -> Value { Value::String("macOS only".into()) }
     pub fn ai_session(_a: &[Value]) -> Value { Value::Number(0.0) }
