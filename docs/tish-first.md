@@ -163,3 +163,14 @@ Each phase lands as PRs against `main`; this file is updated as items land.
   shape, animation, theme and key routing), the hotkeys and key monitors that share its key
   handling, Quick Look over the panel, and Apple's on-device model (`ai.swift` needs the macOS 26
   SDK, which tish-macos shouldn't force on every app). Phase 5 is done.
+
+## Phase 6: the rest of the native code
+
+Only Mac platform calls move. OAuth (`oauth.rs`) and the plugin secrets in the Keychain stay
+native with the plugin host, which calls them from Rust. Frecency stays with the file index, which
+ranks with it on every keystroke. The snippet keyword buffer (`snippets.rs`) and the theme
+(`theme.rs`) stay with the panel and key monitors in `mac.rs`.
+
+- First batch: shell commands and window actions come from tish-macos (`macos.shell.run`,
+  `macos.accessibility.windowAction`, tish-apple#20). `platform.tish` keeps the launcher's shapes
+  (`runShell`, `windowAction` with HUD messages). `shell.rs` and `winctl.rs` are deleted.

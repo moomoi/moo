@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "description": "Moo launcher shell (Tish + tish-macos + moo-macos). Build: ./build.sh",
   "dependencies": {
-    "@tishlang/tish-macos": "3.0.0",
+    "@tishlang/tish-macos": "3.1.0",
     "@tishlang/tish-windows": "1.0.0",
     "tish-moo": "file:../packages/moo-macos"
   }
