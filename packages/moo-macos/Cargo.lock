@@ -1742,15 +1742,15 @@ checksum = "fd3ca314f692efd6c868f8408f53fe444634a845f96c028b97d35f6a1f79f0ee"
 
 [[package]]
 name = "tishlang_ast"
-version = "4.0.1"
+version = "4.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "817f6a3679243abd65680f57c318130784c4a4385b477c78c9205de32ec6c3f2"
+checksum = "b147c9c033fb7b604e29969003bcaf54018c623a0caf8234722eab7bda18aeb8"
 
 [[package]]
 name = "tishlang_builtins"
-version = "4.0.1"
+version = "4.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "972754704ba6764b10532a2ea1e463d6f5fcd92adec6eb9b59451fd767751b1a"
+checksum = "1a2b91a057ed878ab7173af1db121b371549de0b009b8d7b4bf194c5350e8845"
 dependencies = [
  "ahash",
  "indexmap",
@@ -1761,9 +1761,9 @@ dependencies = [
 
 [[package]]
 name = "tishlang_bytecode"
-version = "4.0.1"
+version = "4.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6c768c306a603e9f87b50a38865d875876b7cc74d246b3576367d74b3585d88c"
+checksum = "e05f6d0274c2af22bd6ab596e82cb2b6ac1ccc66b50b9708b053dffb019c2c6b"
 dependencies = [
  "tishlang_ast",
  "tishlang_core",
@@ -1771,9 +1771,9 @@ dependencies = [
 
 [[package]]
 name = "tishlang_core"
-version = "4.0.1"
+version = "4.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "369809f3d8370c1ea2dd9fdb5d859610025da5c88f6702e6e4669c8c5f0ced58"
+checksum = "8e87b4dc63668955e175ffcdbc0a0b07397433d246606b84bd00d19c8ba1c325"
 dependencies = [
  "ahash",
  "arcstr",
@@ -1787,15 +1787,15 @@ dependencies = [
 
 [[package]]
 name = "tishlang_lexer"
-version = "4.0.1"
+version = "4.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1fb1ffc54bf429bf81ad2b03f94939a40ad8d75324a6f652a77ec6a78bb95bd8"
+checksum = "a2a0aa6d332be437ff19bc7d2709bf2043eaf1de0c37bc64ce6f12bd59bdf7ea"
 
 [[package]]
 name = "tishlang_parser"
-version = "4.0.1"
+version = "4.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9e5cf81fc064a89c0a638e4ffb2a8b41f33a9e1a4139c43de4acc2b60cee9f23"
+checksum = "a40781f08e169618e9119b51817f3688087327abc0ec6f6d8f40761f9e8bbbc4"
 dependencies = [
  "stacker",
  "tishlang_ast",
@@ -1804,18 +1804,18 @@ dependencies = [
 
 [[package]]
 name = "tishlang_ui"
-version = "4.0.1"
+version = "4.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "33bf86042df55eebf75aedf6cc6a262698346db26ae334362e2ac6e3b0bef313"
+checksum = "36965df2baa24bf26204de37cab3f204adb7ffc48648e21c4845cd8358852244"
 dependencies = [
  "tishlang_core",
 ]
 
 [[package]]
 name = "tishlang_vm"
-version = "4.0.1"
+version = "4.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e18274468f83b47b629a03e8e7c68802f252006eb267147c2588dcb4f89a2aba"
+checksum = "8a46e26981fd0e1fc9f05d0c007c7579f44ac73720ab2919e90887de59140be7"
 dependencies = [
  "cranelift",
  "cranelift-jit",
