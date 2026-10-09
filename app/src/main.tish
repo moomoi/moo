@@ -9,7 +9,7 @@
 import { loadModule } from 'tish:ffi'
 import { fileExists } from 'tish:fs'
 import { macos, useState } from 'tish:macos'
-import { setup, setPanelShape, setArrowKeys, setTheme, typeText, registerHotkey, quit, hide, appCount, fuzzy, pluginPaths, loadBytecodePlugin, bundleResources, exeDir, recordUse, frecency, aiAvailability, aiSession, aiEndSession, aiPrewarm, aiAsk, aiCancel, setPanelKeys, onPluginRefresh, fileIndexStart, quickLook, quickLookVisible, fileIndexStatus, show, toggle, unregisterHotkey, checkHotkey, hotkeyDisplay, recordHotkey, runShell, cliMain, cliServe, cliWrite, cliEnd, about , windowAction, isRightClick } from 'tish:moo'
+import { setup, setPanelShape, setArrowKeys, setTheme, typeText, registerHotkey, quit, hide, appCount, fuzzy, pluginPaths, loadBytecodePlugin, bundleResources, exeDir, recordUse, frecency, aiAvailability, aiSession, aiEndSession, aiPrewarm, aiAsk, aiCancel, setPanelKeys, onPluginRefresh, fileIndexStart, quickLook, quickLookVisible, fileIndexStatus, show, toggle, unregisterHotkey, checkHotkey, hotkeyDisplay, recordHotkey, cliMain, cliServe, cliWrite, cliEnd, about , isRightClick } from 'tish:moo'
 import { env } from 'tish:process'
 import { THEME } from './theme.tish'
 import { greeting } from './greetings.tish'
@@ -22,7 +22,7 @@ import { getPref, setPref, searchHistory, addSearchHistory, clearSearchHistory }
 import { configDir, aiSetModel, aiSetClientId, aiSetOrganization, setAlias, checkAlias, setDisabled, setPanelKey, loadShortcuts, saveShortcut, checkKeyword, ensureShortcutsFile, removeShortcut, bindHotkey, unbindHotkey, setLauncherHotkey, expandTemplate, shellValues } from './shortcutsfile.tish'
 
 import { timeAnswer } from './tz.tish'
-import { reindex, search, findFiles, recentFiles, fileIcon, symbolIcon, imageFile, statusItem, onIconsLoaded, searchFiles, searchContents, queryFiles, arrangeWindow, selectedText, watchSnippets, replaceTyped, accessibilityTrusted, systemInfo, systemCommand, runningApps, appAction, contactsAccess, contactsRequest, searchContacts, launch, watchApps, copyText, watchClipboard, onOpenUrl, dictionaryEntries, dictionaryWarm, trashFile, appsFor, openWith, revealFile, watchShortcuts, ZONES } from './platform.tish'
+import { reindex, search, findFiles, recentFiles, fileIcon, symbolIcon, imageFile, statusItem, onIconsLoaded, searchFiles, searchContents, queryFiles, arrangeWindow, selectedText, watchSnippets, replaceTyped, accessibilityTrusted, systemInfo, systemCommand, runningApps, appAction, contactsAccess, contactsRequest, searchContacts, launch, watchApps, copyText, watchClipboard, onOpenUrl, dictionaryEntries, dictionaryWarm, trashFile, appsFor, openWith, revealFile, watchShortcuts, runShell, windowAction, ZONES } from './platform.tish'
 import { define as defineFrom } from './dict.tish'
 import { record as recordClip, clearClips, clipboardHistory as clipRows } from './clip.tish'
 

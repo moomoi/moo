@@ -21,7 +21,6 @@ mod keymap;
 #[cfg(target_os = "macos")]
 mod keys;
 #[cfg(target_os = "macos")]
-mod winctl;
 #[cfg(target_os = "macos")]
 mod mac;
 #[cfg(target_os = "macos")]
@@ -29,7 +28,6 @@ mod oauth;
 #[cfg(target_os = "macos")]
 mod pluginhost;
 #[cfg(target_os = "macos")]
-mod shell;
 #[cfg(target_os = "macos")]
 mod infoplist;
 mod snippets;
@@ -322,16 +320,6 @@ mod natives {
         Value::Array(VmRef::new(items))
     }
 
-    /// `windowAction(pid, name, action)`: minimize, unminimize, fullscreen, close or raise that
-    /// app's focused window -> { ok, message }.
-    pub fn window_action(args: &[Value]) -> Value {
-        let pid = num_arg(args, 0, 0.0) as i32;
-        match crate::winctl::window_action(pid, &str_arg(args, 1), &str_arg(args, 2)) {
-            Ok(m) => obj(vec![("ok", Value::Bool(true)), ("message", Value::String(m.into()))]),
-            Err(e) => obj(vec![("ok", Value::Bool(false)), ("message", Value::String(e.into()))]),
-        }
-    }
-
     /// `isRightClick()`: whether the onClick running now came from a right-click or control-click.
     pub fn is_right_click(_a: &[Value]) -> Value {
         Value::Bool(mac::is_right_click())
@@ -362,28 +350,6 @@ mod natives {
         let (d, t) = mac::local_date_time();
         arr(vec![s(&d), s(&t)])
     }
-    fn shell_value(id: u64, o: shell::Output) -> Value {
-        obj(vec![
-            ("id", Value::Number(id as f64)),
-            ("code", Value::Number(o.code as f64)),
-            ("stdout", s(&o.stdout)),
-            ("stderr", s(&o.stderr)),
-            ("ms", Value::Number(o.ms)),
-            ("timedOut", Value::Bool(o.timed_out)),
-        ])
-    }
-
-    /// `runShell(command, cwd, cb, values?)` -> id; `cb({ id, code, stdout, stderr, ms, timedOut })`
-    /// later. `values` are the script's `$1`, `$2`, ... (from `shellValues`).
-    pub fn run_shell(args: &[Value]) -> Value {
-        let cb = args.get(2).cloned().unwrap_or(Value::Null);
-        let values = match args.get(3) {
-            Some(Value::Array(a)) => a.borrow().iter().map(|v| v.to_display_string()).collect(),
-            _ => Vec::new(),
-        };
-        Value::Number(shell::run(&str_arg(args, 0), &str_arg(args, 1), values, cb, shell_value) as f64)
-    }
-
     // ── Command line ──
 
     /// `cliMain()`: when this process was started as a command (`moo files foo`), or another
@@ -703,7 +669,6 @@ mod natives {
     pub use unsupported as unregister_hotkey;
     pub use unsupported as check_hotkey;
     pub fn set_panel_keys(_a: &[Value]) -> Value { Value::Null }
-    pub fn window_action(_a: &[Value]) -> Value { obj(vec![("ok", Value::Bool(false)), ("message", Value::String("macOS only".into()))]) }
     pub fn is_right_click(_a: &[Value]) -> Value { Value::Bool(false) }
     pub use unsupported as cli_serve;
     pub fn hotkey_display(a: &[Value]) -> Value { Value::String(str_arg(a, 0).as_str().into()) }
@@ -711,7 +676,6 @@ mod natives {
     pub fn record_hotkey(_a: &[Value]) -> Value { Value::Null }
     pub fn keys_error(_a: &[Value]) -> Value { Value::Null }
     pub fn local_date_time(_a: &[Value]) -> Value { Value::Array(VmRef::new(vec![Value::String("".into()), Value::String("".into())])) }
-    pub fn run_shell(_a: &[Value]) -> Value { Value::Number(0.0) }
     pub fn cli_main(_a: &[Value]) -> Value { Value::Bool(false) }
     pub fn cli_write(_a: &[Value]) -> Value { Value::Bool(false) }
     pub fn cli_end(_a: &[Value]) -> Value { Value::Bool(false) }
@@ -763,11 +727,9 @@ pub fn moo_object() -> Value {
     m.insert(Arc::from("recordHotkey"), Value::native(natives::record_hotkey));
     m.insert(Arc::from("toggle"), Value::native(natives::toggle));
     m.insert(Arc::from("setPanelKeys"), Value::native(natives::set_panel_keys));
-    m.insert(Arc::from("windowAction"), Value::native(natives::window_action));
     m.insert(Arc::from("isRightClick"), Value::native(natives::is_right_click));
     m.insert(Arc::from("keysError"), Value::native(natives::keys_error));
     m.insert(Arc::from("localDateTime"), Value::native(natives::local_date_time));
-    m.insert(Arc::from("runShell"), Value::native(natives::run_shell));
     m.insert(Arc::from("cliMain"), Value::native(natives::cli_main));
     m.insert(Arc::from("cliServe"), Value::native(natives::cli_serve));
     m.insert(Arc::from("cliWrite"), Value::native(natives::cli_write));

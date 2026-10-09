@@ -1,5 +1,5 @@
 // Moo's use of tish-macos's system services (macos.timeZones, macos.dictionary, macos.pasteboard,
-// macos.workspace, macos.watchFolders, macos.onOpenUrl), in the shapes the launcher works with:
+// macos.workspace, macos.watchFolders, macos.onOpenUrl, macos.shell, window actions), in the shapes the launcher works with:
 // opening something hides the panel, Moo's own copies are labelled "Moo", MOO_SYSTEM_DRY_RUN
 // keeps the Trash untouched.
 
@@ -596,4 +596,27 @@ export fn queryFiles(filter) {
     bytes: it.size, created: Math.round(it.created * 1000), modified: Math.round(it.modified * 1000), opened: Math.round(it.lastUsed * 1000), path: it.path
   }))
   return { results: results, total: total, ms: Date.now() - t0 }
+}
+
+// Runs `command` with /bin/sh in `cwd`; `values` are its $1, $2, …
+// `cb({ id, code, stdout, stderr, ms, timedOut })` runs with the launcher's UI. Returns the id.
+export fn runShell(command, cwd, cb, values) {
+  return macos.shell.run(command, { cwd: cwd, args: values ?? [] }, (r) => withUi(() => cb(r)))
+}
+
+// Minimizes, unminimizes, toggles full screen, closes or raises an app's window.
+// Returns `{ ok, message }` for the HUD.
+export fn windowAction(pid, name, action) {
+  let r = macos.accessibility.windowAction(pid, action)
+  if ('error' in r) {
+    return { ok: false, message: name + ' ' + r.error }
+  }
+  let done = {
+    minimize: 'Minimized ' + name,
+    fullscreen: 'Toggled full screen for ' + name,
+    close: 'Closed ' + name + "'s window",
+    raise: 'Raised ' + name,
+    unminimize: 'Restored ' + r.count + ' ' + name + ' window' + (r.count === 1 ? '' : 's'),
+  }
+  return { ok: true, message: done[action] }
 }
