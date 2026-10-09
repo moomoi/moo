@@ -65,4 +65,7 @@ export let withUi = n_withUi
 // Apple's on-device model (macOS 26).
 export let HAS_ON_DEVICE_AI = true
 
+// The system dictionary (Define Word).
+export let HAS_DICTIONARY = true
+
 export let DEFAULT_HOTKEYS = ['cmd+space', 'alt+space', 'ctrl+alt+space', 'cmd+shift+space']

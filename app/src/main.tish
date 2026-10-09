@@ -10,7 +10,7 @@
 import { loadModule } from 'tish:ffi'
 import { fileExists } from 'tish:fs'
 import { macos, useState } from './host.tish'
-import { setup, setPanelShape, setArrowKeys, setTheme, typeText, registerHotkey, quit, hide, appCount, fuzzy, pluginPaths, loadBytecodePlugin, bundleResources, exeDir, recordUse, frecency, aiAvailability, aiSession, aiEndSession, aiPrewarm, aiAsk, aiCancel, setPanelKeys, onPluginRefresh, fileIndexStart, quickLook, quickLookVisible, fileIndexStatus, show, toggle, unregisterHotkey, checkHotkey, hotkeyDisplay, recordHotkey, cliMain, cliServe, cliWrite, cliEnd, about , isRightClick, DEFAULT_HOTKEYS, HAS_ON_DEVICE_AI } from './natives.tish'
+import { setup, setPanelShape, setArrowKeys, setTheme, typeText, registerHotkey, quit, hide, appCount, fuzzy, pluginPaths, loadBytecodePlugin, bundleResources, exeDir, recordUse, frecency, aiAvailability, aiSession, aiEndSession, aiPrewarm, aiAsk, aiCancel, setPanelKeys, onPluginRefresh, fileIndexStart, quickLook, quickLookVisible, fileIndexStatus, show, toggle, unregisterHotkey, checkHotkey, hotkeyDisplay, recordHotkey, cliMain, cliServe, cliWrite, cliEnd, about , isRightClick, DEFAULT_HOTKEYS, HAS_ON_DEVICE_AI, HAS_DICTIONARY } from './natives.tish'
 import { env } from 'tish:process'
 import { THEME } from './theme.tish'
 import { greeting } from './greetings.tish'
@@ -121,6 +121,9 @@ fn aiTools() {
     { name: 'calculate', description: 'Work out arithmetic, percentages, unit and currency conversions, number bases and the time in other time zones exactly. Use it for any maths instead of calculating yourself.', params: [{ name: 'expression', description: 'e.g. 15% of 80, 5 km in mi, 100 usd to eur, 255 in hex, time in tokyo, 3pm pst to cet' }] },
     { name: 'define', description: 'Look up what a word means in the dictionary on this Mac: its senses, pronunciation and origin. Use it when asked what a word means or how it is said.', params: [{ name: 'word', description: 'One word or a short phrase, e.g. serendipity' }] }
   ]
+  if (!HAS_DICTIONARY) {
+    tools = tools.filter((t) => t.name !== 'define')
+  }
   let list = config.shortcuts.slice(0, 30).map((s) => s.keyword + ' (' + s.name + ')')
   if (list.length > 0) {
     tools.push({ name: 'runShortcut', description: "Run one of the user's Moo shortcuts, only when the user asks to run or use it by name. Available: " + list.join(', ') + '.', params: [
@@ -443,7 +446,7 @@ let LIST_KEYWORDS = [
   [APPS, ['apps', 'app']],
   [HISTORY, ['recent', 'history']],
   [SETTINGS, ['set', 'settings', 'prefs']]
-]
+].filter((k) => HAS_DICTIONARY || k[0] !== DICTIONARY)
 for (let i = 0; i < LIST_KEYWORDS.length; i = i + 1) {
   LIST_KEYWORDS[i][0].keyword = LIST_KEYWORDS[i][1][0]
   LIST_KEYWORDS[i][0].keywords = LIST_KEYWORDS[i][1]
@@ -453,6 +456,10 @@ for (let i = 0; i < SYSTEM_COMMANDS.length; i = i + 1) {
   commands.push({ name: d.name, path: 'moo:system:' + d.system + (d.arg ? '-' + d.arg : ''), icon: symbolIcon(d.symbol), kind: 'System', mode: 'system', system: d.system, arg: d.arg ? d.arg : '', hides: d.hides === true, confirm: d.confirm === true, pluginTitle: 'System' })
 }
 let ASK_AI = commands[0]
+// Without a system dictionary (Windows), Define Word isn't offered.
+if (!HAS_DICTIONARY) {
+  commands = commands.filter((c) => c !== DICTIONARY)
+}
 let BUILTIN_COUNT = commands.length
 let pluginCount = 0
 let pluginFiles = pluginPaths(PLUGIN_DIR)
