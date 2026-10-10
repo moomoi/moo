@@ -5,7 +5,7 @@
 # cover everything since the last full release and bumps the Homebrew cask.
 #
 #   version -> build-mac (universal, signed, notarized)  -> release (sem tags vX.Y.Z, prerelease)
-#           -> build-windows (zip for the release; MSIX as a workflow artifact for the Store)
+#           -> build-windows (zip, cross-built on Linux) -> build-msix (Store MSIX artifact)
 #
 # Secrets: APPLE_CERTIFICATE (base64 .p12), APPLE_CERTIFICATE_PASSWORD, APPLE_SIGNING_IDENTITY
 # ("Developer ID Application: …"), APPLE_ID, APPLE_PASSWORD (app-specific), APPLE_TEAM_ID.
@@ -152,17 +152,20 @@ jobs:
           if-no-files-found: error
 
   build-windows:
-    name: Build Windows (zip, MSIX)
+    name: Build Windows (zip)
     needs: version
     if: needs.version.outputs.publish == 'true'
-    runs-on: windows-latest
-    timeout-minutes: 90
-    defaults:
-      run:
-        shell: bash
+    # Cross-built on Linux like ci.yml's Windows build: cheaper, and the compiler's Windows-host
+    # build writes `\\?\` paths into its generated Cargo.toml.
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      XWIN_ACCEPT_LICENSE: "1"
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
@@ -170,6 +173,10 @@ jobs:
           cache-dependency-path: |
             package-lock.json
             app/package-lock.json
+      - name: Cross tools (LLVM, cargo-xwin)
+        run: |
+          sudo apt-get install -y clang lld llvm >/dev/null
+          cargo install cargo-xwin --locked
       - name: Tish compiler and packages (npm)
         run: |
           npm ci --no-audit --no-fund
@@ -177,21 +184,35 @@ jobs:
       - name: Build and zip
         env:
           MOO_VERSION: ${{ needs.version.outputs.version }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: bash scripts/package-windows.sh
-      - name: MSIX (for the Store)
+      - uses: actions/upload-artifact@v7
+        with:
+          name: moo-windows-x64
+          path: dist/release/Moo-windows-x64.zip
+          if-no-files-found: error
+
+  # makeappx comes with the Windows SDK: package the zip's contents as the Store's MSIX.
+  build-msix:
+    name: MSIX for the Store
+    needs: [version, build-windows]
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          name: moo-windows-x64
+          path: dist/release
+      - name: MSIX
         shell: pwsh
         env:
           VERSION: ${{ needs.version.outputs.version }}
           STORE_NAME: ${{ vars.WINDOWS_STORE_NAME || 'Moo.Moo' }}
           STORE_PUBLISHER: ${{ vars.WINDOWS_STORE_PUBLISHER || 'CN=Moo' }}
           STORE_PUBLISHER_NAME: ${{ vars.WINDOWS_STORE_PUBLISHER_NAME || 'Moo' }}
-        run: ./scripts/package-msix.ps1 -Version $env:VERSION -Name $env:STORE_NAME -Publisher $env:STORE_PUBLISHER -PublisherName $env:STORE_PUBLISHER_NAME
-      - uses: actions/upload-artifact@v7
-        with:
-          name: moo-windows-x64
-          path: dist/release/Moo-windows-x64.zip
-          if-no-files-found: error
+        run: |
+          Expand-Archive dist/release/Moo-windows-x64.zip dist/windows
+          ./scripts/package-msix.ps1 -Version $env:VERSION -Name $env:STORE_NAME -Publisher $env:STORE_PUBLISHER -PublisherName $env:STORE_PUBLISHER_NAME
       - uses: actions/upload-artifact@v7
         with:
           name: moo-windows-store
@@ -200,7 +221,7 @@ jobs:
 
   release:
     name: Prerelease
-    needs: [version, build-mac, build-windows]
+    needs: [version, build-mac, build-windows, build-msix]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
