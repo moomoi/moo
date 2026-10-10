@@ -150,7 +150,8 @@ export const THEME = {
     open: {
       response: 0.18,
       damping: 0.58,
-      secs: 0.36,
+      // 0: no opening animation; the panel appears at once. (0.36 springs it open.)
+      secs: 0,
       stagger: 0.016,
       fadeDelay: 0.09,
       fadeSecs: 0.1,
