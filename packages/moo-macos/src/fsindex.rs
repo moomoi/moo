@@ -195,6 +195,15 @@ fn list_dir(dir: &Path, depth: u8, root: &Root) -> Listing {
             continue;
         }
         let Ok(ft) = entry.file_type() else { continue };
+        // Windows marks its own files hidden or system (NTUSER.DAT, desktop.ini) rather than with a dot.
+        #[cfg(windows)]
+        {
+            use std::os::windows::fs::MetadataExt;
+            const HIDDEN_OR_SYSTEM: u32 = 0x2 | 0x4;
+            if entry.metadata().is_ok_and(|m| m.file_attributes() & HIDDEN_OR_SYSTEM != 0) {
+                continue;
+            }
+        }
         let flags = if ft.is_dir() {
             if SKIP_DIRS.contains(&name.as_str()) || (depth == 0 && root.skip_top.iter().any(|s| s == &name)) {
                 continue;
