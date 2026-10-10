@@ -79,7 +79,11 @@ export let panelRunOptions = (opts) => {
     dark: dark,
     tint: glass === null ? '' : glass.tint.panel.dark,
     tintLight: glass === null ? '' : glass.tint.panel.light,
-    edge: vib === null ? '' : (dark ? vib.edge.dark : vib.edge.light),
+    scrim: glass === null ? '' : glass.scrim.dark,
+    scrimLight: glass === null ? '' : glass.scrim.light,
+    edge: vib === null ? '' : vib.edge.dark,
+    edgeLight: vib === null ? '' : vib.edge.light,
+    radius: panelTheme === null ? 0 : panelTheme.panel.radius,
     autoShow: !panel.hidden,
     onKey: onWindowKey
   }
