@@ -53,7 +53,8 @@ else
   bash "$ROOT/scripts/fetch-plugins.sh" mac >/dev/null
   cp "$ROOT"/dist/plugins/*.tishc "$OUT/plugins/"
 fi
-cp "$ROOT/packaging/AppIcon.ico" "$OUT/"
+# The field's Moo icon (a template, tinted) and the app icon.
+cp "$ROOT/packaging/AppIcon.ico" "$ROOT/packaging/SearchIcon.png" "$OUT/"
 
 ZIP="$ROOT/dist/release/Moo-windows-x64.zip"
 rm -f "$ZIP"

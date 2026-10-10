@@ -63,6 +63,9 @@ export fn setup(opts) {
 
 // The window options for host.windows.tish's `run`: the panel is the window.
 export let panelRunOptions = (opts) => {
+  let dark = windows.system.darkMode()
+  let vib = panelTheme === null ? null : panelTheme.vibrancy
+  let glass = panelTheme === null ? null : panelTheme.glass
   return {
     title: 'Moo',
     width: panel.width,
@@ -72,12 +75,22 @@ export let panelRunOptions = (opts) => {
     topmost: true,
     hideOnBlur: true,
     backdrop: 'acrylic',
+    // The Mac panel's look: the glass's light tint over the blur (Acrylic) and a hairline edge.
+    dark: dark,
+    tint: glass === null ? '' : glass.tint.panel.dark,
+    tintLight: glass === null ? '' : glass.tint.panel.light,
+    edge: vib === null ? '' : (dark ? vib.edge.dark : vib.edge.light),
     autoShow: !panel.hidden,
     onKey: onWindowKey
   }
 }
 
-export let setTheme = (theme) => null
+let panelTheme = null
+
+export fn setTheme(theme) {
+  panelTheme = theme
+  return null
+}
 
 export fn setArrowKeys(on) {
   arrows = on === true
