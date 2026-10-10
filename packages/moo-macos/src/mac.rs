@@ -468,7 +468,8 @@ fn piece_frames() -> Vec<(NSRect, f64)> {
 fn make_piece(mtm: MainThreadMarker) -> Retained<NSView> {
     let theme = theme::get();
     if GLASS.with(|g| g.get()) {
-        // The glass sits in a clipping view (place_piece).
+        // The piece casts the shadow; inside it, a clipping view holds the glass (place_piece).
+        let piece = NSView::initWithFrame(NSView::alloc(mtm), NSRect::ZERO);
         let wrap = NSView::initWithFrame(NSView::alloc(mtm), NSRect::ZERO);
         let g = NSGlassEffectView::initWithFrame(NSGlassEffectView::alloc(mtm), NSRect::ZERO);
         g.setStyle(theme.glass_style);
@@ -477,7 +478,8 @@ fn make_piece(mtm: MainThreadMarker) -> Retained<NSView> {
         let scrim = NSView::initWithFrame(NSView::alloc(mtm), NSRect::ZERO);
         scrim.setWantsLayer(true);
         wrap.addSubview(&scrim);
-        return wrap;
+        piece.addSubview(&wrap);
+        return piece;
     }
     let fx = NSVisualEffectView::initWithFrame(NSVisualEffectView::alloc(mtm), NSRect::ZERO);
     fx.setMaterial(theme.material);
@@ -495,8 +497,14 @@ fn make_piece(mtm: MainThreadMarker) -> Retained<NSView> {
     Retained::into_super(fx)
 }
 
+/// A glass piece's clipping view (the glass and its scrim).
+fn glass_clip(piece: &NSView) -> Option<Retained<NSView>> {
+    let subs = piece.subviews();
+    (subs.count() > 0).then(|| subs.objectAtIndex(0))
+}
+
 fn glass_face(piece: &NSView) -> Option<Retained<NSGlassEffectView>> {
-    let faces = piece.subviews();
+    let faces = glass_clip(piece)?.subviews();
     if faces.count() == 0 {
         return None;
     }
@@ -511,19 +519,33 @@ fn place_piece(piece: &NSView, rect: NSRect, radius: f64) {
         // Short glass renders frosted and whitish, so the glass keeps the full panel's height,
         // top-aligned, and the piece clips it to its own rounded rect: the idle bar is the panel's
         // glass cut to its header.
-        piece.setWantsLayer(true);
-        if let Some(layer) = piece.layer() {
+        let Some(clip) = glass_clip(piece) else { return };
+        clip.setFrame(piece.bounds());
+        clip.setWantsLayer(true);
+        if let Some(layer) = clip.layer() {
             layer.setMasksToBounds(true);
             layer.setCornerRadius(r);
+        }
+        // The shadow, on the piece (the clip can't cast one): a soft drop shadow under the
+        // rounded rect, as on Windows. Glass's own is too faint over busy backgrounds.
+        piece.setWantsLayer(true);
+        if let Some(layer) = piece.layer() {
+            let s = theme::get().shadow_style;
+            let path = unsafe { objc2_core_graphics::CGPath::with_rounded_rect(piece.bounds(), r, r, std::ptr::null()) };
+            layer.setShadowPath(Some(&path));
+            layer.setShadowColor(Some(&objc2_core_graphics::CGColor::new_generic_gray(0.0, 1.0)));
+            layer.setShadowOpacity(s.opacity as f32);
+            layer.setShadowRadius(s.radius);
+            layer.setShadowOffset(NSSize::new(0.0, -s.offset));
         }
         let full_h = PANEL_SIZE.with(|c| c.get()).1.max(rect.size.height);
         if let Some(g) = glass_face(piece) {
             g.setFrame(NSRect::new(NSPoint::new(0.0, rect.size.height - full_h), NSSize::new(rect.size.width, full_h)));
             g.setCornerRadius(radius.min(full_h / 2.0).min(rect.size.width / 2.0).max(0.0));
         }
-        let faces = piece.subviews();
+        let faces = clip.subviews();
         if faces.count() > 1 {
-            faces.objectAtIndex(1).setFrame(piece.bounds());
+            faces.objectAtIndex(1).setFrame(clip.bounds());
         }
         return;
     }
@@ -627,8 +649,8 @@ fn refresh_edge(w: &NSWindow) {
                     // Follow the panel's light or dark appearance, not the wallpaper's.
                     g.setAppearance(Some(&appearance));
                 }
-                let faces = piece.subviews();
-                if faces.count() > 1 {
+                let faces = glass_clip(piece).map(|c| c.subviews());
+                if let Some(faces) = faces.filter(|f| f.count() > 1) {
                     if let Some(layer) = faces.objectAtIndex(1).layer() {
                         layer.setBackgroundColor(scrim.as_ref().map(|c| c.CGColor()).as_deref());
                     }

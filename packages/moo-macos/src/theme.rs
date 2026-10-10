@@ -56,6 +56,8 @@ pub struct Theme {
     pub edge: Color,
     pub edge_width: f64,
     pub shadow: bool,
+    /// The glass panel's drop shadow (THEME.panel.shadow).
+    pub shadow_style: Shadow,
     pub open: Spring,
     /// Delay between successive pieces leaving the first one.
     pub stagger: f64,
@@ -72,6 +74,14 @@ pub struct Theme {
     pub morph: Spring,
     /// Same for pieces appearing or disappearing during a morph.
     pub morph_fade: f64,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct Shadow {
+    pub opacity: f64,
+    pub radius: f64,
+    /// Downward, in points.
+    pub offset: f64,
 }
 
 impl Default for Theme {
@@ -91,6 +101,7 @@ impl Default for Theme {
             edge: Color::default(),
             edge_width: 0.0,
             shadow: true,
+            shadow_style: Shadow { opacity: 0.0, radius: 0.0, offset: 0.0 },
             open: off,
             stagger: 0.0,
             fade_delay: 0.0,
@@ -160,6 +171,11 @@ pub fn set(v: &Value) {
         edge: color(&["vibrancy", "edge"]),
         edge_width: num(&["vibrancy", "edgeWidth"], d.edge_width),
         shadow: !matches!(at(&["vibrancy", "shadow"]), Some(Value::Bool(false))),
+        shadow_style: Shadow {
+            opacity: num(&["panel", "shadow", "opacity"], d.shadow_style.opacity),
+            radius: num(&["panel", "shadow", "radius"], d.shadow_style.radius),
+            offset: num(&["panel", "shadow", "offset"], d.shadow_style.offset),
+        },
         open: spring("open", d.open),
         stagger: num(&["motion", "open", "stagger"], d.stagger),
         fade_delay: num(&["motion", "open", "fadeDelay"], d.fade_delay),

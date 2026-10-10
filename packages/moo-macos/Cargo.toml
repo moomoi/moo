@@ -75,6 +75,7 @@ objc2-app-kit = { version = "0.3", features = [
     "objc2-quartz-core",
     "block2",
 ] }
-objc2-quartz-core = { version = "0.3", features = ["CALayer", "objc2-core-foundation"] }
+objc2-quartz-core = { version = "0.3", features = ["CALayer", "objc2-core-foundation", "objc2-core-graphics"] }
+objc2-core-graphics = { version = "0.3", default-features = false, features = ["std", "CGPath", "CGColor"] }
 block2 = "0.6"
 dispatch2 = "0.3"

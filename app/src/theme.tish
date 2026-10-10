@@ -116,6 +116,8 @@ export const THEME = {
     margin: 36,
     // Top edge, as a fraction of the screen height from the bottom.
     top: 0.8,
+    // Drop shadow under the panel (inside the margin): how dark, how soft, how far down.
+    shadow: { opacity: 0.35, radius: 18, offset: 8 },
   },
   glass: {
     // "regular" or "clear".
