@@ -2,8 +2,10 @@
 # Windows:
 #   pwsh scripts/package-msix.ps1 -Version 0.9.0 -Name 12345Moo.Moo -Publisher "CN=..." -PublisherName "..."
 #   -> dist\release\Moo-windows-x64.msix (unsigned: upload it to Partner Center, which signs it)
-# Name, Publisher and PublisherName are on Partner Center's Product identity page. To try it
-# locally, turn on Developer Mode and run Add-AppxPackage -AllowUnsigned.
+# Name, Publisher and PublisherName are on Partner Center's Product identity page. The Store
+# identity can't be installed unsigned; to try a build locally, package it with
+# -Publisher "CN=Moo, OID.2.25.311729368913984317654407730594956997722=1" (Windows' unsigned
+# namespace) and run Add-AppxPackage -AllowUnsigned with Developer Mode on.
 param(
   [Parameter(Mandatory = $true)][string]$Version,
   [string]$Name = "Moo.Moo",
@@ -27,9 +29,10 @@ $v = (($Version -split '[-+]')[0] -split '\.') + @('0', '0', '0') | Select-Objec
 $manifest = (Get-Content -Raw (Join-Path $root "packaging\windows\AppxManifest.xml")).Replace('$VERSION$', ($v -join '.') + '.0').Replace('$NAME$', $Name).Replace('$PUBLISHER_NAME$', $PublisherName).Replace('$PUBLISHER$', $Publisher)
 Set-Content -Encoding utf8 (Join-Path $layout "AppxManifest.xml") $manifest
 
-# The newest Windows SDK's tools.
-$sdk = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\10.*\x64" | Sort-Object Name -Descending | Select-Object -First 1
-$makeappx = Join-Path $sdk.FullName "makeappx.exe"
+# The newest Windows SDK that has makeappx (some installed versions' folders don't).
+$makeappx = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\10.*\x64\makeappx.exe" |
+  Sort-Object { [version]$_.Directory.Parent.Name } -Descending | Select-Object -First 1 -ExpandProperty FullName
+if (-not $makeappx) { throw "makeappx.exe not found: install the Windows SDK" }
 New-Item -ItemType Directory -Force (Split-Path $out) | Out-Null
 & $makeappx pack /o /d $layout /p $out
 if ($LASTEXITCODE -ne 0) { throw "makeappx failed" }
