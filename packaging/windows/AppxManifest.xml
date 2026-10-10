@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Moo's MSIX package. scripts/package-msix.ps1 fills in $VERSION$ (x.y.z.0) and $PUBLISHER$ (the
-     signing certificate's subject, e.g. "CN=Moo"). Package identity is what Windows' Contacts API
-     needs; the package also registers moo:// and the `moo` command (an execution alias). -->
+<!-- Moo's MSIX package, for the Microsoft Store (the Store signs it). scripts/package-msix.ps1 fills
+     in $VERSION$ (x.y.z.0) and, from Partner Center's Product identity page, $NAME$, $PUBLISHER$ and
+     $PUBLISHER_NAME$. Package identity is what Windows' Contacts API needs; the package also
+     registers moo:// and the `moo` command (an execution alias). -->
 <Package
   xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
   xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
@@ -10,11 +11,11 @@
   xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
   IgnorableNamespaces="uap uap3 desktop rescap">
 
-  <Identity Name="moo.launcher" Publisher="$PUBLISHER$" Version="$VERSION$" ProcessorArchitecture="x64" />
+  <Identity Name="$NAME$" Publisher="$PUBLISHER$" Version="$VERSION$" ProcessorArchitecture="x64" />
 
   <Properties>
     <DisplayName>Moo</DisplayName>
-    <PublisherDisplayName>Moo</PublisherDisplayName>
+    <PublisherDisplayName>$PUBLISHER_NAME$</PublisherDisplayName>
     <Logo>Assets\StoreLogo.png</Logo>
   </Properties>
 

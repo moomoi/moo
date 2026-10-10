@@ -5,12 +5,13 @@
 # cover everything since the last full release and bumps the Homebrew cask.
 #
 #   version -> build-mac (universal, signed, notarized)  -> release (sem tags vX.Y.Z, prerelease)
-#           -> build-windows (zip, MSIX; signed when WINDOWS_CERTIFICATE is set)
+#           -> build-windows (zip for the release; MSIX as a workflow artifact for the Store)
 #
 # Secrets: APPLE_CERTIFICATE (base64 .p12), APPLE_CERTIFICATE_PASSWORD, APPLE_SIGNING_IDENTITY
 # ("Developer ID Application: …"), APPLE_ID, APPLE_PASSWORD (app-specific), APPLE_TEAM_ID.
-# Optional: WINDOWS_CERTIFICATE (base64 .pfx) and WINDOWS_CERTIFICATE_PASSWORD sign the MSIX; the
-# variable WINDOWS_PUBLISHER is the certificate's subject (default "CN=Moo").
+# Variables (Partner Center -> Product identity): WINDOWS_STORE_NAME, WINDOWS_STORE_PUBLISHER,
+# WINDOWS_STORE_PUBLISHER_NAME. The MSIX is unsigned: upload the moo-windows-store artifact to
+# Partner Center, which signs it. The zip is the direct download.
 
 name: Release
 
@@ -178,20 +179,23 @@ jobs:
           MOO_VERSION: ${{ needs.version.outputs.version }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: bash scripts/package-windows.sh
-      - name: MSIX
+      - name: MSIX (for the Store)
         shell: pwsh
         env:
-          WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
-          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
           VERSION: ${{ needs.version.outputs.version }}
-          PUBLISHER: ${{ vars.WINDOWS_PUBLISHER || 'CN=Moo' }}
-        run: ./scripts/package-msix.ps1 -Version $env:VERSION -Publisher $env:PUBLISHER
+          STORE_NAME: ${{ vars.WINDOWS_STORE_NAME || 'Moo.Moo' }}
+          STORE_PUBLISHER: ${{ vars.WINDOWS_STORE_PUBLISHER || 'CN=Moo' }}
+          STORE_PUBLISHER_NAME: ${{ vars.WINDOWS_STORE_PUBLISHER_NAME || 'Moo' }}
+        run: ./scripts/package-msix.ps1 -Version $env:VERSION -Name $env:STORE_NAME -Publisher $env:STORE_PUBLISHER -PublisherName $env:STORE_PUBLISHER_NAME
       - uses: actions/upload-artifact@v7
         with:
           name: moo-windows-x64
-          path: |
-            dist/release/Moo-windows-x64.zip
-            dist/release/Moo-windows-x64.msix
+          path: dist/release/Moo-windows-x64.zip
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v7
+        with:
+          name: moo-windows-store
+          path: dist/release/Moo-windows-x64.msix
           if-no-files-found: error
 
   release:

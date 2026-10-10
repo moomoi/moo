@@ -13,7 +13,6 @@
         "assets": [
           { "path": "dist/release/Moo-macos-universal.dmg", "label": "Moo for macOS (Apple silicon and Intel), disk image" },
           { "path": "dist/release/Moo-macos-universal.zip", "label": "Moo for macOS (Apple silicon and Intel), zip" },
-          { "path": "dist/release/Moo-windows-x64.msix", "label": "Moo for Windows (x64), installer" },
           { "path": "dist/release/Moo-windows-x64.zip", "label": "Moo for Windows (x64), zip" },
           { "path": "dist/release/SHA256SUMS", "label": "SHA-256 checksums" }
         ]
