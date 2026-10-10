@@ -1,7 +1,8 @@
 //! The `moo` command line. The app binary doubles as its own client: run with arguments, it
-//! connects to the running app's Unix socket, sends them, prints what comes back and exits with
-//! the app's exit code. Nothing else runs in the client (no window, no index), so hotkey daemons
-//! (skhd, Karabiner, BetterTouchTool, Keyboard Maestro, Hammerspoon) and scripts can call it cheaply.
+//! connects to the running app's Unix socket (a named pipe on Windows, ipc.rs), sends them,
+//! prints what comes back and exits with the app's exit code. Nothing else runs in the client (no
+//! window, no index), so hotkey daemons (skhd, Karabiner, BetterTouchTool, Keyboard Maestro,
+//! Hammerspoon, AutoHotkey) and scripts can call it cheaply.
 //!
 //! Protocol, one JSON object per line. Client: `{"args": [...], "cwd": "..."}`. App, any number of
 //! `{"out": "..."}` / `{"err": "..."}` then `{"exit": n}`. Requests are handled on the main thread
@@ -11,7 +12,7 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Read, Write};
-use std::os::unix::net::{UnixListener, UnixStream};
+use crate::ipc::{Listener as UnixListener, Stream as UnixStream};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
@@ -23,11 +24,20 @@ pub use crate::VERSION;
 
 const MAX_REQUEST: u64 = 1 << 20;
 
+/// macOS: a Unix socket in Application Support. Windows: the named pipe `\\.\pipe\moo-<user>`.
 pub fn socket_path() -> PathBuf {
     if let Some(p) = std::env::var_os("MOO_SOCKET") {
         return PathBuf::from(p);
     }
+    #[cfg(windows)]
+    {
+        let user = std::env::var("USERNAME").unwrap_or_default();
+        PathBuf::from(format!(r"\\.\pipe\moo-{user}"))
+    }
+    #[cfg(not(windows))]
+    #[cfg(not(windows))]
     let home = std::env::var_os("HOME").map(PathBuf::from).unwrap_or_else(std::env::temp_dir);
+    #[cfg(not(windows))]
     home.join("Library/Application Support/Moo/moo.sock")
 }
 
@@ -92,7 +102,11 @@ fn start_app() -> Result<UnixStream, String> {
     if let Some(dir) = exe.parent() {
         cmd.current_dir(dir);
     }
+    #[cfg(unix)]
     std::os::unix::process::CommandExt::process_group(&mut cmd, 0);
+    // Windows: no console, and not in the terminal's process group.
+    #[cfg(windows)]
+    std::os::windows::process::CommandExt::creation_flags(&mut cmd, 0x0000_0008 | 0x0000_0200);
     cmd.spawn().map_err(|e| format!("cannot start Moo: {e}"))?;
     let t0 = Instant::now();
     loop {
@@ -231,13 +245,19 @@ pub fn serve(dispatch: impl Fn(Request) + Send + Sync + 'static) -> Result<PathB
     if UnixStream::connect(&path).is_ok() {
         return Err(format!("another Moo is listening on {}", path.display()));
     }
-    if let Some(dir) = path.parent() {
-        std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+    #[cfg(unix)]
+    {
+        if let Some(dir) = path.parent() {
+            std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+        }
+        let _ = std::fs::remove_file(&path);
     }
-    let _ = std::fs::remove_file(&path);
     let listener = UnixListener::bind(&path).map_err(|e| format!("{}: {e}", path.display()))?;
-    use std::os::unix::fs::PermissionsExt;
-    let _ = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600));
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600));
+    }
     CONNECTIONS.lock().unwrap_or_else(|e| e.into_inner()).get_or_insert_with(HashMap::new);
     let dispatch = std::sync::Arc::new(dispatch);
     std::thread::Builder::new()

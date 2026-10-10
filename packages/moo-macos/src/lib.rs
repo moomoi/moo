@@ -11,8 +11,10 @@ pub const VERSION: &str = match option_env!("MOO_VERSION") {
 mod ai;
 #[cfg(any(target_os = "macos", windows))]
 mod bridge;
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", windows))]
 mod cli;
+#[cfg(any(target_os = "macos", windows))]
+mod ipc;
 mod frecency;
 mod fsindex;
 #[cfg(target_os = "macos")]
@@ -715,14 +717,55 @@ mod natives {
     pub use unsupported as check_hotkey;
     pub fn set_panel_keys(_a: &[Value]) -> Value { Value::Null }
     pub fn is_right_click(_a: &[Value]) -> Value { Value::Bool(false) }
+    #[cfg(not(windows))]
     pub use unsupported as cli_serve;
     pub fn hotkey_display(a: &[Value]) -> Value { Value::String(str_arg(a, 0).as_str().into()) }
     pub fn toggle(_a: &[Value]) -> Value { Value::Null }
     pub fn record_hotkey(_a: &[Value]) -> Value { Value::Null }
     pub fn keys_error(_a: &[Value]) -> Value { Value::Null }
     pub fn local_date_time(_a: &[Value]) -> Value { Value::Array(VmRef::new(vec![Value::String("".into()), Value::String("".into())])) }
+    #[cfg(windows)]
+    pub fn cli_main(args: &[Value]) -> Value {
+        let a = crate::cli::args();
+        if !a.is_empty() || crate::cli::running() {
+            std::process::exit(crate::cli::client(&a, &str_arg(args, 0)));
+        }
+        Value::Bool(false)
+    }
+    /// `cliServe(onCli)`: answer `moo` commands; `onCli(args, cwd, token)` on the UI thread.
+    #[cfg(windows)]
+    pub fn cli_serve(args: &[Value]) -> Value {
+        crate::cli::set_handler(args.first().cloned());
+        crate::win::ensure_window();
+        let served = crate::cli::serve(|req: crate::cli::Request| {
+            crate::win::on_main(move || {
+                let Some(Value::Function(f)) = crate::cli::handler() else {
+                    crate::cli::end(req.token, 1);
+                    return;
+                };
+                let argv = Value::Array(VmRef::new(req.args.iter().map(|a| Value::String(a.as_str().into())).collect()));
+                let _ = f.call(&[argv, Value::String(req.cwd.as_str().into()), Value::Number(req.token as f64)]);
+            });
+        });
+        match served {
+            Ok(p) => obj(vec![("ok", Value::Bool(true)), ("path", Value::String(p.to_string_lossy().as_ref().into()))]),
+            Err(e) => obj(vec![("ok", Value::Bool(false)), ("error", Value::String(e.into()))]),
+        }
+    }
+    #[cfg(windows)]
+    pub fn cli_write(args: &[Value]) -> Value {
+        let stream = str_arg(args, 2);
+        Value::Bool(crate::cli::write(num_arg(args, 0, 0.0) as u64, if stream.is_empty() { "out" } else { &stream }, &str_arg(args, 1)))
+    }
+    #[cfg(windows)]
+    pub fn cli_end(args: &[Value]) -> Value {
+        Value::Bool(crate::cli::end(num_arg(args, 0, 0.0) as u64, num_arg(args, 1, 0.0) as i32))
+    }
+    #[cfg(not(windows))]
     pub fn cli_main(_a: &[Value]) -> Value { Value::Bool(false) }
+    #[cfg(not(windows))]
     pub fn cli_write(_a: &[Value]) -> Value { Value::Bool(false) }
+    #[cfg(not(windows))]
     pub fn cli_end(_a: &[Value]) -> Value { Value::Bool(false) }
     pub fn quit(_a: &[Value]) -> Value { Value::Null }
     #[cfg(windows)]
@@ -764,8 +807,25 @@ mod natives {
     }
     #[cfg(not(windows))]
     pub fn recent_files(_a: &[Value]) -> Value { Value::Array(VmRef::new(vec![])) }
+    /// `watchTyped(keywords, cb)`: `cb(keyword)` when one is typed in another app.
+    #[cfg(windows)]
+    pub fn watch_typed(args: &[Value]) -> Value {
+        let keywords: Vec<String> = match args.first() {
+            Some(Value::Array(a)) => a.borrow().iter().filter_map(|v| if let Value::String(k) = v { Some(k.to_string()) } else { None }).collect(),
+            _ => Vec::new(),
+        };
+        crate::win::watch_snippets(keywords, args.get(1).cloned().unwrap_or(Value::Null));
+        Value::Null
+    }
+    #[cfg(not(windows))]
     pub fn watch_typed(_a: &[Value]) -> Value { Value::Null }
+    #[cfg(windows)]
+    pub fn quick_look(args: &[Value]) -> Value { Value::Bool(crate::win::quick_look(&str_arg(args, 0))) }
+    #[cfg(windows)]
+    pub fn quick_look_visible(_a: &[Value]) -> Value { Value::Bool(crate::win::quick_look_visible()) }
+    #[cfg(not(windows))]
     pub fn quick_look(_a: &[Value]) -> Value { Value::Bool(false) }
+    #[cfg(not(windows))]
     pub fn quick_look_visible(_a: &[Value]) -> Value { Value::Bool(false) }
     #[cfg(windows)]
     pub fn file_index_status(_a: &[Value]) -> Value {

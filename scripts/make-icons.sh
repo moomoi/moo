@@ -3,6 +3,7 @@
 #
 #   packaging/AppIcon.icns       app icon: the macOS rounded square with the standard margin
 #   packaging/AppIcon.ico        the Windows app and tray icon: 16 to 256 px
+#   packaging/windows/*.png      MSIX logos: StoreLogo 50, Square44x44Logo, Square150x150Logo
 #   packaging/MenuBarIcon.tiff   menu bar template: the snout as a black line icon on clear, 1x and 2x
 #   packaging/SearchIcon.png     the same line snout, a little heavier, for the search field
 #   web/public/icon.png, favicon.png   the site's logo and favicon
@@ -37,6 +38,10 @@ iconutil -c icns "$WORK/AppIcon.iconset" -o "$ROOT/packaging/AppIcon.icns"
 
 # Windows: the same rounded square in every size Windows asks for (tray 16/20/24/32, Start 48+).
 magick "$WORK/app.png" -define icon:auto-resize=256,64,48,40,32,24,20,16 "$ROOT/packaging/AppIcon.ico"
+mkdir -p "$ROOT/packaging/windows"
+for spec in StoreLogo:50 Square44x44Logo:44 Square150x150Logo:150; do
+  magick "$WORK/app.png" -resize "${spec#*:}x${spec#*:}" "PNG32:$ROOT/packaging/windows/${spec%%:*}.png"
+done
 
 # The snout as a line icon, drawn rather than traced: an outline `$1` points thick with solid
 # nostrils, tilted like the app icon, on a 22x18pt canvas. Drawn at 16 pixels per point into `$2`;

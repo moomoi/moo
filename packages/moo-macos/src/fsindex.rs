@@ -116,6 +116,10 @@ fn mask_of(bytes: &[u8]) -> u32 {
 
 fn path_hash(path: &str) -> u64 {
     let mut h = DefaultHasher::new();
+    // Windows: crawled folders are joined with `\` (PathBuf), lookups come with `/`; hash both alike.
+    #[cfg(windows)]
+    path.replace('\\', "/").as_bytes().hash(&mut h);
+    #[cfg(not(windows))]
     path.as_bytes().hash(&mut h);
     h.finish()
 }

@@ -1,18 +1,18 @@
-// Windows: Moo's use of tish-windows's services, with platform.tish's exports and shapes. What
-// Windows has no counterpart for yet (dictionary, contacts, window layouts, Spotlight-style
-// file search, typed-keyword snippets) answers empty or "not on Windows yet", so those features
-// simply don't show up.
+// Windows: Moo's use of tish-windows's services, with platform.tish's exports and shapes (most of
+// the code is platform.tish's own, on the matching tish-windows service). Windows has no system
+// dictionary (Define Word isn't offered) and no Spotlight-style content search (file search is
+// Moo's own index); contacts need the MSIX package.
 
 import { windows } from 'tish:windows'
 import { fileExists, mkdir } from 'tish:fs'
 import { env } from 'tish:process'
-import { about, hide, quit, show, reindex as reindexApps, search as searchApps, appFolders, bundleResources, exeDir, findFiles as findIndexed, recentFiles as recentIndexed, runShell as nativeRunShell, windowAction as nativeWindowAction } from './natives.tish'
+import { layoutTitle, layoutFrame, moveToScreen, screenFor } from './windowlayout.tish'
+import { about, hide, quit, show, reindex as reindexApps, search as searchApps, appFolders, bundleResources, exeDir, findFiles as findIndexed, recentFiles as recentIndexed, runShell as nativeRunShell, withUi, setUrlHandler, watchTyped } from './natives.tish'
 
 let NOT_YET = 'not on Windows yet'
 
 // Shell commands (PowerShell) and window actions, from natives.windows.tish.
 export let runShell = nativeRunShell
-export let windowAction = nativeWindowAction
 
 // Open a URL, file, folder or app. The launcher hides at once; Windows opens it a moment later.
 export fn launch(target) {
@@ -63,7 +63,21 @@ export let appsFor = (path) => []
 
 export let openWith = (path, app) => ({ ok: false, message: '', error: NOT_YET })
 
-export let onOpenUrl = (cb) => null
+// moo:// links: registered for this user (HKCU, no admin) to run this moo.exe with the URL, which
+// forwards it here (natives.windows.tish).
+export fn onOpenUrl(cb) {
+  setUrlHandler(cb)
+  let exe = exeDir() + '\\moo.exe'
+  let script = "$k = 'HKCU:\\Software\\Classes\\moo'; New-Item -Path \"$k\\shell\\open\\command\" -Force | Out-Null; " +
+    "Set-ItemProperty -Path $k -Name '(default)' -Value 'URL:Moo'; Set-ItemProperty -Path $k -Name 'URL Protocol' -Value ''; " +
+    "Set-ItemProperty -Path \"$k\\shell\\open\\command\" -Name '(default)' -Value ('\"' + $args[0] + '\" \"%1\"')"
+  windows.shell.run(script, { args: [exe] }, (r) => {
+    if (r.code !== 0) {
+      console.log('moo: registering moo:// failed: ' + r.stderr)
+    }
+  })
+  return true
+}
 
 // ── Icons ───────────────────────────────────────────────────────────────────
 
@@ -172,71 +186,304 @@ export fn dictionaryWarm() {
   return null
 }
 
-// Only UTC until tish-windows has the time-zone database.
-export let ZONES = {
-  names: () => ['UTC'],
-  local: () => 'UTC',
-  lookup: (zoneId, when) => (zoneId === 'UTC' ? { offset: 0, abbreviation: 'UTC' } : null),
-  byAbbreviation: (a) => (a === 'UTC' ? 'UTC' : null)
-}
 
 // ── System ──────────────────────────────────────────────────────────────────
 
-export fn systemInfo() {
-  return { os: 'Windows', model: '', chip: '', cores: 0, memoryBytes: 0, uptimeSecs: 0, diskTotal: 0, diskFree: 0, battery: null }
-}
 
-export fn volume() {
-  return null
-}
 
-export fn darkMode() {
-  return true
-}
 
 export fn bytesText(n) {
   let mb = n / 1048576
   return mb >= 1024 ? (mb / 1024).toFixed(1) + ' GB' : mb.toFixed(0) + ' MB'
 }
 
-export fn runningApps() {
-  return []
-}
 
-export let appAction = (pid, action) => ({ ok: false, message: NOT_YET })
 
-export let systemCommand = (id, rawArg, cb) => {
-  let r = { ok: false, message: NOT_YET }
-  if (typeof cb === 'function') {
-    cb(r)
+
+
+
+
+
+
+
+// Watch for snippet keywords typed in other apps -> { ok, error }; asks for Accessibility when
+// there are keywords to watch.
+export fn watchSnippets(keywords, cb) {
+  watchTyped(keywords, cb)
+  if (keywords.length > 0 && !windows.accessibility.trusted(false)) {
+    windows.accessibility.trusted(true)
+    return { ok: false, error: 'needs Accessibility' }
   }
-  return r
+  return { ok: true, error: '' }
 }
+
+// ── System, windows and selection (as platform.tish, on tish-windows) ─────────
+
+let zoneAt = windows.timeZones.at
+
+let zoneIds = null
+
+// macOS's time-zone database in the shape tz.tish takes; the id list is read once.
+export let ZONES = {
+  names: () => {
+    if (zoneIds === null) {
+      zoneIds = windows.timeZones.names()
+    }
+    return zoneIds
+  },
+  local: () => windows.timeZones.local(),
+  lookup: (zoneId, when) => zoneAt(zoneId, when),
+  byAbbreviation: (a) => windows.timeZones.byAbbreviation(a)
+}
+
+// -> { os, model, chip, cores, memoryBytes, uptimeSecs, diskTotal, diskFree, battery }
+export fn systemInfo() {
+  let i = windows.systemInfo()
+  let b = i.battery
+  return {
+    os: i.os, model: i.model, chip: i.chip, cores: i.cores, memoryBytes: i.memory, uptimeSecs: i.uptime,
+    diskTotal: i.diskTotal, diskFree: i.diskFree,
+    battery: b === null ? null : { percent: b.percent, charging: b.charging, onAC: b.onAc, minutesToEmpty: b.minutesToEmpty, minutesToFull: b.minutesToFull }
+  }
+}
+
+// -> { percent, muted } or null
+export fn volume() {
+  let v = windows.system.volume()
+  return 'error' in v ? null : { percent: v.level, muted: v.muted }
+}
+
+export fn darkMode() {
+  return windows.system.darkMode()
+}
+
+// Apps with a taskbar window, most memory first: [{ name, icon, path, pid, bundleId, active, hidden, memory,
+// memoryText }].
+export fn runningApps() {
+  return windows.apps.running().map((a) => ({
+    name: a.name, icon: fileIcon(a.path), path: a.path, pid: a.pid, bundleId: a.bundleId,
+    active: a.active, hidden: a.hidden, memory: a.memory, memoryText: bytesText(a.memory)
+  }))
+}
+
+// `switch`, `hide`, `unhide`, `quit` or `force-quit` the app with `pid` -> { ok, message }.
+export fn appAction(pid, action) {
+  if (env.MOO_SYSTEM_DRY_RUN && ['switch', 'hide', 'unhide', 'quit', 'force-quit'].indexOf(action) >= 0) {
+    let app = windows.apps.running().filter((a) => a.pid === pid)
+    return app.length === 0 ? { ok: false, message: 'no app with pid ' + pid } : { ok: true, message: 'dry run: ' + action + ' ' + app[0].name }
+  }
+  let r = windows.apps.act(pid, action)
+  return { ok: r.ok, message: r.ok ? r.message : r.error }
+}
+
+let SYSTEM_COMMANDS = ['lock', 'sleep', 'sleep-displays', 'restart', 'shut-down', 'log-out', 'empty-trash', 'screen-saver',
+  'dark-mode', 'mute', 'volume', 'eject', 'quit-all', 'hide-all']
+
+fn toggled(arg, current) {
+  return arg === 'on' ? true : (arg === 'off' ? false : !current)
+}
+
+fn done(message) {
+  return { ok: true, message: '' + message }
+}
+
+fn failed(error) {
+  return { ok: false, message: '' + error }
+}
+
+fn actionResult(error, message) {
+  return error === null ? done(message) : failed(error)
+}
+
+// Run system command `id` -> { ok, message }. `arg` is on/off/toggle for dark-mode and mute, and a
+// percentage, up or down for volume (empty reports the level). empty-trash and eject wait on the shell
+// or the disks, so they answer `cb` (when given) instead; without `cb` they return a placeholder.
+// MOO_SYSTEM_DRY_RUN only reports what would happen.
+export fn systemCommand(id, rawArg, cb) {
+  let arg = rawArg.trim().toLowerCase()
+  let answer = (r) => {
+    if (typeof cb === 'function') {
+      cb(r)
+    }
+    return r
+  }
+  if (SYSTEM_COMMANDS.indexOf(id) < 0) {
+    return answer(failed('unknown system command `' + id + '`'))
+  }
+  if (env.MOO_SYSTEM_DRY_RUN) {
+    return answer(done(('dry run: ' + id + ' ' + arg).trim()))
+  }
+  let sys = windows.system
+  if (id === 'lock') {
+    return answer(actionResult(sys.lockScreen(), ''))
+  } else if (id === 'sleep') {
+    return answer(actionResult(sys.sleep(), ''))
+  } else if (id === 'sleep-displays') {
+    return answer(actionResult(sys.sleepDisplays(), ''))
+  } else if (id === 'restart') {
+    return answer(actionResult(sys.restart(), 'Restarting'))
+  } else if (id === 'shut-down') {
+    return answer(actionResult(sys.shutDown(), 'Shutting down'))
+  } else if (id === 'log-out') {
+    return answer(actionResult(sys.logOut(), 'Logging out'))
+  } else if (id === 'screen-saver') {
+    return answer(actionResult(sys.screenSaver(), ''))
+  } else if (id === 'empty-trash') {
+    sys.emptyTrash((e) => withUi(() => answer(actionResult(e, 'Recycle Bin emptied'))))
+    return done('Emptying the Recycle Bin')
+  } else if (id === 'eject') {
+    sys.ejectAll((r) => withUi(() => {
+      if (r.failed.length > 0) {
+        answer(failed('Could not eject ' + r.failed.join('; ')))
+      } else {
+        answer(done(r.ejected.length === 0 ? 'No disks to eject' : 'Ejected ' + r.ejected.join(', ')))
+      }
+    }))
+    return done('Ejecting')
+  } else if (id === 'dark-mode') {
+    let now = sys.darkMode()
+    if (now === null) {
+      return answer(failed('cannot read the appearance'))
+    }
+    let on = toggled(arg, now)
+    return answer(actionResult(sys.setDarkMode(on), on ? 'Dark mode on' : 'Dark mode off'))
+  } else if (id === 'mute') {
+    let v = sys.volume()
+    if ('error' in v) {
+      return answer(failed(v.error))
+    }
+    let on = toggled(arg, v.muted)
+    return answer(actionResult(sys.setMuted(on), on ? 'Sound muted' : 'Sound on'))
+  } else if (id === 'volume') {
+    let v = sys.volume()
+    if ('error' in v) {
+      return answer(failed(v.error))
+    }
+    let a = arg.endsWith('%') ? arg.slice(0, arg.length - 1) : arg
+    if (a === '') {
+      return answer(done('Volume ' + v.level + '%' + (v.muted ? ' (muted)' : '')))
+    }
+    let target = a === 'up' ? v.level + 10 : (a === 'down' ? v.level - 10 : Number(a))
+    if (isNaN(target)) {
+      return answer(failed('not a volume: ' + rawArg))
+    }
+    target = Math.round(Math.min(Math.max(target, 0), 100))
+    let e = sys.setVolume(target)
+    if (e === null && target > 0 && v.muted) {
+      e = sys.setMuted(false)
+    }
+    return answer(actionResult(e, 'Volume ' + target + '%'))
+  } else if (id === 'quit-all') {
+    return answer(done('Asked ' + windows.apps.quitAll() + ' apps to quit'))
+  }
+  return answer(done('Hid ' + windows.apps.hideAll() + ' apps'))
+}
+
+export fn accessibilityTrusted(prompt) {
+  return windows.accessibility.trusted(prompt === true)
+}
+
+// The selected text in the focused field of any app, or null.
+export fn selectedText() {
+  return windows.accessibility.selectedText()
+}
+
+// Replace `typed` just before the cursor in the focused field with `text` -> { ok, error }.
+export fn replaceTyped(typed, text) {
+  let e = windows.accessibility.replaceBeforeCursor(typed, text)
+  return e === null ? { ok: true, error: '' } : { ok: false, error: e === 'needs Accessibility permission' ? 'needs Accessibility' : e }
+}
+
+// Each window's frame before Moo last moved it, by "pid:window", for Restore.
+let framesBefore = {}
+
+// Move the frontmost app's focused window to `layout` (left-half, right-third, maximize,
+// next-display, restore, …) -> { ok, message }.
+export fn arrangeWindow(layout) {
+  let title = layoutTitle(layout)
+  if (title === null) {
+    return { ok: false, message: 'unknown layout `' + layout + '`' }
+  }
+  let ax = windows.accessibility
+  if (!ax.trusted(false)) {
+    ax.trusted(true)
+    return { ok: false, message: 'needs Accessibility' }
+  }
+  let win = ax.focusedWindow()
+  if ('error' in win) {
+    return { ok: false, message: win.error }
+  }
+  let cur = { x: win.x, y: win.y, w: win.w, h: win.h }
+  let screens = windows.screens()
+  if (screens.length === 0) {
+    return { ok: false, message: 'no displays' }
+  }
+  let i = screenFor(cur, screens.map((sc) => sc.frame))
+  let key = win.pid + ':' + win.key
+  let target = null
+  if (layout === 'next-display' || layout === 'previous-display') {
+    if (screens.length < 2) {
+      return { ok: false, message: 'only one display' }
+    }
+    let n = screens.length
+    let j = layout === 'next-display' ? (i + 1) % n : (i + n - 1) % n
+    target = moveToScreen(cur, screens[i].visible, screens[j].visible)
+  } else if (layout === 'restore') {
+    if (!(key in framesBefore)) {
+      return { ok: false, message: 'nothing to restore for ' + win.app }
+    }
+    target = framesBefore[key]
+  } else {
+    target = layoutFrame(layout, screens[i].visible, cur)
+  }
+  if (env.MOO_SYSTEM_DRY_RUN) {
+    return { ok: true, message: 'dry run: ' + title + ' ' + win.app + ' ' + cur.x + ',' + cur.y + ' ' + cur.w + '×' + cur.h + ' → ' + target.x + ',' + target.y + ' ' + target.w + '×' + target.h }
+  }
+  if (layout !== 'restore') {
+    framesBefore[key] = cur
+  }
+  let e = ax.setFocusedWindowFrame(target.x, target.y, target.w, target.h)
+  return e === null ? { ok: true, message: '' } : { ok: false, message: e }
+}
+
+// Minimizes, unminimizes, toggles full screen, closes or raises an app's window.
+// Returns `{ ok, message }` for the HUD.
+export fn windowAction(pid, name, action) {
+  let r = windows.accessibility.windowAction(pid, action)
+  if ('error' in r) {
+    return { ok: false, message: name + ' ' + r.error }
+  }
+  let done = {
+    minimize: 'Minimized ' + name,
+    fullscreen: 'Toggled full screen for ' + name,
+    close: 'Closed ' + name + "'s window",
+    raise: 'Raised ' + name,
+    unminimize: 'Restored ' + r.count + ' ' + name + ' window' + (r.count === 1 ? '' : 's'),
+  }
+  return { ok: true, message: done[action] }
+}
+
+// ── Contacts (People; needs the MSIX package) ───────────────────────────────
+
+let contactsGeneration = 0
 
 export fn contactsAccess() {
-  return 'denied'
+  return windows.contacts.status()
 }
 
-export let contactsRequest = (cb) => {
-  setTimeout(() => cb(false), 0)
-  return null
+export fn contactsRequest(cb) {
+  windows.contacts.request((granted) => withUi(() => cb(granted)))
 }
 
-export let searchContacts = (query, limit, cb) => {
+// `cb({ query, results, error })` for the newest search only. Returns its generation.
+export fn searchContacts(query, limit, cb) {
+  contactsGeneration = contactsGeneration + 1
+  let mine = contactsGeneration
   let q = '' + query
-  setTimeout(() => cb({ query: q, results: [], error: NOT_YET }), 0)
-  return 0
+  windows.contacts.query(q, Math.min(Math.max(limit, 1), 500), (r) => {
+    if (mine === contactsGeneration) {
+      withUi(() => cb({ query: q, results: r.contacts, error: r.error }))
+    }
+  })
+  return mine
 }
-
-export let accessibilityTrusted = (prompt) => false
-
-export fn selectedText() {
-  return null
-}
-
-export let replaceTyped = (typed, text) => ({ ok: false, error: NOT_YET })
-
-// Snippets need a system-wide keyboard hook; there's none yet, so expanding keywords is macOS-only.
-export let watchSnippets = (keywords, cb) => (keywords.length === 0 ? { ok: true, error: '' } : { ok: false, error: 'expanding snippets in other apps is ' + NOT_YET })
-
-export let arrangeWindow = (layout) => ({ ok: false, message: NOT_YET })

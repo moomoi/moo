@@ -4,10 +4,14 @@
 # "Set as a pre-release") to make it the download; release-promoted.yml then rewrites its notes to
 # cover everything since the last full release and bumps the Homebrew cask.
 #
-#   version -> build-mac (universal, signed, notarized) -> release (sem tags vX.Y.Z, prerelease)
+#   version -> build-mac (universal, signed, notarized)  -> release (sem tags vX.Y.Z, prerelease)
+#           -> build-windows (zip for the release; MSIX as a workflow artifact for the Store)
 #
 # Secrets: APPLE_CERTIFICATE (base64 .p12), APPLE_CERTIFICATE_PASSWORD, APPLE_SIGNING_IDENTITY
 # ("Developer ID Application: …"), APPLE_ID, APPLE_PASSWORD (app-specific), APPLE_TEAM_ID.
+# Variables (Partner Center -> Product identity): WINDOWS_STORE_NAME, WINDOWS_STORE_PUBLISHER,
+# WINDOWS_STORE_PUBLISHER_NAME. The MSIX is unsigned: upload the moo-windows-store artifact to
+# Partner Center, which signs it. The zip is the direct download.
 
 name: Release
 
@@ -147,9 +151,56 @@ jobs:
           path: dist/release/*
           if-no-files-found: error
 
+  build-windows:
+    name: Build Windows (zip, MSIX)
+    needs: version
+    if: needs.version.outputs.publish == 'true'
+    runs-on: windows-latest
+    timeout-minutes: 90
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            app/package-lock.json
+      - name: Tish compiler and packages (npm)
+        run: |
+          npm ci --no-audit --no-fund
+          (cd app && npm ci --no-audit --no-fund)
+      - name: Build and zip
+        env:
+          MOO_VERSION: ${{ needs.version.outputs.version }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: bash scripts/package-windows.sh
+      - name: MSIX (for the Store)
+        shell: pwsh
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+          STORE_NAME: ${{ vars.WINDOWS_STORE_NAME || 'Moo.Moo' }}
+          STORE_PUBLISHER: ${{ vars.WINDOWS_STORE_PUBLISHER || 'CN=Moo' }}
+          STORE_PUBLISHER_NAME: ${{ vars.WINDOWS_STORE_PUBLISHER_NAME || 'Moo' }}
+        run: ./scripts/package-msix.ps1 -Version $env:VERSION -Name $env:STORE_NAME -Publisher $env:STORE_PUBLISHER -PublisherName $env:STORE_PUBLISHER_NAME
+      - uses: actions/upload-artifact@v7
+        with:
+          name: moo-windows-x64
+          path: dist/release/Moo-windows-x64.zip
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v7
+        with:
+          name: moo-windows-store
+          path: dist/release/Moo-windows-x64.msix
+          if-no-files-found: error
+
   release:
     name: Prerelease
-    needs: [version, build-mac]
+    needs: [version, build-mac, build-windows]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -166,6 +217,14 @@ jobs:
         with:
           name: moo-macos-universal
           path: dist/release
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: moo-windows-x64
+          path: dist/release
+
+      - name: Checksums for every asset
+        run: cd dist/release && sha256sum Moo-* > SHA256SUMS && cat SHA256SUMS
 
       # actions/checkout configures no identity, and sem cannot create the tag without one.
       - name: Configure git identity for the release tag

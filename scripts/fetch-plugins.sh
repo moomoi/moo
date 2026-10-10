@@ -1,12 +1,19 @@
 #!/usr/bin/env bash
-# Put the plugins Moo ships into dist/plugins: the moomoi/plugins release named in plugins.version
-# (moo-plugins.tar.gz, checked against its SHA256SUMS). Does nothing when that version is already
-# there. Plugins are built and released in moomoi/plugins, never here.
-#   MOO_PLUGINS_TARBALL   use this local moo-plugins.tar.gz instead (testing a plugins build)
+# Put the plugins Moo ships into dist/plugins (macOS) or dist/plugins-windows: the moomoi/plugins
+# release named in plugins.version (moo-plugins.tar.gz or moo-plugins-windows.tar.gz, checked
+# against its SHA256SUMS). Does nothing when that version is already there. Plugins are built and
+# released in moomoi/plugins, never here.
+#   bash scripts/fetch-plugins.sh [mac|windows]   (default mac)
+#   MOO_PLUGINS_TARBALL   use this local tarball instead (testing a plugins build)
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+PLATFORM="${1:-mac}"
+case "$PLATFORM" in
+  mac) ASSET=moo-plugins.tar.gz; DEST="$ROOT/dist/plugins" ;;
+  windows) ASSET=moo-plugins-windows.tar.gz; DEST="$ROOT/dist/plugins-windows" ;;
+  *) echo "usage: fetch-plugins.sh [mac|windows]" >&2; exit 2 ;;
+esac
 VERSION="$(tr -d '[:space:]' < "$ROOT/plugins.version")"
-DEST="$ROOT/dist/plugins"
 STAMP="$DEST/.version"
 WANT="${MOO_PLUGINS_TARBALL:-v$VERSION}"
 
@@ -17,17 +24,18 @@ fi
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 if [ -n "${MOO_PLUGINS_TARBALL:-}" ]; then
-  cp "$MOO_PLUGINS_TARBALL" "$WORK/moo-plugins.tar.gz"
+  cp "$MOO_PLUGINS_TARBALL" "$WORK/$ASSET"
 else
   BASE="https://github.com/moomoi/plugins/releases/download/v$VERSION"
-  echo "Downloading plugins v$VERSION..."
-  curl -fsSL "$BASE/moo-plugins.tar.gz" -o "$WORK/moo-plugins.tar.gz"
+  echo "Downloading $ASSET v$VERSION..."
+  curl -fsSL "$BASE/$ASSET" -o "$WORK/$ASSET"
   curl -fsSL "$BASE/SHA256SUMS" -o "$WORK/SHA256SUMS"
-  (cd "$WORK" && shasum -a 256 -c SHA256SUMS >/dev/null) || { echo "error: moo-plugins.tar.gz does not match SHA256SUMS" >&2; exit 1; }
+  # SHA256SUMS lists every tarball; check the one downloaded.
+  (cd "$WORK" && grep " $ASSET\$" SHA256SUMS | shasum -a 256 -c >/dev/null) || { echo "error: $ASSET does not match SHA256SUMS" >&2; exit 1; }
 fi
 
 rm -rf "$DEST"
 mkdir -p "$DEST"
-tar -xzf "$WORK/moo-plugins.tar.gz" -C "$DEST"
+tar -xzf "$WORK/$ASSET" -C "$DEST"
 echo "$WANT" > "$STAMP"
 ls "$DEST"

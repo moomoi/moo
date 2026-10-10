@@ -1,0 +1,12 @@
+// Windows: where Moo keeps things (see paths.tish). Roaming settings in %APPDATA%\Moo, rebuildable
+// caches in %LOCALAPPDATA%\Moo\Cache; shortcuts.json beside the settings.
+
+import { env } from 'tish:process'
+
+export let HOME = env.USERPROFILE ? env.USERPROFILE : ''
+
+export let DATA_DIR = env.APPDATA ? env.APPDATA + '\\Moo' : ''
+
+export let CACHE_DIR = env.LOCALAPPDATA ? env.LOCALAPPDATA + '\\Moo\\Cache' : ''
+
+export let CONFIG_DIR = DATA_DIR

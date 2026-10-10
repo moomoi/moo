@@ -145,7 +145,10 @@ fn live(rx: mpsc::Receiver<Vec<PathBuf>>) {
         let mut changed: BTreeSet<String> = BTreeSet::new();
         let mut add = |paths: Vec<PathBuf>| {
             for p in paths {
-                let s = p.to_string_lossy().replace('\\', "/");
+                // notify canonicalizes the watched folders, so events come as `\\?\C:\...`; the
+                // index's roots are plain `C:/...`.
+                let raw = p.to_string_lossy();
+                let s = raw.strip_prefix(r"\\?\").unwrap_or(&raw).replace('\\', "/");
                 // The folder holding the change: a shallow rescan sees adds, removes and renames.
                 let dir = s.rsplit_once('/').map_or(s.clone(), |(d, _)| d.to_string());
                 changed.insert(dir);
@@ -157,6 +160,7 @@ fn live(rx: mpsc::Receiver<Vec<PathBuf>>) {
             add(more);
         }
         STATUS.lock().unwrap_or_else(|e| e.into_inner()).events += changed.len() as u64;
+        crate::win::debug_log(&format!("file index: changes in {changed:?}"));
         let mut guard = INDEX.write().unwrap_or_else(|e| e.into_inner());
         if let Some(ix) = guard.as_mut() {
             let dirs: Vec<String> = changed.into_iter().filter(|d| ix.covers(d)).collect();

@@ -7,6 +7,7 @@ import { fetch } from 'tish:http'
 import { writeFile, mkdir, rename, fileExists, stat } from 'tish:fs'
 import { env } from 'tish:process'
 import { splitUrl, hashName } from './siteurl.tish'
+import { CACHE_DIR } from './paths.tish'
 
 let MAX_AGE_MS = 7 * 24 * 3600 * 1000
 // Team images are uploaded photos, often over a megabyte; anything larger is not an icon.
@@ -18,7 +19,7 @@ fn iconDir() {
   if (env.MOO_ICONS) {
     return env.MOO_ICONS
   }
-  return env.HOME ? env.HOME + '/Library/Caches/Moo/icons' : ''
+  return CACHE_DIR !== '' ? CACHE_DIR + '/icons' : ''
 }
 
 fn stale(path) {

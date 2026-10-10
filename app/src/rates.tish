@@ -7,6 +7,7 @@ import { fetch } from 'tish:http'
 import { readFile, writeFile, mkdir, rename, fileExists } from 'tish:fs'
 import { env } from 'tish:process'
 import { parseEcb, parseCache, formatCache } from './calc.tish'
+import { CACHE_DIR } from './paths.tish'
 
 let URL = 'https://www.ecb.europa.eu/stats/eurofxref/eurofxref-daily.xml'
 let MAX_AGE = 12 * 3600
@@ -15,7 +16,7 @@ fn ratesPath() {
   if (env.MOO_RATES) {
     return env.MOO_RATES
   }
-  return env.HOME ? env.HOME + '/Library/Caches/Moo/rates.txt' : ''
+  return CACHE_DIR !== '' ? CACHE_DIR + '/rates.txt' : ''
 }
 
 let cache = null

@@ -9,6 +9,7 @@ import { env } from 'tish:process'
 import { about, hide, quit, reindex as reindexApps, search as searchApps, findFiles as findIndexed, recentFiles as recentIndexed, appFolders, appPaths, withUi, watchTyped, fuzzy, show } from 'tish:moo'
 import { nameQuery, filterQuery, dateAttr, wanted, wantedIn, detailFor, fileName } from './spotlightquery.tish'
 import { layoutTitle, layoutFrame, moveToScreen, screenFor } from './windowlayout.tish'
+import { HOME } from './paths.tish'
 
 // Open a URL, file, folder or app. The launcher hides at once and macOS opens it on the next
 // run-loop turn: NSWorkspace's open waits for Launch Services, which can take a second for an app
@@ -455,7 +456,6 @@ export fn arrangeWindow(layout) {
 
 // ── Spotlight file search ───────────────────────────────────────────────────
 
-let HOME = env.HOME ? env.HOME : ''
 // Spotlight returns matches in index order, not by relevance, so fetch a pool and rank it here.
 let NAME_CANDIDATES = 400
 let FIND_CANDIDATES = 2000
