@@ -7,9 +7,8 @@ fn NavLink(props) {
 
 export fn layout(ctx, children) {
   let p = ctx.path
-  return (
-    <>
-      <div class="sky"><i></i><i></i><i></i></div>
+  return <>
+      <div class="sky"><i /><i /><i /></div>
       <nav>
         <div class="in">
           <a class="brand" href="/"><img src="/icon.png" alt="" />moo</a>
@@ -30,5 +29,4 @@ export fn layout(ctx, children) {
         <div class="mega">moo</div>
       </footer>
     </>
-  )
 }

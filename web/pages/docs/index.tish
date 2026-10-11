@@ -1,6 +1,11 @@
 import { Hero } from '../../lib/ui.tish'
 
-export fn head(ctx) { return { title: 'Docs', description: 'From your first hotkey to writing plugins. Everything moo does, on a few short pages.' } }
+export fn head(ctx) {
+  return {
+    title: 'Docs',
+    description: 'From your first hotkey to writing plugins. Everything moo does, on a few short pages.'
+  }
+}
 
 // One card per section, listing its pages.
 fn sectionCards(docs) {
@@ -21,8 +26,7 @@ fn sectionCards(docs) {
 
 export fn page(ctx) {
   let docs = ctx.collections.docs
-  return (
-    <>
+  return <>
       <Hero eyebrow="Documentation" style="padding-bottom:56px">
         <h2 class="t up d1" style="font-size:clamp(48px,9vw,104px)">Learn <span class="grad">moo</span>.</h2>
         <p class="lede up d2">From your first hotkey to writing plugins. Everything moo does, on a few short pages.</p>
@@ -30,5 +34,4 @@ export fn page(ctx) {
       </Hero>
       <div class="wrap dhome up d4">{sectionCards(docs)}</div>
     </>
-  )
 }

@@ -13,9 +13,39 @@
 import { macos } from './host.tish'
 import { fetch } from 'tish:http'
 import { env } from 'tish:process'
-import { keychainGet, keychainSet, keychainDelete, keychainHas, oauthSignIn, oauthCancel, oauthRefresh, withUi } from './natives.tish'
+import {
+  keychainGet,
+  keychainSet,
+  keychainDelete,
+  keychainHas,
+  oauthSignIn,
+  oauthCancel,
+  oauthRefresh,
+  withUi
+} from './natives.tish'
 import { aiConfig } from './shortcutsfile.tish'
-import { providers, splitModel, origin, endpoints, oauthAccount, noCredential, newLines, feedLines, newStream, streamLine, errorMessage, parseModels, parseOrgs, activeOrg, dollars, parseTokens, tokensJson, staleTokens, ORG_HEADER, utf8 } from './aicore.tish'
+import {
+  providers,
+  splitModel,
+  origin,
+  endpoints,
+  oauthAccount,
+  noCredential,
+  newLines,
+  feedLines,
+  newStream,
+  streamLine,
+  errorMessage,
+  parseModels,
+  parseOrgs,
+  activeOrg,
+  dollars,
+  parseTokens,
+  tokensJson,
+  staleTokens,
+  ORG_HEADER,
+  utf8
+} from './aicore.tish'
 
 // Wait for `p`, then `cb(value, error)` against the launcher UI (focus kept).
 fn settle(p, cb) {
@@ -181,9 +211,11 @@ fn readStream(request, reader, lines, st, cb) {
     let changed = false
     if (!r.done) {
       feedLines(lines, r.value)
-    } else if (lines.rest.length > 0) {
-      lines.done.push(utf8(lines.rest))
-      lines.rest = []
+    } else {
+      if (lines.rest.length > 0) {
+        lines.done.push(utf8(lines.rest))
+        lines.rest = []
+      }
     }
     for (let i = 0; i < lines.done.length; i = i + 1) {
       if (streamLine(st, lines.done[i])) {
@@ -222,7 +254,10 @@ fn send(request, url, key, org, body, attempt, cb) {
       bodyText(res, (text) => {
         let limited = res.status === 429 || text.indexOf('RATE_LIMITED') >= 0
         if (limited && attempt < 2) {
-          setTimeout(() => send(request, url, key, org, body, attempt + 1, cb), 1500 * Math.pow(2, attempt))
+          setTimeout(
+            () => send(request, url, key, org, body, attempt + 1, cb),
+            1500 * Math.pow(2, attempt)
+          )
           return
         }
         cb(failEvent(request, errorMessage(res.status, text)))
@@ -299,7 +334,7 @@ fn listModels(p, done) {
     let h = headersFor(key, '')
     settle(fetch(p.url + '/models' + p.modelsQuery, { headers: h, timeout: p.local ? 2000 : 20000 }), (res, err) => {
       if (err !== null || res.error) {
-        done(listing(p, [], p.local ? 'not running' : (err !== null ? '' + err : res.error)))
+        done(listing(p, [], p.local ? 'not running' : err !== null ? '' + err : res.error))
         return
       }
       bodyText(res, (text) => {
@@ -309,7 +344,7 @@ fn listModels(p, done) {
         }
         let models = parseModels(text)
         if (p.modelsQuery === '') {
-          models.sort((a, b) => a.id < b.id ? -1 : (a.id > b.id ? 1 : 0))
+          models.sort((a, b) => a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
         }
         done(listing(p, models, ''))
       })
@@ -323,10 +358,12 @@ fn listModels(p, done) {
   credential(p, (err, key) => {
     if (err !== null) {
       done(listing(p, [], err))
-    } else if (key === null && !p.local) {
-      done(listing(p, [], 'no API key'))
     } else {
-      fetchList(key)
+      if (key === null && !p.local) {
+        done(listing(p, [], 'no API key'))
+      } else {
+        fetchList(key)
+      }
     }
   })
 }
@@ -351,12 +388,31 @@ export fn aiModels(cb) {
 
 // `[{ id, title, url, local, credential, oauth, signIn, account }]`, Apple's on-device model first.
 export fn aiProviders() {
-  let rows = [{ id: 'apple', title: 'Apple on-device', url: '', local: true, credential: '', oauth: false, signIn: false, account: false }]
+  let rows = [
+    {
+      id: 'apple',
+      title: 'Apple on-device',
+      url: '',
+      local: true,
+      credential: '',
+      oauth: false,
+      signIn: false,
+      account: false
+    }
+  ]
   let list = allProviders()
   for (let i = 0; i < list.length; i = i + 1) {
     let p = list[i]
-    rows.push({ id: p.id, title: p.title, url: p.url, local: p.local, credential: credentialSource(p), oauth: p.oauth !== null,
-      signIn: p.oauth !== null && p.clientId !== '', account: p.account })
+    rows.push({
+      id: p.id,
+      title: p.title,
+      url: p.url,
+      local: p.local,
+      credential: credentialSource(p),
+      oauth: p.oauth !== null,
+      signIn: p.oauth !== null && p.clientId !== '',
+      account: p.account
+    })
   }
   return rows
 }
@@ -365,8 +421,21 @@ export fn aiProviders() {
 
 fn newAccount(p, pname) {
   let o = p === null ? '' : origin(p.url)
-  return { provider: '' + pname, credential: p === null ? '' : credentialSource(p), email: '', name: '', manage: o + '/dashboard',
-    billing: o + '/dashboard', keys: o + '/dashboard', balance: -1, monthSpent: -1, monthLimit: -1, organization: '', orgs: [], error: '' }
+  return {
+    provider: '' + pname,
+    credential: p === null ? '' : credentialSource(p),
+    email: '',
+    name: '',
+    manage: o + '/dashboard',
+    billing: o + '/dashboard',
+    keys: o + '/dashboard',
+    balance: -1,
+    monthSpent: -1,
+    monthLimit: -1,
+    organization: '',
+    orgs: [],
+    error: ''
+  }
 }
 
 fn setLinks(a, o, slug) {
@@ -416,18 +485,23 @@ fn fetchAccount(p, key, cb) {
       if (st === 200) {
         readBalance(a, text)
         cb(a)
-      } else if ((st === 403 || st === 404) && personal) {
-        getPath(p, key, '/api/wallet/balance', (st2, text2) => {
-          if (st2 === 200) {
-            readBalance(a, text2)
-          } else {
-            a.error = st2 === 0 ? text2 : errorMessage(st2, text2)
-          }
-          cb(a)
-        })
       } else {
-        a.error = st === 403 ? "this organization's balance needs billing access" : (st === 0 ? text : errorMessage(st, text))
-        cb(a)
+        if ((st === 403 || st === 404) && personal) {
+          getPath(p, key, '/api/wallet/balance', (st2, text2) => {
+            if (st2 === 200) {
+              readBalance(a, text2)
+            } else {
+              a.error = st2 === 0 ? text2 : errorMessage(st2, text2)
+            }
+            cb(a)
+          })
+        } else {
+          a.error = st === 403 ? "this organization's balance needs billing access" : st === 0 ? text : errorMessage(
+            st,
+            text
+          )
+          cb(a)
+        }
       }
     })
   }
@@ -520,7 +594,9 @@ export fn aiLogin(pname, cb) {
     return
   }
   if (ep.clientId === '') {
-    answer(p.title + ' sign-in needs an OAuth client id: set ai.providers.' + p.id + '.clientId in shortcuts.json or MOO_' + p.id.toUpperCase() + '_CLIENT_ID')
+    answer(
+      p.title + ' sign-in needs an OAuth client id: set ai.providers.' + p.id + '.clientId in shortcuts.json or MOO_' + p.id.toUpperCase() + '_CLIENT_ID'
+    )
     return
   }
   let account = oauthAccount(p.id)

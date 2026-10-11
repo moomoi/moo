@@ -3,7 +3,16 @@ import assert from 'node:assert/strict'
 import { filterQuery, nameQuery, wanted, wantedIn, detailFor, escapeToken } from './spotlightquery.tish'
 
 fn filt(over) {
-  let f = { name: '', contains: '', kind: '', minBytes: 0, maxBytes: 0, createdSecs: 0, modifiedSecs: 0, openedSecs: 0 }
+  let f = {
+    name: '',
+    contains: '',
+    kind: '',
+    minBytes: 0,
+    maxBytes: 0,
+    createdSecs: 0,
+    modifiedSecs: 0,
+    openedSecs: 0
+  }
   let keys = Object.keys(over)
   for (let i = 0; i < keys.length; i = i + 1) {
     f[keys[i]] = over[keys[i]]
@@ -12,18 +21,25 @@ fn filt(over) {
 }
 
 test('filter query combines clauses', () => {
-  assert.equal(filterQuery(filt({ name: 'tax 2025', kind: 'pdf', createdSecs: 172800 }), 104857600, null),
-    '(kMDItemFSName == "*tax*"cd) && (kMDItemFSName == "*2025*"cd) && (kMDItemContentTypeTree == "com.adobe.pdf") && (kMDItemFSSize >= 104857600) && (kMDItemFSCreationDate >= $time.now(-172800)) && (kMDItemContentType != "com.apple.application-bundle")')
+  assert.equal(
+    filterQuery(filt({ name: 'tax 2025', kind: 'pdf', createdSecs: 172800 }), 104857600, null),
+    '(kMDItemFSName == "*tax*"cd) && (kMDItemFSName == "*2025*"cd) && (kMDItemContentTypeTree == "com.adobe.pdf") && (kMDItemFSSize >= 104857600) && (kMDItemFSCreationDate >= $time.now(-172800)) && (kMDItemContentType != "com.apple.application-bundle")'
+  )
 })
 
 test('contents are matched by word prefix', () => {
-  assert.equal(filterQuery(filt({ contains: 'invoice "4411', kind: 'pdf' }), 0, null),
-    '(kMDItemTextContent == "invoice*"cdw) && (kMDItemTextContent == "\\"4411*"cdw) && (kMDItemContentTypeTree == "com.adobe.pdf") && (kMDItemContentType != "com.apple.application-bundle")')
+  assert.equal(
+    filterQuery(filt({ contains: 'invoice "4411', kind: 'pdf' }), 0, null),
+    '(kMDItemTextContent == "invoice*"cdw) && (kMDItemTextContent == "\\"4411*"cdw) && (kMDItemContentTypeTree == "com.adobe.pdf") && (kMDItemContentType != "com.apple.application-bundle")'
+  )
 })
 
 test('names, paths and details', () => {
   assert.equal(nameQuery('  '), null)
-  assert.equal(nameQuery('a*b'), '(kMDItemFSName == "*a\\*b*"cd) && (kMDItemContentType != "com.apple.application-bundle")')
+  assert.equal(
+    nameQuery('a*b'),
+    '(kMDItemFSName == "*a\\*b*"cd) && (kMDItemContentType != "com.apple.application-bundle")'
+  )
   assert.equal(escapeToken("it's"), "it\\'s")
   assert.ok(wanted('/Users/x/Documents/a.pdf', '/Users/x'))
   assert.ok(!wanted('/Users/x/Library/Caches/a', '/Users/x'))

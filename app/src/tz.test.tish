@@ -3,8 +3,15 @@ import assert from 'node:assert/strict'
 import { parseClock, clock, weekday, relative, timeAnswer } from './tz.tish'
 
 // Fixed offsets, no daylight saving.
-let ZONES = { 'UTC': [0, 'UTC'], 'GMT': [0, 'GMT'], 'Asia/Tokyo': [32400, 'JST'], 'America/Los_Angeles': [-28800, 'PST'],
-  'America/New_York': [-18000, 'EST'], 'Europe/London': [0, 'GMT'], 'Europe/Paris': [3600, 'CET'] }
+let ZONES = {
+  UTC: [0, 'UTC'],
+  GMT: [0, 'GMT'],
+  'Asia/Tokyo': [32400, 'JST'],
+  'America/Los_Angeles': [-28800, 'PST'],
+  'America/New_York': [-18000, 'EST'],
+  'Europe/London': [0, 'GMT'],
+  'Europe/Paris': [3600, 'CET']
+}
 let db = {
   names: () => Object.keys(ZONES),
   local: () => 'America/New_York',

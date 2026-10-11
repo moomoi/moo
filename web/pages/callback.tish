@@ -10,7 +10,7 @@ export let headers = { 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-refer
 // The loopback port named by a relay state, or 0 when the state isn't `<port>.<nonce>`.
 export fn relayPort(state) {
   if (typeof state !== 'string') { return 0 }
-  let m = /^(\d{4,5})\.([A-Za-z0-9_-]{16,128})$/.exec(state)
+  let m = (new RegExp('^(\\d{4,5})\\.([A-Za-z0-9_-]{16,128})$', '')).exec(state)
   if (m === null) { return 0 }
   let port = parseInt(m[1], 10)
   return port >= 1024 && port <= 65535 ? port : 0
@@ -19,20 +19,24 @@ export fn relayPort(state) {
 export fn load(ctx) {
   let port = relayPort(ctx.query.state)
   if (port === 0) { return { status: 400 } }
-  let q = Object.keys(ctx.query).map(k => encodeURIComponent(k) + '=' + encodeURIComponent(ctx.query[k])).join('&')
-  return { redirect: 'http://127.0.0.1:' + port + '/callback?' + q, status: 302, headers: { 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer' } }
+  let q = Object.keys(ctx.query).map((k) => encodeURIComponent(k) + '=' + encodeURIComponent(
+    ctx.query[k]
+  )).join('&')
+  return {
+    redirect: 'http://127.0.0.1:' + port + '/callback?' + q,
+    status: 302,
+    headers: { 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer' }
+  }
 }
 
 export fn head(ctx) { return { title: 'Sign-in link not recognised', noindex: true } }
 
 export fn page(ctx) {
-  return (
-    <div class="bare"><div class="solo up"><div class="win"><div class="glass">
+  return <div class="bare"><div class="solo up"><div class="win"><div class="glass">
       <img class="mark" src="/icon.png" alt="Moo" />
       <h1>This sign-in link isn't from moo</h1>
       <p>We couldn't find moo waiting for this sign-in. No harm done — just start again from the app.</p>
       <ol><li>Open moo</li><li>Go to <b>{' Settings → Account'}</b></li><li>Choose <b>{' Sign in'}</b></li></ol>
       <a class="btn go" href="/">Back to moo.moi</a>
     </div></div></div></div>
-  )
 }

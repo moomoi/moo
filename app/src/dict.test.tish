@@ -14,7 +14,10 @@ test('one-sense noun', () => {
   assert.equal(e.pronunciation, 'ˌserənˈdipədē')
   assert.equal(e.senses.length, 1)
   assert.equal(e.senses[0].part, 'noun')
-  assert.equal(e.senses[0].definition, 'the occurrence and development of events by chance in a happy or beneficial way')
+  assert.equal(
+    e.senses[0].definition,
+    'the occurrence and development of events by chance in a happy or beneficial way'
+  )
   assert.equal(e.senses[0].example, 'a fortunate stroke of serendipity')
   assert.ok(e.origin.startsWith('1754: coined by Horace Walpole'))
 })
@@ -31,11 +34,15 @@ test('numbered senses, not numbers in examples', () => {
   let e = parse(RUN, 'run')
   assert.equal(e.word, 'run')
   assert.equal(e.pronunciation, 'rən')
-  assert.equal(JSON.stringify(e.senses.map((s) => [s.part, s.definition])), JSON.stringify([
-    ['verb', 'move at a speed faster than a walk'],
-    ['verb', 'pass or cause to pass quickly or smoothly in a particular direction'],
-    ['noun', 'an act or spell of running'],
-    ['noun', 'a journey accomplished or route taken by a vehicle']]))
+  assert.equal(
+    JSON.stringify(e.senses.map((s) => [s.part, s.definition])),
+    JSON.stringify([
+      ['verb', 'move at a speed faster than a walk'],
+      ['verb', 'pass or cause to pass quickly or smoothly in a particular direction'],
+      ['noun', 'an act or spell of running'],
+      ['noun', 'a journey accomplished or route taken by a vehicle']
+    ])
+  )
   assert.equal(e.senses[0].example, 'the dog ran across the road')
 })
 
@@ -53,10 +60,17 @@ test('entries without a part of speech', () => {
 })
 
 test('inflections with nested parentheses', () => {
-  let e = parse("child | CHīld | noun (plural children | ˈCHildr(ə)n |) a young human being below the age of puberty: she'd been playing tennis since she was a child.", 'children')
+  let e = parse(
+    "child | CHīld | noun (plural children | ˈCHildr(ə)n |) a young human being below the age of puberty: she'd been playing tennis since she was a child.",
+    'children'
+  )
   assert.equal(e.senses[0].definition, 'a young human being below the age of puberty')
-  assert.equal(senseText('(Symbol: Pb) a heavy, bluish-gray, soft, ductile metal, the chemical element of atomic number 82.')[0],
-    '(Symbol: Pb) a heavy, bluish-gray, soft, ductile metal, the chemical element of atomic number 82')
+  assert.equal(
+    senseText(
+      '(Symbol: Pb) a heavy, bluish-gray, soft, ductile metal, the chemical element of atomic number 82.'
+    )[0],
+    '(Symbol: Pb) a heavy, bluish-gray, soft, ductile metal, the chemical element of atomic number 82'
+  )
 })
 
 test('define merges homographs and checks the word', () => {
@@ -67,6 +81,9 @@ test('define merges homographs and checks the word', () => {
   assert.equal(e.senses[1].pronunciation, 'led')
   assert.ok(e.senses[1].definition.indexOf('metal') >= 0)
   assert.equal(define('zzqxv', []), null)
-  assert.equal(define('colour', ['unicolor | ˌyo͞onəˈkələr | (also -colour) adjective of one color.']), null)
+  assert.equal(
+    define('colour', ['unicolor | ˌyo͞onəˈkələr | (also -colour) adjective of one color.']),
+    null
+  )
   assert.ok(define('ran', [RUN]) !== null)
 })

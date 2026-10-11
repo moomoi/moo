@@ -7,7 +7,37 @@
 // stands in for Cmd, so Ctrl+K is "cmd+k".
 
 import { windows } from 'tish:windows'
-import { oauthCancel as n_oauthCancel, oauthRefresh as n_oauthRefresh, oauthSignIn as n_oauthSignIn, about as n_about, appCount as n_appCount, appFolders as n_appFolders, appPaths as n_appPaths, bundleResources as n_bundleResources, exeDir as n_exeDir, frecency as n_frecency, fuzzy as n_fuzzy, loadBytecodePlugin as n_loadBytecodePlugin, localDateTime as n_localDateTime, onPluginRefresh as n_onPluginRefresh, pluginPaths as n_pluginPaths, recordUse as n_recordUse, reindex as n_reindex, search as n_search, fileIndexStart as n_fileIndexStart, findFiles as n_findFiles, recentFiles as n_recentFiles, fileIndexStatus as n_fileIndexStatus, cliMain as n_cliMain, cliServe as n_cliServe, cliWrite as n_cliWrite, cliEnd as n_cliEnd, watchTyped as n_watchTyped, quickLook as n_quickLook, quickLookVisible as n_quickLookVisible } from 'tish:moo'
+import {
+  oauthCancel as n_oauthCancel,
+  oauthRefresh as n_oauthRefresh,
+  oauthSignIn as n_oauthSignIn,
+  about as n_about,
+  appCount as n_appCount,
+  appFolders as n_appFolders,
+  appPaths as n_appPaths,
+  bundleResources as n_bundleResources,
+  exeDir as n_exeDir,
+  frecency as n_frecency,
+  fuzzy as n_fuzzy,
+  loadBytecodePlugin as n_loadBytecodePlugin,
+  localDateTime as n_localDateTime,
+  onPluginRefresh as n_onPluginRefresh,
+  pluginPaths as n_pluginPaths,
+  recordUse as n_recordUse,
+  reindex as n_reindex,
+  search as n_search,
+  fileIndexStart as n_fileIndexStart,
+  findFiles as n_findFiles,
+  recentFiles as n_recentFiles,
+  fileIndexStatus as n_fileIndexStatus,
+  cliMain as n_cliMain,
+  cliServe as n_cliServe,
+  cliWrite as n_cliWrite,
+  cliEnd as n_cliEnd,
+  watchTyped as n_watchTyped,
+  quickLook as n_quickLook,
+  quickLookVisible as n_quickLookVisible
+} from 'tish:moo'
 
 export let about = n_about
 export let quickLook = n_quickLook
@@ -35,7 +65,6 @@ export let recordUse = n_recordUse
 export let reindex = n_reindex
 export let search = n_search
 
-
 // No on-device model: Ask AI defaults to Hypery and doesn't list Apple's.
 export let HAS_ON_DEVICE_AI = false
 
@@ -58,7 +87,14 @@ let shown = false
 
 // `setup({ width, height, onKey, onShow, onHotkey, hidden })`, before `macos.run`.
 export fn setup(opts) {
-  panel = { width: opts.width, height: opts.height, onKey: opts.onKey, onShow: opts.onShow, onHotkey: opts.onHotkey, hidden: opts.hidden === true }
+  panel = {
+    width: opts.width,
+    height: opts.height,
+    onKey: opts.onKey,
+    onShow: opts.onShow,
+    onHotkey: opts.onHotkey,
+    hidden: opts.hidden === true
+  }
   return null
 }
 
@@ -78,7 +114,6 @@ export let panelRunOptions = (opts) => {
     topmost: true,
     hideOnBlur: true,
     backdrop: 'acrylic',
-    // The Mac panel's look: the glass's light tint over the blur (Acrylic) and a hairline edge.
     dark: dark,
     tint: glass === null ? '' : glass.tint.panel.dark,
     tintLight: glass === null ? '' : glass.tint.panel.light,
@@ -91,6 +126,7 @@ export let panelRunOptions = (opts) => {
     onKey: onWindowKey,
     onBlur: () => hidden()
   }
+  // The Mac panel's look: the glass's light tint over the blur (Acrylic) and a hairline edge.
 }
 
 let panelTheme = null
@@ -180,7 +216,7 @@ fn macSpec(name) {
   let parts = name.split('+')
   let key = parts[parts.length - 1]
   let mods = parts.slice(0, parts.length - 1)
-  let keyName = key === 'enter' ? 'return' : (key === 'backspace' ? 'delete' : (key === 'delete' ? 'forwarddelete' : key))
+  let keyName = key === 'enter' ? 'return' : key === 'backspace' ? 'delete' : key === 'delete' ? 'forwarddelete' : key
   let out = []
   if (mods.indexOf('alt') >= 0) {
     out.push('alt')
@@ -268,8 +304,10 @@ export fn registerHotkey(spec, action) {
     // No action: the launcher's own hotkey, which shows and hides the panel (as moo-macos does).
     if ((action ?? '') === '') {
       toggle()
-    } else if (panel.onHotkey !== null) {
-      panel.onHotkey(action)
+    } else {
+      if (panel.onHotkey !== null) {
+        panel.onHotkey(action)
+      }
     }
   })
   if (typeof r !== 'number') {
@@ -348,14 +386,6 @@ export fn cliServe(onCli) {
 
 // ── Not on Windows yet ──────────────────────────────────────────────────────
 
-
-
-
-
-
-
-
-
 export fn aiAvailability() {
   return "Apple's on-device model is only on macOS"
 }
@@ -376,7 +406,3 @@ export let aiCancel = (id) => null
 export let oauthSignIn = n_oauthSignIn
 export let oauthCancel = n_oauthCancel
 export let oauthRefresh = n_oauthRefresh
-
-
-
-

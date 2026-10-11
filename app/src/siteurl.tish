@@ -22,7 +22,9 @@ export fn splitUrl(url) {
   }
   let authority = rest.slice(0, end).toLowerCase()
   let host = authority.split(':')[0]
-  if (host === '' || !RegExp('^[a-z0-9.-]+$').test(host) || host.startsWith('.') || host.endsWith('.') || host.indexOf('..') >= 0) {
+  if (host === '' || !RegExp('^[a-z0-9.-]+$').test(host) || host.startsWith('.') || host.endsWith(
+    '.'
+  ) || host.indexOf('..') >= 0) {
     return null
   }
   return { origin: scheme + '://' + authority, host: host }

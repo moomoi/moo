@@ -7,7 +7,23 @@ import { windows } from 'tish:windows'
 import { fileExists, mkdir } from 'tish:fs'
 import { env } from 'tish:process'
 import { layoutTitle, layoutFrame, moveToScreen, screenFor } from './windowlayout.tish'
-import { about, hide, quit, show, reindex as reindexApps, search as searchApps, appFolders, bundleResources, exeDir, findFiles as findIndexed, recentFiles as recentIndexed, runShell as nativeRunShell, withUi, setUrlHandler, watchTyped } from './natives.tish'
+import {
+  about,
+  hide,
+  quit,
+  show,
+  reindex as reindexApps,
+  search as searchApps,
+  appFolders,
+  bundleResources,
+  exeDir,
+  findFiles as findIndexed,
+  recentFiles as recentIndexed,
+  runShell as nativeRunShell,
+  withUi,
+  setUrlHandler,
+  watchTyped
+} from './natives.tish'
 
 let NOT_YET = 'not on Windows yet'
 
@@ -17,7 +33,7 @@ export let runShell = nativeRunShell
 // Open a URL, file, folder or app. The launcher hides at once; Windows opens it a moment later.
 export fn launch(target) {
   let isUrl = target.indexOf(':') > 1
-  if (target === '' || (!isUrl && !fileExists(target))) {
+  if (target === '' || !isUrl && !fileExists(target)) {
     return false
   }
   hide()
@@ -68,14 +84,16 @@ export let openWith = (path, app) => ({ ok: false, message: '', error: NOT_YET }
 export fn onOpenUrl(cb) {
   setUrlHandler(cb)
   let exe = exeDir() + '\\moo.exe'
-  let script = "$k = 'HKCU:\\Software\\Classes\\moo'; New-Item -Path \"$k\\shell\\open\\command\" -Force | Out-Null; " +
-    "Set-ItemProperty -Path $k -Name '(default)' -Value 'URL:Moo'; Set-ItemProperty -Path $k -Name 'URL Protocol' -Value ''; " +
-    "Set-ItemProperty -Path \"$k\\shell\\open\\command\" -Name '(default)' -Value ('\"' + $args[0] + '\" \"%1\"')"
-  windows.shell.run(script, { args: [exe] }, (r) => {
-    if (r.code !== 0) {
-      console.log('moo: registering moo:// failed: ' + r.stderr)
-    }
-  })
+  let script = '$k = \'HKCU:\\Software\\Classes\\moo\'; New-Item -Path "$k\\shell\\open\\command" -Force | Out-Null; ' + "Set-ItemProperty -Path $k -Name '(default)' -Value 'URL:Moo'; Set-ItemProperty -Path $k -Name 'URL Protocol' -Value ''; " + 'Set-ItemProperty -Path "$k\\shell\\open\\command" -Name \'(default)\' -Value (\'"\' + $args[0] + \'" "%1"\')'
+  windows.shell.run(
+        script,
+        { args: [exe] },
+        (r) => {
+          if (r.code !== 0) {
+            console.log('moo: registering moo:// failed: ' + r.stderr)
+          }
+        }
+          )
   return true
 }
 
@@ -106,7 +124,13 @@ export fn reindex() {
 }
 
 export fn search(text, limit) {
-  return searchApps(text, limit).map((a) => ({ name: a.name, path: a.path, icon: windows.icons.file(a.path), kind: a.kind, score: a.score }))
+  return searchApps(text, limit).map((a) => ({
+    name: a.name,
+    path: a.path,
+    icon: windows.icons.file(a.path),
+    kind: a.kind,
+    score: a.score
+  }))
 }
 
 // The file index's matches; the first `icons` rows get icons.
@@ -149,19 +173,24 @@ export let queryFiles = (filter) => ({ results: [], total: 0, ms: 0 })
 export let statusItem = (hotkey, symbol, onMenu) => {
   let resources = bundleResources()
   return windows.statusItem({
-    image: (resources ? resources : exeDir() + '/../../packaging') + '/AppIcon.ico',
-    tooltip: hotkey === '' ? 'Moo' : 'Moo  (' + hotkey + ')',
-    menu: [{ title: 'Moo ' + about().version, id: 'version', enabled: false }, { separator: true },
-      { title: 'Settings…', id: 'settings' }, { separator: true }, { title: 'Quit Moo', id: 'quit' }],
-    onClick: () => show(),
-    onMenu: (picked) => {
-      if (picked === 'quit') {
-        quit()
-      } else {
-        onMenu(picked)
-      }
-    }
-  })
+        image: (resources ? resources : exeDir() + '/../../packaging') + '/AppIcon.ico',
+        tooltip: hotkey === '' ? 'Moo' : 'Moo  (' + hotkey + ')',
+        menu: [
+          { title: 'Moo ' + about().version, id: 'version', enabled: false },
+          { separator: true },
+          { title: 'Settings…', id: 'settings' },
+          { separator: true },
+          { title: 'Quit Moo', id: 'quit' }
+        ],
+        onClick: () => show(),
+        onMenu: (picked) => {
+          if (picked === 'quit') {
+            quit()
+          } else {
+            onMenu(picked)
+          }
+        }
+          })
 }
 
 // Start menu changes aren't watched yet: the index is rebuilt at startup and on demand.
@@ -186,25 +215,12 @@ export fn dictionaryWarm() {
   return null
 }
 
-
 // ── System ──────────────────────────────────────────────────────────────────
-
-
-
 
 export fn bytesText(n) {
   let mb = n / 1048576
   return mb >= 1024 ? (mb / 1024).toFixed(1) + ' GB' : mb.toFixed(0) + ' MB'
 }
-
-
-
-
-
-
-
-
-
 
 // Watch for snippet keywords typed in other apps -> { ok, error }; asks for Accessibility when
 // there are keywords to watch.
@@ -225,25 +241,37 @@ let zoneIds = null
 
 // macOS's time-zone database in the shape tz.tish takes; the id list is read once.
 export let ZONES = {
-  names: () => {
-    if (zoneIds === null) {
-      zoneIds = windows.timeZones.names()
+    names: () => {
+      if (zoneIds === null) {
+        zoneIds = windows.timeZones.names()
+      }
+      return zoneIds
+    },
+      local: () => windows.timeZones.local(),
+      lookup: (zoneId, when) => zoneAt(zoneId, when),
+      byAbbreviation: (a) => windows.timeZones.byAbbreviation(a)
     }
-    return zoneIds
-  },
-  local: () => windows.timeZones.local(),
-  lookup: (zoneId, when) => zoneAt(zoneId, when),
-  byAbbreviation: (a) => windows.timeZones.byAbbreviation(a)
-}
 
 // -> { os, model, chip, cores, memoryBytes, uptimeSecs, diskTotal, diskFree, battery }
 export fn systemInfo() {
   let i = windows.systemInfo()
   let b = i.battery
   return {
-    os: i.os, model: i.model, chip: i.chip, cores: i.cores, memoryBytes: i.memory, uptimeSecs: i.uptime,
-    diskTotal: i.diskTotal, diskFree: i.diskFree,
-    battery: b === null ? null : { percent: b.percent, charging: b.charging, onAC: b.onAc, minutesToEmpty: b.minutesToEmpty, minutesToFull: b.minutesToFull }
+    os: i.os,
+    model: i.model,
+    chip: i.chip,
+    cores: i.cores,
+    memoryBytes: i.memory,
+    uptimeSecs: i.uptime,
+    diskTotal: i.diskTotal,
+    diskFree: i.diskFree,
+    battery: b === null ? null : {
+      percent: b.percent,
+      charging: b.charging,
+      onAC: b.onAc,
+      minutesToEmpty: b.minutesToEmpty,
+      minutesToFull: b.minutesToFull
+    }
   }
 }
 
@@ -261,8 +289,15 @@ export fn darkMode() {
 // memoryText }].
 export fn runningApps() {
   return windows.apps.running().map((a) => ({
-    name: a.name, icon: fileIcon(a.path), path: a.path, pid: a.pid, bundleId: a.bundleId,
-    active: a.active, hidden: a.hidden, memory: a.memory, memoryText: bytesText(a.memory)
+    name: a.name,
+    icon: fileIcon(a.path),
+    path: a.path,
+    pid: a.pid,
+    bundleId: a.bundleId,
+    active: a.active,
+    hidden: a.hidden,
+    memory: a.memory,
+    memoryText: bytesText(a.memory)
   }))
 }
 
@@ -270,17 +305,34 @@ export fn runningApps() {
 export fn appAction(pid, action) {
   if (env.MOO_SYSTEM_DRY_RUN && ['switch', 'hide', 'unhide', 'quit', 'force-quit'].indexOf(action) >= 0) {
     let app = windows.apps.running().filter((a) => a.pid === pid)
-    return app.length === 0 ? { ok: false, message: 'no app with pid ' + pid } : { ok: true, message: 'dry run: ' + action + ' ' + app[0].name }
+    return app.length === 0 ? { ok: false, message: 'no app with pid ' + pid } : {
+      ok: true,
+      message: 'dry run: ' + action + ' ' + app[0].name
+    }
   }
   let r = windows.apps.act(pid, action)
   return { ok: r.ok, message: r.ok ? r.message : r.error }
 }
 
-let SYSTEM_COMMANDS = ['lock', 'sleep', 'sleep-displays', 'restart', 'shut-down', 'log-out', 'empty-trash', 'screen-saver',
-  'dark-mode', 'mute', 'volume', 'eject', 'quit-all', 'hide-all']
+let SYSTEM_COMMANDS = [
+  'lock',
+  'sleep',
+  'sleep-displays',
+  'restart',
+  'shut-down',
+  'log-out',
+  'empty-trash',
+  'screen-saver',
+  'dark-mode',
+  'mute',
+  'volume',
+  'eject',
+  'quit-all',
+  'hide-all'
+]
 
 fn toggled(arg, current) {
-  return arg === 'on' ? true : (arg === 'off' ? false : !current)
+  return arg === 'on' ? true : arg === 'off' ? false : !current
 }
 
 fn done(message) {
@@ -316,65 +368,103 @@ export fn systemCommand(id, rawArg, cb) {
   let sys = windows.system
   if (id === 'lock') {
     return answer(actionResult(sys.lockScreen(), ''))
-  } else if (id === 'sleep') {
-    return answer(actionResult(sys.sleep(), ''))
-  } else if (id === 'sleep-displays') {
-    return answer(actionResult(sys.sleepDisplays(), ''))
-  } else if (id === 'restart') {
-    return answer(actionResult(sys.restart(), 'Restarting'))
-  } else if (id === 'shut-down') {
-    return answer(actionResult(sys.shutDown(), 'Shutting down'))
-  } else if (id === 'log-out') {
-    return answer(actionResult(sys.logOut(), 'Logging out'))
-  } else if (id === 'screen-saver') {
-    return answer(actionResult(sys.screenSaver(), ''))
-  } else if (id === 'empty-trash') {
-    sys.emptyTrash((e) => withUi(() => answer(actionResult(e, 'Recycle Bin emptied'))))
-    return done('Emptying the Recycle Bin')
-  } else if (id === 'eject') {
-    sys.ejectAll((r) => withUi(() => {
-      if (r.failed.length > 0) {
-        answer(failed('Could not eject ' + r.failed.join('; ')))
+  } else {
+    if (id === 'sleep') {
+      return answer(actionResult(sys.sleep(), ''))
+    } else {
+      if (id === 'sleep-displays') {
+        return answer(actionResult(sys.sleepDisplays(), ''))
       } else {
-        answer(done(r.ejected.length === 0 ? 'No disks to eject' : 'Ejected ' + r.ejected.join(', ')))
+        if (id === 'restart') {
+          return answer(actionResult(sys.restart(), 'Restarting'))
+        } else {
+          if (id === 'shut-down') {
+            return answer(actionResult(sys.shutDown(), 'Shutting down'))
+          } else {
+            if (id === 'log-out') {
+              return answer(actionResult(sys.logOut(), 'Logging out'))
+            } else {
+              if (id === 'screen-saver') {
+                return answer(actionResult(sys.screenSaver(), ''))
+              } else {
+                if (id === 'empty-trash') {
+                  sys.emptyTrash((e) => withUi(() => answer(actionResult(e, 'Recycle Bin emptied'))))
+                  return done('Emptying the Recycle Bin')
+                } else {
+                  if (id === 'eject') {
+                    sys.ejectAll((r) => withUi(() => {
+                      if (r.failed.length > 0) {
+                        answer(failed('Could not eject ' + r.failed.join('; ')))
+                      } else {
+                        answer(
+                          done(
+                            r.ejected.length === 0 ? 'No disks to eject' : 'Ejected ' + r.ejected.join(
+                              ', '
+                            )
+                          )
+                        )
+                      }
+                    }))
+                    return done('Ejecting')
+                  } else {
+                    if (id === 'dark-mode') {
+                      let now = sys.darkMode()
+                      if (now === null) {
+                        return answer(failed('cannot read the appearance'))
+                      }
+                      let on = toggled(arg, now)
+                      return answer(
+                        actionResult(sys.setDarkMode(on), on ? 'Dark mode on' : 'Dark mode off')
+                      )
+                    } else {
+                      if (id === 'mute') {
+                        let v = sys.volume()
+                        if ('error' in v) {
+                          return answer(failed(v.error))
+                        }
+                        let on = toggled(arg, v.muted)
+                        return answer(
+                          actionResult(sys.setMuted(on), on ? 'Sound muted' : 'Sound on')
+                        )
+                      } else {
+                        if (id === 'volume') {
+                          let v = sys.volume()
+                          if ('error' in v) {
+                            return answer(failed(v.error))
+                          }
+                          let a = arg.endsWith('%') ? arg.slice(0, arg.length - 1) : arg
+                          if (a === '') {
+                            return answer(
+                              done('Volume ' + v.level + '%' + (v.muted ? ' (muted)' : ''))
+                            )
+                          }
+                          let target = a === 'up' ? v.level + 10 : a === 'down' ? v.level - 10 : Number(
+                            a
+                          )
+                          if (isNaN(target)) {
+                            return answer(failed('not a volume: ' + rawArg))
+                          }
+                          target = Math.round(Math.min(Math.max(target, 0), 100))
+                          let e = sys.setVolume(target)
+                          if (e === null && target > 0 && v.muted) {
+                            e = sys.setMuted(false)
+                          }
+                          return answer(actionResult(e, 'Volume ' + target + '%'))
+                        } else {
+                          if (id === 'quit-all') {
+                            return answer(done('Asked ' + windows.apps.quitAll() + ' apps to quit'))
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
       }
-    }))
-    return done('Ejecting')
-  } else if (id === 'dark-mode') {
-    let now = sys.darkMode()
-    if (now === null) {
-      return answer(failed('cannot read the appearance'))
     }
-    let on = toggled(arg, now)
-    return answer(actionResult(sys.setDarkMode(on), on ? 'Dark mode on' : 'Dark mode off'))
-  } else if (id === 'mute') {
-    let v = sys.volume()
-    if ('error' in v) {
-      return answer(failed(v.error))
-    }
-    let on = toggled(arg, v.muted)
-    return answer(actionResult(sys.setMuted(on), on ? 'Sound muted' : 'Sound on'))
-  } else if (id === 'volume') {
-    let v = sys.volume()
-    if ('error' in v) {
-      return answer(failed(v.error))
-    }
-    let a = arg.endsWith('%') ? arg.slice(0, arg.length - 1) : arg
-    if (a === '') {
-      return answer(done('Volume ' + v.level + '%' + (v.muted ? ' (muted)' : '')))
-    }
-    let target = a === 'up' ? v.level + 10 : (a === 'down' ? v.level - 10 : Number(a))
-    if (isNaN(target)) {
-      return answer(failed('not a volume: ' + rawArg))
-    }
-    target = Math.round(Math.min(Math.max(target, 0), 100))
-    let e = sys.setVolume(target)
-    if (e === null && target > 0 && v.muted) {
-      e = sys.setMuted(false)
-    }
-    return answer(actionResult(e, 'Volume ' + target + '%'))
-  } else if (id === 'quit-all') {
-    return answer(done('Asked ' + windows.apps.quitAll() + ' apps to quit'))
   }
   return answer(done('Hid ' + windows.apps.hideAll() + ' apps'))
 }
@@ -391,7 +481,10 @@ export fn selectedText() {
 // Replace `typed` just before the cursor in the focused field with `text` -> { ok, error }.
 export fn replaceTyped(typed, text) {
   let e = windows.accessibility.replaceBeforeCursor(typed, text)
-  return e === null ? { ok: true, error: '' } : { ok: false, error: e === 'needs Accessibility permission' ? 'needs Accessibility' : e }
+  return e === null ? { ok: true, error: '' } : {
+    ok: false,
+    error: e === 'needs Accessibility permission' ? 'needs Accessibility' : e
+  }
 }
 
 // Each window's frame before Moo last moved it, by "pid:window", for Restore.
@@ -428,16 +521,21 @@ export fn arrangeWindow(layout) {
     let n = screens.length
     let j = layout === 'next-display' ? (i + 1) % n : (i + n - 1) % n
     target = moveToScreen(cur, screens[i].visible, screens[j].visible)
-  } else if (layout === 'restore') {
-    if (!(key in framesBefore)) {
-      return { ok: false, message: 'nothing to restore for ' + win.app }
-    }
-    target = framesBefore[key]
   } else {
-    target = layoutFrame(layout, screens[i].visible, cur)
+    if (layout === 'restore') {
+      if (!(key in framesBefore)) {
+        return { ok: false, message: 'nothing to restore for ' + win.app }
+      }
+      target = framesBefore[key]
+    } else {
+      target = layoutFrame(layout, screens[i].visible, cur)
+    }
   }
   if (env.MOO_SYSTEM_DRY_RUN) {
-    return { ok: true, message: 'dry run: ' + title + ' ' + win.app + ' ' + cur.x + ',' + cur.y + ' ' + cur.w + '×' + cur.h + ' → ' + target.x + ',' + target.y + ' ' + target.w + '×' + target.h }
+    return {
+      ok: true,
+      message: 'dry run: ' + title + ' ' + win.app + ' ' + cur.x + ',' + cur.y + ' ' + cur.w + '×' + cur.h + ' → ' + target.x + ',' + target.y + ' ' + target.w + '×' + target.h
+    }
   }
   if (layout !== 'restore') {
     framesBefore[key] = cur
@@ -458,7 +556,7 @@ export fn windowAction(pid, name, action) {
     fullscreen: 'Toggled full screen for ' + name,
     close: 'Closed ' + name + "'s window",
     raise: 'Raised ' + name,
-    unminimize: 'Restored ' + r.count + ' ' + name + ' window' + (r.count === 1 ? '' : 's'),
+    unminimize: 'Restored ' + r.count + ' ' + name + ' window' + (r.count === 1 ? '' : 's')
   }
   return { ok: true, message: done[action] }
 }

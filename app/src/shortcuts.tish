@@ -60,18 +60,34 @@ fn same(a, b) {
 }
 
 fn byFirst(a, b) {
-  return a[0] < b[0] ? -1 : (a[0] > b[0] ? 1 : (a[1] < b[1] ? -1 : (a[1] > b[1] ? 1 : 0)))
+  return a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : a[1] < b[1] ? -1 : a[1] > b[1] ? 1 : 0
 }
 
 export fn emptyConfig() {
-  return { launcher: '', shortcuts: [], hotkeys: [], aliases: [], disabled: [], keys: [], search: '',
-    ai: { model: '', providers: [] }, extra: {} }
+  return {
+    launcher: '',
+    shortcuts: [],
+    hotkeys: [],
+    aliases: [],
+    disabled: [],
+    keys: [],
+    search: '',
+    ai: { model: '', providers: [] },
+    extra: {}
+  }
 }
 
 export fn shortcut(v) {
   return {
-    keyword: str(v.keyword), name: str(v.name), kind: str(v.kind), target: str(v.target), input: str(v.input),
-    output: str(v.output), hotkey: str(v.hotkey), model: str(v.model), expand: v.expand === true
+    keyword: str(v.keyword),
+    name: str(v.name),
+    kind: str(v.kind),
+    target: str(v.target),
+    input: str(v.input),
+    output: str(v.output),
+    hotkey: str(v.hotkey),
+    model: str(v.model),
+    expand: v.expand === true
   }
 }
 
@@ -207,10 +223,12 @@ export fn parse(json, keysError) {
     let e = check(cfg, s, null)
     if (e === null) {
       cfg.shortcuts.push(normalize(s))
-    } else if (KINDS.indexOf(s.kind) < 0) {
-      warnings.push('shortcut ' + (i + 1) + ': ' + e)
     } else {
-      warnings.push('shortcut ' + (i + 1) + ' (' + s.keyword + '): ' + e)
+      if (KINDS.indexOf(s.kind) < 0) {
+        warnings.push('shortcut ' + (i + 1) + ': ' + e)
+      } else {
+        warnings.push('shortcut ' + (i + 1) + ' (' + s.keyword + '): ' + e)
+      }
     }
   }
   let hk = Array.isArray(root.hotkeys) ? root.hotkeys : []
@@ -371,7 +389,7 @@ export fn setProvider(cfg, id, field, value) {
       p[PROVIDER_FIELDS[j]] = ''
     }
     cfg.ai.providers.push(p)
-    cfg.ai.providers.sort((a, b) => a.id < b.id ? -1 : (a.id > b.id ? 1 : 0))
+    cfg.ai.providers.sort((a, b) => a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
   }
   p[field] = value
   return null
@@ -417,7 +435,9 @@ export fn toJson(cfg) {
     if (s.kind === 'ai' && s.model !== '') {
       fields.push(['model', s.model])
     }
-    out = out + (i === 0 ? '\n    { ' : ',\n    { ') + fields.map((f) => q(f[0]) + ': ' + q(f[1])).join(', ')
+    out = out + (i === 0 ? '\n    { ' : ',\n    { ') + fields.map((f) => q(f[0]) + ': ' + q(f[1])).join(
+      ', '
+    )
     if (s.kind === 'text' && s.expand) {
       out = out + ', "expand": true'
     }
@@ -427,7 +447,9 @@ export fn toJson(cfg) {
   out = out + '  "hotkeys": ['
   for (let i = 0; i < cfg.hotkeys.length; i = i + 1) {
     let h = cfg.hotkeys[i]
-    out = out + (i === 0 ? '\n    { "keys": ' : ',\n    { "keys": ') + q(h.keys) + ', "run": ' + q(h.run)
+    out = out + (i === 0 ? '\n    { "keys": ' : ',\n    { "keys": ') + q(h.keys) + ', "run": ' + q(
+      h.run
+    )
     if (h.query !== '') {
       out = out + ', "query": ' + q(h.query)
     }
@@ -448,7 +470,9 @@ export fn toJson(cfg) {
       out = out + ', "providers": {'
       for (let i = 0; i < cfg.ai.providers.length; i = i + 1) {
         let p = cfg.ai.providers[i]
-        let fields = PROVIDER_FIELDS.filter((f) => p[f] !== '').map((f) => ' ' + q(f) + ': ' + q(p[f]))
+        let fields = PROVIDER_FIELDS.filter((f) => p[f] !== '').map((f) => ' ' + q(f) + ': ' + q(
+          p[f]
+        ))
         out = out + (i === 0 ? '\n    ' : ',\n    ') + q(p.id) + ': {' + fields.join(',') + ' }'
       }
       out = out + '\n  }'
@@ -470,8 +494,9 @@ export fn needsQuery(template) {
 
 // Percent-encode everything but A-Z a-z 0-9 - _ . ~ (UTF-8 bytes).
 export fn percentEncode(s) {
-  return encodeURIComponent(s).split('!').join('%21').split("'").join('%27').split('(').join('%28')
-    .split(')').join('%29').split('*').join('%2A')
+  return encodeURIComponent(s).split('!').join('%21').split("'").join('%27').split('(').join('%28').split(
+    ')'
+  ).join('%29').split('*').join('%2A')
 }
 
 // How each kind inserts values: `url` percent-encodes; `shell` writes `"$1"`, `"$2"`, `"$3"` for
@@ -481,9 +506,15 @@ let SHELL_ARGS = { query: '"$1"', clipboard: '"$2"', selection: '"$3"' }
 
 // `vars`: { query, clipboard, selection, date, time }.
 export fn expand(template, vars, kind) {
-  let put = (name, v) => kind === 'url' ? percentEncode(v) : (kind === 'shell' ? SHELL_ARGS[name] : v)
-  let tokens = [['{query}', 'query'], ['{}', 'query'], ['{clipboard}', 'clipboard'], ['{selection}', 'selection'],
-    ['{date}', 'date'], ['{time}', 'time']]
+  let put = (name, v) => kind === 'url' ? percentEncode(v) : kind === 'shell' ? SHELL_ARGS[name] : v
+  let tokens = [
+    ['{query}', 'query'],
+    ['{}', 'query'],
+    ['{clipboard}', 'clipboard'],
+    ['{selection}', 'selection'],
+    ['{date}', 'date'],
+    ['{time}', 'time']
+  ]
   let out = ''
   let rest = template
   while (true) {

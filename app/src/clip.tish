@@ -36,7 +36,12 @@ let history = []
 
 // A copy from the native watcher.
 export fn record(c) {
-  history = pushClip(history, { text: c.text, app: c.app, appPath: c.appPath, time: Date.now() / 1000 })
+  history = pushClip(history, {
+    text: c.text,
+    app: c.app,
+    appPath: c.appPath,
+    time: Date.now() / 1000
+  })
 }
 
 export fn clearClips() {
@@ -53,7 +58,10 @@ export fn clipboardHistory(query, limit, fuzzy, icon) {
   }
   let now = Date.now() / 1000
   return picked.map((c) => ({
-    text: c.text, preview: preview(c.text, 80), app: c.app,
-    icon: c.appPath === '' ? '' : icon(c.appPath), ago: ago(now - c.time)
+    text: c.text,
+    preview: preview(c.text, 80),
+    app: c.app,
+    icon: c.appPath === '' ? '' : icon(c.appPath),
+    ago: ago(now - c.time)
   }))
 }

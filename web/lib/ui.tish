@@ -2,21 +2,17 @@
 import { Icon } from './icons.tish'
 
 export fn Hero(props) {
-  return (
-    <div class="wrap hero" style={props.style ? props.style : null}>
-      <span class="eyebrow up"><b></b>{props.eyebrow}</span>
+  return <div class="wrap hero" style={props.style ? props.style : null}>
+      <span class="eyebrow up"><b />{props.eyebrow}</span>
       {props.children}
     </div>
-  )
 }
 
 fn Query(props) {
-  return (
-    <div class="q">
+  return <div class="q">
       <div class="field"><Icon name="search" /><span class="type" style={'--n:' + props.text.length}>{props.text}</span><span class="keys"><kbd>⌘</kbd><kbd>Space</kbd></span></div>
       <div class="rows">{props.children}</div>
     </div>
-  )
 }
 
 fn Row(props) {
@@ -25,8 +21,7 @@ fn Row(props) {
 
 // Four queries and their results, cycled by CSS.
 export fn Demo() {
-  return (
-    <div class="stage up d4"><div class="win"><div class="glass"><div class="deck">
+  return <div class="stage up d4"><div class="win"><div class="glass"><div class="deck">
       <Query text="12% of 3,400">
         <Row icon="=" meta="↵ copy" hit={true}><span class="big">408</span></Row>
         <Row icon="⇄" meta="math"><em>3,400 × 0.12</em></Row>
@@ -48,5 +43,4 @@ export fn Demo() {
         <Row icon="◐" meta="system">Toggle dark mode</Row>
       </Query>
     </div></div></div></div>
-  )
 }

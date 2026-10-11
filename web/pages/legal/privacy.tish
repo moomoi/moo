@@ -3,8 +3,7 @@ import { Legal, Contact } from '../../lib/legal.tish'
 export fn head(ctx) { return { title: 'Privacy' } }
 
 export fn page(ctx) {
-  return (
-    <Legal active="privacy">
+  return <Legal active="privacy">
       <h1>Privacy</h1>
       <p class="date">Last updated October 2026</p>
       <h2>Local first</h2>
@@ -19,5 +18,4 @@ export fn page(ctx) {
       <p>moo.moi serves plain HTML and CSS. No scripts, no cookies, no trackers.</p>
       <Contact />
     </Legal>
-  )
 }

@@ -35,12 +35,16 @@ fn readBytes(reader, bytes, done) {
   macos.whenSettled(reader.read(), (r, err) => {
     if (err !== null) {
       done(null)
-    } else if (r.done) {
-      done(bytes.length > 0 ? bytes : null)
-    } else if (bytes.length + r.value.length > MAX_BYTES) {
-      done(null)
     } else {
-      readBytes(reader, bytes.concat(r.value), done)
+      if (r.done) {
+        done(bytes.length > 0 ? bytes : null)
+      } else {
+        if (bytes.length + r.value.length > MAX_BYTES) {
+          done(null)
+        } else {
+          readBytes(reader, bytes.concat(r.value), done)
+        }
+      }
     }
   })
 }
@@ -58,20 +62,24 @@ fn cached(path, source, cb) {
       fetching[path] = false
       return
     }
-    readBytes(res.body.getReader(), [], (bytes) => {
-      fetching[path] = false
-      if (bytes === null) {
-        return
-      }
-      mkdir(iconDir(), { recursive: true })
-      if (writeFile(path + '.tmp', bytes) !== null || rename(path + '.tmp', path) !== null) {
-        return
-      }
-      let name = macos.icons.image(path, false, true)
-      if (name !== '' && typeof cb === 'function') {
-        cb(name)
-      }
-    })
+    readBytes(
+          res.body.getReader(),
+          [],
+          (bytes) => {
+            fetching[path] = false
+            if (bytes === null) {
+              return
+            }
+            mkdir(iconDir(), { recursive: true })
+            if (writeFile(path + '.tmp', bytes) !== null || rename(path + '.tmp', path) !== null) {
+              return
+            }
+            let name = macos.icons.image(path, false, true)
+            if (name !== '' && typeof cb === 'function') {
+              cb(name)
+            }
+          }
+            )
   })
   return have
 }

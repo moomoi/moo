@@ -3,14 +3,20 @@ import { Icon } from '../../lib/icons.tish'
 import { PLUGINS, tagLabel } from '../../lib/plugins.tish'
 import { PLUGINS_REPO } from '../../lib/links.tish'
 
-export fn paths(ctx) { return PLUGINS.map(p => ({ params: { id: p.id } })) }
+export fn paths(ctx) { return PLUGINS.map((p) => ({ params: { id: p.id } })) }
 
 export fn load(ctx) {
-  let found = PLUGINS.filter(p => p.id === ctx.params.id)
+  let found = PLUGINS.filter((p) => p.id === ctx.params.id)
   return found.length === 0 ? { notFound: true } : { props: { plugin: found[0] } }
 }
 
-export fn head(ctx, props) { return { title: props.plugin.name + ' · Moo Marketplace', rawTitle: true, description: props.plugin.text } }
+export fn head(ctx, props) {
+  return {
+    title: props.plugin.name + ' · Moo Marketplace',
+    rawTitle: true,
+    description: props.plugin.text
+  }
+}
 
 // What the plugin may reach, for the facts box.
 fn access(p) {
@@ -22,12 +28,13 @@ fn access(p) {
 export fn page(ctx, props) {
   let p = props.plugin
   let source = PLUGINS_REPO + '/tree/main/' + p.id
-  return (
-    <div class="wrap pdp">
+  return <div class="wrap pdp">
       <a class="back" href="/marketplace">← Marketplace</a>
       <header class="up">
         <div class="glyph big">{p.glyph}</div>
-        <div class="who"><h1>{p.name}</h1><p>{p.text}</p><div class="meta"><span class={p.tag === 'core' ? 'tag core' : 'tag'}>{tagLabel(p)}</span><span class="by">{'by ' + p.by}</span></div></div>
+        <div class="who"><h1>{p.name}</h1><p>{p.text}</p><div class="meta"><span class={p.tag === 'core' ? 'tag core' : 'tag'}>{tagLabel(
+    p
+  )}</span><span class="by">{'by ' + p.by}</span></div></div>
         <div class="get"><a class="btn go" href={'moo://plugins/' + p.id}><Icon name="down" />Install</a><span class="fine">Opens in moo. <a href="/get">Don't have it?</a></span></div>
       </header>
       <div class="cols up d2">
@@ -36,7 +43,7 @@ export fn page(ctx, props) {
           <p class="about">{raw(p.about)}</p>
           <h2>Commands</h2>
           <ul class="cmds">
-            {p.commands.map(c => <li><span class="ic">{p.glyph}</span><span><b>{c[0]}</b>{c[1] !== '' ? <small>{c[1]}</small> : null}</span></li>)}
+            {p.commands.map((c) => <li><span class="ic">{p.glyph}</span><span><b>{c[0]}</b>{c[1] !== '' ? <small>{c[1]}</small> : null}</span></li>)}
           </ul>
           {p.docs ? <a class="btn ghost" href={p.docs}>Read the docs</a> : null}{p.docs ? ' ' : null}<a class="btn ghost" href={source}>View source</a>
         </div>
@@ -49,5 +56,4 @@ export fn page(ctx, props) {
         </aside>
       </div>
     </div>
-  )
 }
