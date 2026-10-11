@@ -999,8 +999,16 @@ pub fn show() {
         if !w.isVisible() && PANEL.with(|p| p.borrow().is_some()) {
             animate_open();
         }
+        // Appears at once: no window animation in (show) — hide() turns the fade out back on.
+        w.setAnimationBehavior(objc2_app_kit::NSWindowAnimationBehavior::None);
+        // Ordered in with implicit animations off (glass and layers would otherwise fade in).
+        objc2_app_kit::NSAnimationContext::beginGrouping();
+        let cx = objc2_app_kit::NSAnimationContext::currentContext();
+        cx.setDuration(0.0);
+        cx.setAllowsImplicitAnimation(false);
         w.orderFrontRegardless();
         w.makeKeyWindow();
+        objc2_app_kit::NSAnimationContext::endGrouping();
         // Liquid Glass renders flat while its app is inactive.
         app(mtm).activate();
         focus_search(&w);
@@ -1042,8 +1050,17 @@ pub fn hide() {
     close_quick_look();
     stop_open_animation();
     stop_morph();
+    let mut was_visible = false;
     if let Some(w) = main_window(mtm) {
+        was_visible = w.isVisible();
+        // Fades out (the system's window animation), though it appeared without one.
+        w.setAnimationBehavior(objc2_app_kit::NSWindowAnimationBehavior::Default);
         w.orderOut(None);
+    }
+    // onShow("hide"): changes for the next showing are made while nothing is on screen (and only
+    // when something was).
+    if was_visible {
+        defer_callback("show", "hide");
     }
     // A hidden window gets no mouseExited, so the hovered row would still be lit when it shows.
     if let Some(cls) = AnyClass::get(c"TishHoverButton") {

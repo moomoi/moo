@@ -6204,9 +6204,15 @@ fn moveInGrid(name) {
 // the panel opened (a command that redirected to its blocker, say) stays.
 let hudSetAt = 0
 
-fn onShow(_) {
+// Also called with "hide" once the panel is hidden: the next greeting is picked then, so the
+// panel never shows the old one and swaps it (the show callback comes after it is on screen).
+fn onShow(which) {
+  if (which === 'hide') {
+    fieldGreeting = freshGreeting()
+    refresh()
+    return
+  }
   shell.bubble = -1
-  fieldGreeting = freshGreeting()
   let keep = Date.now() - hudSetAt < 1000 ? shell.hud : ''
   setQuery(shell.query)
   if (keep !== '') {
@@ -7651,6 +7657,9 @@ let served = cliServe(onCli)
 console.log('moo: ' + config.shortcuts.length + ' shortcuts, ' + hotkeyStatus.length + ' hotkeys; cli ' + (served.ok ? served.path : served.error))
 
 refreshProviders()
+// The idle bar's category buttons: loaded here as well as in refresh(), which a launch can reach
+// only after the panel first shows (a warm file index never calls it).
+CATEGORIES = loadPins()
 shell.apps = rootResults('')
 compose()
 syncShape()
