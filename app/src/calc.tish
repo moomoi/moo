@@ -36,7 +36,7 @@ fn sig(v, digits) {
     return '0'
   }
   let a = Math.abs(v)
-  if (a < 1e-9 || a >= 1e15) {
+  if (a < 0.000000001 || a >= 1000000000000000) {
     let s = v.toExponential(Math.max(Math.min(digits, 7) - 1, 0))
     let i = s.indexOf('e')
     let mantissa = trimZeros(s.slice(0, i))
@@ -94,7 +94,7 @@ fn isDigit(c) {
 }
 
 fn isHexDigit(c) {
-  return isDigit(c) || (typeof c === 'string' && 'abcdefABCDEF'.indexOf(c) >= 0 && c.length === 1)
+  return isDigit(c) || typeof c === 'string' && 'abcdefABCDEF'.indexOf(c) >= 0 && c.length === 1
 }
 
 fn isDigitOf(c, radix) {
@@ -126,78 +126,122 @@ fn lex(s) {
     let next = c[i + 1]
     if (isSpace(ch)) {
       i = i + 1
-    } else if (ch === '0' && typeof next === 'string' && 'xXbBoO'.indexOf(next) >= 0 && isHexDigit(c[i + 2])) {
-      let low = next.toLowerCase()
-      let radix = low === 'x' ? 16 : (low === 'b' ? 2 : 8)
-      let j = i + 2
-      let digits = ''
-      while (j < c.length && (isDigitOf(c[j], radix) || c[j] === '_')) {
-        if (c[j] !== '_') {
-          digits = digits + c[j]
-        }
-        j = j + 1
-      }
-      if (digits === '') {
-        return null
-      }
-      out.push({ k: 'based', v: parseInt(digits, radix) })
-      i = j
-    } else if (isDigit(ch) || (ch === '.' && isDigit(next))) {
-      let num = ''
-      let j = i
-      while (j < c.length) {
-        let d = c[j]
-        if (isDigit(d) || d === '.' || d === '_') {
-          if (d !== '_') {
-            num = num + d
-          }
-          j = j + 1
-        } else if (d === ',' && isDigit(c[j + 1]) && isDigit(c[j + 2]) && isDigit(c[j + 3]) && !isDigit(c[j + 4])) {
-          // Thousands separator: "1,000".
-          j = j + 1
-        } else if ((d === 'e' || d === 'E') && (isDigit(c[j + 1]) || ((c[j + 1] === '+' || c[j + 1] === '-') && isDigit(c[j + 2])))) {
-          num = num + 'e'
-          if (c[j + 1] === '+' || c[j + 1] === '-') {
-            num = num + c[j + 1]
-            j = j + 1
-          }
-          j = j + 1
-        } else {
-          break
-        }
-      }
-      // "3.1.4" or "1." with nothing after: not one number.
-      if (num.split('.').length > 2 || num.endsWith('.')) {
-        return null
-      }
-      let n = Number(num)
-      if (isNaN(n)) {
-        return null
-      }
-      out.push({ k: 'num', v: n })
-      i = j
-    } else if (isLetter(ch) || ch === 'π' || ch === '_') {
-      let j = i
-      let id = ''
-      while (j < c.length && (LETTER_OR_DIGIT.test(c[j]) || c[j] === '_' || c[j] === 'π')) {
-        id = id + c[j]
-        j = j + 1
-      }
-      out.push({ k: 'id', v: id.toLowerCase() })
-      i = j
-    } else if ('+-*/^%!(),'.indexOf(ch) >= 0) {
-      out.push({ k: 'op', v: ch })
-      i = i + 1
     } else {
-      return null
+      if (ch === '0' && typeof next === 'string' && 'xXbBoO'.indexOf(next) >= 0 && isHexDigit(
+        c[i + 2]
+      )) {
+        let low = next.toLowerCase()
+        let radix = low === 'x' ? 16 : low === 'b' ? 2 : 8
+        let j = i + 2
+        let digits = ''
+        while (j < c.length && (isDigitOf(c[j], radix) || c[j] === '_')) {
+          if (c[j] !== '_') {
+            digits = digits + c[j]
+          }
+          j = j + 1
+        }
+        if (digits === '') {
+          return null
+        }
+        out.push({ k: 'based', v: parseInt(digits, radix) })
+        i = j
+      } else {
+        if (isDigit(ch) || ch === '.' && isDigit(next)) {
+          let num = ''
+          let j = i
+          while (j < c.length) {
+            let d = c[j]
+            if (isDigit(d) || d === '.' || d === '_') {
+              if (d !== '_') {
+                num = num + d
+              }
+              j = j + 1
+            } else {
+              if (d === ',' && isDigit(c[j + 1]) && isDigit(c[j + 2]) && isDigit(c[j + 3]) && !isDigit(
+                c[j + 4]
+              )) {
+                // Thousands separator: "1,000".
+                j = j + 1
+              } else {
+                if ((d === 'e' || d === 'E') && (isDigit(c[j + 1]) || (c[j + 1] === '+' || c[j + 1] === '-') && isDigit(
+                  c[j + 2]
+                ))) {
+                  num = num + 'e'
+                  if (c[j + 1] === '+' || c[j + 1] === '-') {
+                    num = num + c[j + 1]
+                    j = j + 1
+                  }
+                  j = j + 1
+                } else {
+                  break
+                }
+              }
+            }
+          }
+          // "3.1.4" or "1." with nothing after: not one number.
+          if (num.split('.').length > 2 || num.endsWith('.')) {
+            return null
+          }
+          let n = Number(num)
+          if (isNaN(n)) {
+            return null
+          }
+          out.push({ k: 'num', v: n })
+          i = j
+        } else {
+          if (isLetter(ch) || ch === 'π' || ch === '_') {
+            let j = i
+            let id = ''
+            while (j < c.length && (LETTER_OR_DIGIT.test(c[j]) || c[j] === '_' || c[j] === 'π')) {
+              id = id + c[j]
+              j = j + 1
+            }
+            out.push({ k: 'id', v: id.toLowerCase() })
+            i = j
+          } else {
+            if ('+-*/^%!(),'.indexOf(ch) >= 0) {
+              out.push({ k: 'op', v: ch })
+              i = i + 1
+            } else {
+              return null
+            }
+          }
+        }
+      }
     }
   }
   return out
 }
 
 let CONSTANTS = { pi: Math.PI, 'π': Math.PI, e: Math.E, tau: 2 * Math.PI, phi: 1.618033988749895 }
-let FUNCTIONS = ['sqrt', 'cbrt', 'abs', 'round', 'floor', 'ceil', 'trunc', 'sin', 'cos', 'tan', 'asin', 'acos', 'atan',
-  'sinh', 'cosh', 'tanh', 'ln', 'log', 'log2', 'log10', 'exp', 'min', 'max', 'pow', 'hypot', 'fact']
+let FUNCTIONS = [
+  'sqrt',
+  'cbrt',
+  'abs',
+  'round',
+  'floor',
+  'ceil',
+  'trunc',
+  'sin',
+  'cos',
+  'tan',
+  'asin',
+  'acos',
+  'atan',
+  'sinh',
+  'cosh',
+  'tanh',
+  'ln',
+  'log',
+  'log2',
+  'log10',
+  'exp',
+  'min',
+  'max',
+  'pow',
+  'hypot',
+  'fact'
+]
 
 // Deeper input isn't arithmetic anyone types; without a limit `((((…` or `----…` would recurse
 // until the stack runs out.
@@ -357,10 +401,12 @@ fn parser(toks) {
           return null
         }
         x = val(f)
-      } else if (eat('%')) {
-        x = { v: x.v / 100, pct: true }
       } else {
-        return x
+        if (eat('%')) {
+          x = { v: x.v / 100, pct: true }
+        } else {
+          return x
+        }
       }
     }
   }
@@ -389,10 +435,12 @@ fn parser(toks) {
     if (eat('-')) {
       let x = unary()
       r = x === null ? null : { v: -x.v, pct: x.pct }
-    } else if (eat('+')) {
-      r = unary()
     } else {
-      r = power()
+      if (eat('+')) {
+        r = unary()
+      } else {
+        r = power()
+      }
     }
     p.depth = p.depth - 1
     return r
@@ -411,27 +459,35 @@ fn parser(toks) {
         b = unary()
         if (b === null) { return null }
         a = val(a.v * b.v)
-      } else if (isOp(t, '/')) {
-        p.pos = p.pos + 1
-        b = unary()
-        if (b === null) { return null }
-        a = val(a.v / b.v)
-      } else if (t !== null && t.k === 'id' && t.v === 'mod') {
-        p.pos = p.pos + 1
-        b = unary()
-        if (b === null) { return null }
-        a = val(a.v - b.v * Math.floor(a.v / b.v))
-      } else if (t !== null && t.k === 'id' && t.v === 'of' && a.pct) {
-        p.pos = p.pos + 1
-        b = unary()
-        if (b === null) { return null }
-        a = val(a.v * b.v)
-      } else if (startsOperand()) {
-        b = unary()
-        if (b === null) { return null }
-        a = val(a.v * b.v)
       } else {
-        return a
+        if (isOp(t, '/')) {
+          p.pos = p.pos + 1
+          b = unary()
+          if (b === null) { return null }
+          a = val(a.v / b.v)
+        } else {
+          if (t !== null && t.k === 'id' && t.v === 'mod') {
+            p.pos = p.pos + 1
+            b = unary()
+            if (b === null) { return null }
+            a = val(a.v - b.v * Math.floor(a.v / b.v))
+          } else {
+            if (t !== null && t.k === 'id' && t.v === 'of' && a.pct) {
+              p.pos = p.pos + 1
+              b = unary()
+              if (b === null) { return null }
+              a = val(a.v * b.v)
+            } else {
+              if (startsOperand()) {
+                b = unary()
+                if (b === null) { return null }
+                a = val(a.v * b.v)
+              } else {
+                return a
+              }
+            }
+          }
+        }
       }
     }
   }
@@ -460,7 +516,9 @@ fn parser(toks) {
 }
 
 fn normalize(s) {
-  return s.trim().split('×').join('*').split('÷').join('/').split('−').join('-').split('**').join('^')
+  return s.trim().split('×').join('*').split('÷').join('/').split('−').join('-').split('**').join(
+    '^'
+  )
 }
 
 // Evaluate an arithmetic expression, or null.
@@ -518,7 +576,7 @@ let UNITS = [
   u(['yd', 'yard', 'yards'], 'yd', 'length', 0.9144),
   u(['mi', 'mile', 'miles'], 'mi', 'length', 1609.344),
   u(['nmi', 'nauticalmile', 'nauticalmiles'], 'nmi', 'length', 1852),
-  u(['mg', 'milligram', 'milligrams'], 'mg', 'mass', 1e-6),
+  u(['mg', 'milligram', 'milligrams'], 'mg', 'mass', 0.000001),
   u(['g', 'gram', 'grams', 'gramme', 'grammes'], 'g', 'mass', 0.001),
   u(['kg', 'kilo', 'kilos', 'kilogram', 'kilograms'], 'kg', 'mass', 1),
   u(['t', 'tonne', 'tonnes', 'ton', 'tons'], 't', 'mass', 1000),
@@ -538,7 +596,13 @@ let UNITS = [
   u(['qt', 'quart', 'quarts'], 'qt', 'volume', 0.946352946),
   u(['gal', 'gallon', 'gallons'], 'gal', 'volume', 3.785411784),
   { names: ['c', '°c', 'celsius', 'degc'], symbol: '°C', dim: 'temp', factor: 1, offset: 273.15 },
-  { names: ['f', '°f', 'fahrenheit', 'degf'], symbol: '°F', dim: 'temp', factor: 5 / 9, offset: 459.67 * 5 / 9 },
+  {
+    names: ['f', '°f', 'fahrenheit', 'degf'],
+    symbol: '°F',
+    dim: 'temp',
+    factor: 5 / 9,
+    offset: 459.67 * 5 / 9
+  },
   u(['k', 'kelvin'], 'K', 'temp', 1),
   u(['ms', 'millisecond', 'milliseconds'], 'ms', 'time', 0.001),
   u(['s', 'sec', 'secs', 'second', 'seconds'], 's', 'time', 1),
@@ -550,11 +614,11 @@ let UNITS = [
   u(['yr', 'yrs', 'year', 'years'], 'years', 'time', 31556952),
   u(['bit', 'bits'], 'bit', 'data', 0.125),
   u(['byte', 'bytes'], 'B', 'data', 1),
-  u(['kb', 'kilobyte', 'kilobytes'], 'KB', 'data', 1e3),
-  u(['mb', 'megabyte', 'megabytes'], 'MB', 'data', 1e6),
-  u(['gb', 'gigabyte', 'gigabytes'], 'GB', 'data', 1e9),
-  u(['tb', 'terabyte', 'terabytes'], 'TB', 'data', 1e12),
-  u(['pb', 'petabyte', 'petabytes'], 'PB', 'data', 1e15),
+  u(['kb', 'kilobyte', 'kilobytes'], 'KB', 'data', 1000),
+  u(['mb', 'megabyte', 'megabytes'], 'MB', 'data', 1000000),
+  u(['gb', 'gigabyte', 'gigabytes'], 'GB', 'data', 1000000000),
+  u(['tb', 'terabyte', 'terabytes'], 'TB', 'data', 1000000000000),
+  u(['pb', 'petabyte', 'petabytes'], 'PB', 'data', 1000000000000000),
   u(['kib', 'kibibyte', 'kibibytes'], 'KiB', 'data', 1024),
   u(['mib', 'mebibyte', 'mebibytes'], 'MiB', 'data', 1048576),
   u(['gib', 'gibibyte', 'gibibytes'], 'GiB', 'data', 1073741824),
@@ -564,9 +628,9 @@ let UNITS = [
   u(['mph'], 'mph', 'speed', 0.44704),
   u(['kn', 'kt', 'knot', 'knots'], 'kn', 'speed', 0.514444444),
   u(['ft/s', 'fps'], 'ft/s', 'speed', 0.3048),
-  u(['cm2', 'cm²'], 'cm²', 'area', 1e-4),
+  u(['cm2', 'cm²'], 'cm²', 'area', 0.0001),
   u(['m2', 'm²', 'sqm'], 'm²', 'area', 1),
-  u(['km2', 'km²', 'sqkm'], 'km²', 'area', 1e6),
+  u(['km2', 'km²', 'sqkm'], 'km²', 'area', 1000000),
   u(['in2', 'in²', 'sqin'], 'in²', 'area', 0.00064516),
   u(['ft2', 'ft²', 'sqft'], 'ft²', 'area', 0.09290304),
   u(['mi2', 'mi²', 'sqmi'], 'mi²', 'area', 2589988.110336),
@@ -577,10 +641,10 @@ let UNITS = [
   u(['cal', 'calorie', 'calories'], 'cal', 'energy', 4.184),
   u(['kcal', 'kilocalorie', 'kilocalories'], 'kcal', 'energy', 4184),
   u(['wh'], 'Wh', 'energy', 3600),
-  u(['kwh'], 'kWh', 'energy', 3.6e6),
+  u(['kwh'], 'kWh', 'energy', 3600000),
   u(['pa', 'pascal', 'pascals'], 'Pa', 'pressure', 1),
   u(['kpa'], 'kPa', 'pressure', 1000),
-  u(['bar', 'bars'], 'bar', 'pressure', 1e5),
+  u(['bar', 'bars'], 'bar', 'pressure', 100000),
   u(['psi'], 'psi', 'pressure', 6894.757293168),
   u(['atm'], 'atm', 'pressure', 101325),
   u(['mmhg'], 'mmHg', 'pressure', 133.322387415),
@@ -589,8 +653,28 @@ let UNITS = [
 ]
 
 // "5 km" with no target converts to the other measuring system.
-let COUNTERPARTS = { km: 'mi', mi: 'km', m: 'ft', ft: 'm', cm: 'in', 'in': 'cm', mm: 'in', yd: 'm', kg: 'lb', lb: 'kg',
-  g: 'oz', oz: 'g', L: 'gal', gal: 'L', ml: 'fl oz', 'fl oz': 'ml', '°C': '°F', '°F': '°C', 'km/h': 'mph', mph: 'km/h' }
+let COUNTERPARTS = {
+  km: 'mi',
+  mi: 'km',
+  m: 'ft',
+  ft: 'm',
+  cm: 'in',
+  'in': 'cm',
+  mm: 'in',
+  yd: 'm',
+  kg: 'lb',
+  lb: 'kg',
+  g: 'oz',
+  oz: 'g',
+  L: 'gal',
+  gal: 'L',
+  ml: 'fl oz',
+  'fl oz': 'ml',
+  '°C': '°F',
+  '°F': '°C',
+  'km/h': 'mph',
+  mph: 'km/h'
+}
 
 fn unit(name) {
   let n = name.trim().toLowerCase().split(' ').join('')
@@ -618,10 +702,38 @@ fn convertUnit(v, from, to) {
 
 // ── Currency ────────────────────────────────────────────────────────────────
 
-let CURRENCY_WORDS = { '$': 'USD', 'us$': 'USD', dollar: 'USD', dollars: 'USD', '€': 'EUR', euro: 'EUR', euros: 'EUR',
-  '£': 'GBP', sterling: 'GBP', '¥': 'JPY', yen: 'JPY', '₹': 'INR', rupee: 'INR', rupees: 'INR', yuan: 'CNY',
-  rmb: 'CNY', '₩': 'KRW', won: 'KRW', '₺': 'TRY', lira: 'TRY', '₪': 'ILS', shekel: 'ILS', shekels: 'ILS',
-  '฿': 'THB', baht: 'THB', franc: 'CHF', francs: 'CHF', real: 'BRL', reais: 'BRL', peso: 'MXN' }
+let CURRENCY_WORDS = {
+  '$': 'USD',
+  'us$': 'USD',
+  dollar: 'USD',
+  dollars: 'USD',
+  '€': 'EUR',
+  euro: 'EUR',
+  euros: 'EUR',
+  '£': 'GBP',
+  sterling: 'GBP',
+  '¥': 'JPY',
+  yen: 'JPY',
+  '₹': 'INR',
+  rupee: 'INR',
+  rupees: 'INR',
+  yuan: 'CNY',
+  rmb: 'CNY',
+  '₩': 'KRW',
+  won: 'KRW',
+  '₺': 'TRY',
+  lira: 'TRY',
+  '₪': 'ILS',
+  shekel: 'ILS',
+  shekels: 'ILS',
+  '฿': 'THB',
+  baht: 'THB',
+  franc: 'CHF',
+  francs: 'CHF',
+  real: 'BRL',
+  reais: 'BRL',
+  peso: 'MXN'
+}
 
 let SYMBOL_PREFIXES = ['$', '€', '£', '¥', '₹', '₩', '₺', '₪', '฿', '₽']
 
@@ -726,7 +838,7 @@ fn quantity(text, rates) {
 let BASES = { hex: 16, hexadecimal: 16, bin: 2, binary: 2, oct: 8, octal: 8, dec: 10, decimal: 10 }
 
 fn inBase(v, base) {
-  if (v !== Math.floor(v) || Math.abs(v) > 9.007e15) {
+  if (v !== Math.floor(v) || Math.abs(v) > 9007000000000000) {
     return null
   }
   let sign = v < 0 ? '-' : ''

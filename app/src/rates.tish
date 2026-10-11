@@ -59,7 +59,9 @@ fn refresh() {
   fetching = true
   macos.whenSettled(fetch(URL, { timeout: 15000 }), (res, err) => {
     if (err !== null || !res.ok) {
-      console.log('moo: currency rates: ' + (err !== null ? err : (res.error ? res.error : 'HTTP ' + res.status)))
+      console.log(
+        'moo: currency rates: ' + (err !== null ? err : res.error ? res.error : 'HTTP ' + res.status)
+      )
       fetching = false
       return
     }

@@ -2,15 +2,19 @@ import { Icon } from '../lib/icons.tish'
 import { Hero } from '../lib/ui.tish'
 import { BREW } from '../lib/links.tish'
 
-export fn head(ctx) { return { title: 'Download', description: 'Download moo for macOS 14 and later, Apple silicon and Intel, or install it with Homebrew.' } }
+export fn head(ctx) {
+  return {
+    title: 'Download',
+    description: 'Download moo for macOS 14 and later, Apple silicon and Intel, or install it with Homebrew.'
+  }
+}
 
 fn Step(props) {
   return <div><h3>{props.title}</h3><p>{props.children}</p></div>
 }
 
 export fn page(ctx) {
-  return (
-    <Hero eyebrow="Latest release">
+  return <Hero eyebrow="Latest release">
       <h2 class="t up d1" style="font-size:clamp(48px,9vw,104px)">Get <span class="grad">moo</span>.</h2>
       <p class="lede up d2">One download. Drag to Applications. Done.</p>
       <div class="ctas up d3"><a class="btn go" href="/download"><Icon name="down" />Download for Mac (.dmg)</a></div>
@@ -23,5 +27,4 @@ export fn page(ctx) {
         <Step title="Press the hotkey"><kbd>⌘</kbd> <kbd>Space</kbd> or your own. Then type anything.</Step>
       </div>
     </Hero>
-  )
 }

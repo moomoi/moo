@@ -14,8 +14,21 @@ let HYPERY_REDIRECT = 'https://moo.moi/callback'
 export let ORG_HEADER = 'x-hypery-active-organization-id'
 
 fn provider(pid, title, url, keyEnv, local) {
-  return { id: pid, title: title, url: url, keyEnv: keyEnv, oauth: null, scope: '', clientId: '', redirect: '',
-    local: local, modelsQuery: '', publicModels: false, account: false, organization: '' }
+  return {
+    id: pid,
+    title: title,
+    url: url,
+    keyEnv: keyEnv,
+    oauth: null,
+    scope: '',
+    clientId: '',
+    redirect: '',
+    local: local,
+    modelsQuery: '',
+    publicModels: false,
+    account: false,
+    organization: ''
+  }
 }
 
 fn builtins() {
@@ -96,11 +109,11 @@ export fn providers(cfgProviders, env) {
     let up = p.id.toUpperCase()
     if (p.clientId === '') {
       let v = env['MOO_' + up + '_CLIENT_ID']
-      p.clientId = v ? v : (p.id === 'hypery' ? HYPERY_CLIENT_ID : '')
+      p.clientId = v ? v : p.id === 'hypery' ? HYPERY_CLIENT_ID : ''
     }
     if (p.redirect === '') {
       let v = env['MOO_' + up + '_REDIRECT']
-      p.redirect = v ? v : (p.id === 'hypery' ? HYPERY_REDIRECT : '')
+      p.redirect = v ? v : p.id === 'hypery' ? HYPERY_REDIRECT : ''
     }
   }
   return list
@@ -129,7 +142,13 @@ export fn endpoints(p) {
     return null
   }
   let o = origin(p.url)
-  return { authorize: o + p.oauth.authorize, token: o + p.oauth.token, clientId: p.clientId, scope: p.scope, relay: p.redirect }
+  return {
+    authorize: o + p.oauth.authorize,
+    token: o + p.oauth.token,
+    clientId: p.clientId,
+    scope: p.scope,
+    relay: p.redirect
+  }
 }
 
 export fn oauthAccount(pid) {
@@ -160,15 +179,21 @@ export fn utf8(bytes) {
     let len = 1
     if (b < 128) {
       cp = b
-    } else if (b >= 194 && b < 224 && i + 1 < n) {
-      cp = ((b & 31) << 6) | (bytes[i + 1] & 63)
-      len = 2
-    } else if (b >= 224 && b < 240 && i + 2 < n) {
-      cp = ((b & 15) << 12) | ((bytes[i + 1] & 63) << 6) | (bytes[i + 2] & 63)
-      len = 3
-    } else if (b >= 240 && b < 245 && i + 3 < n) {
-      cp = ((b & 7) << 18) | ((bytes[i + 1] & 63) << 12) | ((bytes[i + 2] & 63) << 6) | (bytes[i + 3] & 63)
-      len = 4
+    } else {
+      if (b >= 194 && b < 224 && i + 1 < n) {
+        cp = (b & 31) << 6 | bytes[i + 1] & 63
+        len = 2
+      } else {
+        if (b >= 224 && b < 240 && i + 2 < n) {
+          cp = (b & 15) << 12 | (bytes[i + 1] & 63) << 6 | bytes[i + 2] & 63
+          len = 3
+        } else {
+          if (b >= 240 && b < 245 && i + 3 < n) {
+            cp = (b & 7) << 18 | (bytes[i + 1] & 63) << 12 | (bytes[i + 2] & 63) << 6 | bytes[i + 3] & 63
+            len = 4
+          }
+        }
+      }
     }
     out.push(String.fromCharCode(cp))
     i = i + len
@@ -326,16 +351,26 @@ export fn errorMessage(status, body) {
   let what = 'request failed'
   if (status === 401) {
     what = 'the API key was rejected'
-  } else if (status === 402) {
-    what = 'out of credit'
-  } else if (status === 403) {
-    what = 'not allowed'
-  } else if (status === 404) {
-    what = 'model or endpoint not found'
-  } else if (status === 429) {
-    what = 'rate limited'
-  } else if (status >= 500 && status < 600) {
-    what = 'the server failed'
+  } else {
+    if (status === 402) {
+      what = 'out of credit'
+    } else {
+      if (status === 403) {
+        what = 'not allowed'
+      } else {
+        if (status === 404) {
+          what = 'model or endpoint not found'
+        } else {
+          if (status === 429) {
+            what = 'rate limited'
+          } else {
+            if (status >= 500 && status < 600) {
+              what = 'the server failed'
+            }
+          }
+        }
+      }
+    }
   }
   return detail === '' ? 'HTTP ' + status + ': ' + what : 'HTTP ' + status + ': ' + what + ' (' + detail + ')'
 }
@@ -382,7 +417,13 @@ export fn parseModels(body) {
       owner = stripTilde(mid.split('/')[0])
     }
     let ctx = Number(str(m.context_length))
-    out.push({ id: mid, name: displayName(str(m.name), mid), owner: owner, context: isNaN(ctx) ? 0 : ctx, tier: str(m.pricing_tier_label) })
+    out.push({
+      id: mid,
+      name: displayName(str(m.name), mid),
+      owner: owner,
+      context: isNaN(ctx) ? 0 : ctx,
+      tier: str(m.pricing_tier_label)
+    })
   }
   return out
 }
@@ -400,7 +441,14 @@ export fn parseOrgs(body) {
     if (typeof t !== 'object' || t === null || str(t.id) === '') {
       continue
     }
-    let o = { id: str(t.id), name: str(t.name), slug: str(t.slug), image: str(t.image), personal: t.isPersonal === true, role: str(t.role) }
+    let o = {
+      id: str(t.id),
+      name: str(t.name),
+      slug: str(t.slug),
+      image: str(t.image),
+      personal: t.isPersonal === true,
+      role: str(t.role)
+    }
     if (o.personal) {
       personal.push(o)
     } else {
@@ -439,7 +487,11 @@ export fn parseTokens(json) {
   if (typeof v !== 'object' || v === null || str(v.access) === '') {
     return null
   }
-  return { access: str(v.access), refresh: str(v.refresh), expires: typeof v.expires === 'number' ? v.expires : 0 }
+  return {
+    access: str(v.access),
+    refresh: str(v.refresh),
+    expires: typeof v.expires === 'number' ? v.expires : 0
+  }
 }
 
 export fn tokensJson(t) {

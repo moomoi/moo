@@ -5,21 +5,18 @@ import { BREW } from '../lib/links.tish'
 export fn head(ctx) { return { title: 'Moo — the launcher for macOS', rawTitle: true } }
 
 fn Feature(props) {
-  return (
-    <div class={props.size ? 'card ' + props.size : 'card'}>
+  return <div class={props.size ? 'card ' + props.size : 'card'}>
       {props.icon ? <div class="glyph"><Icon name={props.icon} /></div> : null}
       {props.stat ? <div class="stat grad">{props.stat}</div> : null}
       <h3>{props.title}</h3>
       {props.children}
     </div>
-  )
 }
 
 export fn page(ctx) {
-  return (
-    <>
+  return <>
       <div class="wrap hero">
-        <span class="eyebrow up"><b></b>Native · Instant · Yours</span>
+        <span class="eyebrow up"><b />Native · Instant · Yours</span>
         <h1 class="up d1"><span>moo</span></h1>
         <p class="lede up d2">One hotkey. Then <b>type anything</b>. Apps, files, math, clipboard, windows and AI — before you finish thinking it.</p>
         <div class="ctas up d3"><a class="btn go" href="/get"><Icon name="down" />Download for Mac</a><code class="chip">{BREW}</code></div>
@@ -46,5 +43,4 @@ export fn page(ctx) {
         <div class="ctas" style="margin-top:32px"><a class="btn go" href="/get"><Icon name="down" />Download moo</a></div>
       </div>
     </>
-  )
 }

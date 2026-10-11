@@ -4,9 +4,30 @@
 // The lookup itself is native (`dictionaryEntries(word)`, one text per homograph).
 
 // Longer names first, so "plural noun" wins over "noun".
-let PARTS = ['plural noun', 'proper noun', 'auxiliary verb', 'modal verb', 'combining form', 'noun', 'verb', 'adjective',
-  'adverb', 'pronoun', 'preposition', 'conjunction', 'exclamation', 'abbreviation', 'determiner',
-  'predeterminer', 'prefix', 'suffix', 'symbol', 'contraction', 'interjection', 'article']
+let PARTS = [
+  'plural noun',
+  'proper noun',
+  'auxiliary verb',
+  'modal verb',
+  'combining form',
+  'noun',
+  'verb',
+  'adjective',
+  'adverb',
+  'pronoun',
+  'preposition',
+  'conjunction',
+  'exclamation',
+  'abbreviation',
+  'determiner',
+  'predeterminer',
+  'prefix',
+  'suffix',
+  'symbol',
+  'contraction',
+  'interjection',
+  'article'
+]
 let SECTIONS = [' PHRASES ', ' PHRASAL VERBS ', ' DERIVATIVES ', ' USAGE ', ' ORIGIN ']
 let SENTENCE_ENDS = ['.', '!', '?', ')', '”', '’']
 
@@ -144,10 +165,14 @@ fn exampleColon(s) {
     let c = s[i]
     if (c === '(') {
       depth = depth + 1
-    } else if (c === ')') {
-      depth = depth - 1
-    } else if (c === ':' && depth <= 0 && s[i + 1] === ' ') {
-      return i
+    } else {
+      if (c === ')') {
+        depth = depth - 1
+      } else {
+        if (c === ':' && depth <= 0 && s[i + 1] === ' ') {
+          return i
+        }
+      }
     }
   }
   return -1
@@ -159,10 +184,12 @@ fn closingParen(s) {
   for (let i = 0; i < s.length; i = i + 1) {
     if (s[i] === '(') {
       depth = depth + 1
-    } else if (s[i] === ')') {
-      depth = depth - 1
-      if (depth === 0) {
-        return i
+    } else {
+      if (s[i] === ')') {
+        depth = depth - 1
+        if (depth === 0) {
+          return i
+        }
       }
     }
   }
@@ -202,10 +229,12 @@ fn withoutLabels(s) {
       if (e >= 0) {
         t = t.slice(e + 1).trim()
       }
-    } else if (t.startsWith('(')) {
-      let e = closingParen(t)
-      if (e >= 0 && isInflection(t.slice(1, e))) {
-        t = t.slice(e + 1).trim()
+    } else {
+      if (t.startsWith('(')) {
+        let e = closingParen(t)
+        if (e >= 0 && isInflection(t.slice(1, e))) {
+          t = t.slice(e + 1).trim()
+        }
       }
     }
     t = trimColons(t)
@@ -267,7 +296,12 @@ export fn parse(text, asked) {
       }
     }
   }
-  return { word: headword(head, asked), pronunciation: pronunciation, senses: senses, origin: origin }
+  return {
+    word: headword(head, asked),
+    pronunciation: pronunciation,
+    senses: senses,
+    origin: origin
+  }
 }
 
 // The entry is for `asked`: its headword, or a form the entry lists ("ran" in run's "(past;
@@ -275,7 +309,7 @@ export fn parse(text, asked) {
 fn namesWord(text, asked) {
   let a = asked.toLowerCase()
   let word = headword(text.split(' | ')[0], asked).toLowerCase()
-  if (word === a || (a.startsWith(word) && a.length <= word.length + 3)) {
+  if (word === a || a.startsWith(word) && a.length <= word.length + 3) {
     return true
   }
   let head = text.slice(0, 400).toLowerCase()
@@ -295,7 +329,12 @@ export fn define(asked, texts) {
     let say = more.pronunciation !== entry.pronunciation ? more.pronunciation : ''
     for (let j = 0; j < more.senses.length; j = j + 1) {
       let s = more.senses[j]
-      entry.senses.push({ part: s.part, pronunciation: say, definition: s.definition, example: s.example })
+      entry.senses.push({
+        part: s.part,
+        pronunciation: say,
+        definition: s.definition,
+        example: s.example
+      })
     }
   }
   return entry.senses.length > 0 ? entry : null

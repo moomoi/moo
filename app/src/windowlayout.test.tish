@@ -27,7 +27,10 @@ test('layouts tile the screen', () => {
       continue
     }
     let f = layoutFrame(LAYOUTS[i][0], v, cur)
-    assert.ok(f.x >= v.x && f.y >= v.y && f.x + f.w <= v.x + v.w + 0.5 && f.y + f.h <= v.y + v.h + 0.5, LAYOUTS[i][0])
+    assert.ok(
+      f.x >= v.x && f.y >= v.y && f.x + f.w <= v.x + v.w + 0.5 && f.y + f.h <= v.y + v.h + 0.5,
+      LAYOUTS[i][0]
+    )
   }
 })
 

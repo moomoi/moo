@@ -3,8 +3,7 @@ import { Legal, Contact } from '../../lib/legal.tish'
 export fn head(ctx) { return { title: 'Terms of Use' } }
 
 export fn page(ctx) {
-  return (
-    <Legal active="terms">
+  return <Legal active="terms">
       <h1>Terms of Use</h1>
       <p class="date">Last updated October 2026</p>
       <h2>Using moo</h2>
@@ -19,5 +18,4 @@ export fn page(ctx) {
       <p>We may update these terms. Material changes will be noted on this page with a new date.</p>
       <Contact />
     </Legal>
-  )
 }

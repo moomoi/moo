@@ -1,6 +1,26 @@
 import { test } from 'tish:test'
 import assert from 'node:assert/strict'
-import { providers, splitModel, origin, isLocal, endpoints, newStream, streamLine, errorMessage, parseModels, displayName, parseOrgs, activeOrg, dollars, parseTokens, tokensJson, staleTokens, utf8, newLines, feedLines } from './aicore.tish'
+import {
+  providers,
+  splitModel,
+  origin,
+  isLocal,
+  endpoints,
+  newStream,
+  streamLine,
+  errorMessage,
+  parseModels,
+  displayName,
+  parseOrgs,
+  activeOrg,
+  dollars,
+  parseTokens,
+  tokensJson,
+  staleTokens,
+  utf8,
+  newLines,
+  feedLines
+} from './aicore.tish'
 
 fn same(a, b) {
   assert.equal(JSON.stringify(a), JSON.stringify(b))
@@ -21,9 +41,22 @@ test('streams text and tool calls', () => {
   assert.equal(feed(st, [': keep-alive', '']), false)
   assert.ok(feed(st, ['data: {"choices":[{"delta":{"role":"assistant","content":"Hel"}}]}', '']))
   assert.ok(feed(st, ['data: {"choices":[{"delta":{"content":"lo"}}]}', '']))
-  assert.ok(feed(st, ['data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":"open_app","arguments":"{\\"na"}}]}}]}', '']))
-  assert.ok(feed(st, ['data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"me\\":\\"Notes\\"}"}}]}}]}', '']))
-  assert.equal(feed(st, ['data: {"choices":[{"delta":{},"finish_reason":"tool_calls"}]}', '']), false)
+  assert.ok(
+    feed(st, [
+      'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":"open_app","arguments":"{\\"na"}}]}}]}',
+      ''
+    ])
+  )
+  assert.ok(
+    feed(st, [
+      'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"me\\":\\"Notes\\"}"}}]}}]}',
+      ''
+    ])
+  )
+  assert.equal(
+    feed(st, ['data: {"choices":[{"delta":{},"finish_reason":"tool_calls"}]}', '']),
+    false
+  )
   feed(st, ['data: [DONE]', ''])
   assert.equal(st.text, 'Hello')
   same(st.calls, [{ id: 'call_1', name: 'open_app', arguments: '{"name":"Notes"}' }])
@@ -56,24 +89,59 @@ test('lines from byte chunks, UTF-8 split across chunks', () => {
 })
 
 test('errors, models and names', () => {
-  assert.equal(errorMessage(401, '{"error":{"message":"Invalid key"}}'), 'HTTP 401: the API key was rejected (Invalid key)')
-  assert.equal(errorMessage(429, '{"error":{"code":"RATE_LIMITED","message":"slow down"}}'), 'HTTP 429: rate limited (RATE_LIMITED: slow down)')
+  assert.equal(
+    errorMessage(401, '{"error":{"message":"Invalid key"}}'),
+    'HTTP 401: the API key was rejected (Invalid key)'
+  )
+  assert.equal(
+    errorMessage(429, '{"error":{"code":"RATE_LIMITED","message":"slow down"}}'),
+    'HTTP 429: rate limited (RATE_LIMITED: slow down)'
+  )
   assert.equal(errorMessage(502, 'Bad Gateway'), 'HTTP 502: the server failed (Bad Gateway)')
-  same(parseModels('{"object":"list","data":[{"id":"b"},{"id":"a"},{"id":"b"}]}').map((m) => m.id), ['b', 'a'])
+  same(parseModels('{"object":"list","data":[{"id":"b"},{"id":"a"},{"id":"b"}]}').map((m) => m.id), [
+    'b',
+    'a'
+  ])
   same(splitModel('hypery:openai/gpt-5'), ['hypery', 'openai/gpt-5'])
   same(splitModel('ollama:llama3.2:3b'), ['ollama', 'llama3.2:3b'])
   same(splitModel(''), ['apple', ''])
   assert.equal(origin('https://hypery.ai/v1'), 'https://hypery.ai')
-  assert.ok(isLocal('http://127.0.0.1:8080/v1') && isLocal('http://localhost:11434/v1') && !isLocal('https://hypery.ai/v1'))
+  assert.ok(
+    isLocal('http://127.0.0.1:8080/v1') && isLocal('http://localhost:11434/v1') && !isLocal(
+      'https://hypery.ai/v1'
+    )
+  )
 })
 
 test('config overrides and adds providers', () => {
-  let ps = providers([
-    { id: 'hypery', title: '', url: 'http://127.0.0.1:9/v1/', keyEnv: '', clientId: 'cid', redirectUri: '', organization: '' },
-    { id: 'work', title: '', url: 'https://llm.example/v1', keyEnv: 'WORK_KEY', clientId: '', redirectUri: '', organization: '' }
-  ], {})
+  let ps = providers(
+    [
+      {
+        id: 'hypery',
+        title: '',
+        url: 'http://127.0.0.1:9/v1/',
+        keyEnv: '',
+        clientId: 'cid',
+        redirectUri: '',
+        organization: ''
+      },
+      {
+        id: 'work',
+        title: '',
+        url: 'https://llm.example/v1',
+        keyEnv: 'WORK_KEY',
+        clientId: '',
+        redirectUri: '',
+        organization: ''
+      }
+    ],
+    {}
+  )
   let h = ps.filter((p) => p.id === 'hypery')[0]
-  same([h.url, h.local, h.clientId, h.redirect], ['http://127.0.0.1:9/v1', true, 'cid', 'https://moo.moi/callback'])
+  same(
+    [h.url, h.local, h.clientId, h.redirect],
+    ['http://127.0.0.1:9/v1', true, 'cid', 'https://moo.moi/callback']
+  )
   let ep = endpoints(h)
   assert.equal(ep.token, 'http://127.0.0.1:9/api/oauth/token')
   assert.equal(ep.scope, 'ai:chat ai:models billing:read')
@@ -83,16 +151,31 @@ test('config overrides and adds providers', () => {
 })
 
 test('model details from Hypery', () => {
-  let m = parseModels('{"object":"list","data":[{"id":"~anthropic/claude-sonnet-latest","owned_by":"anthropic","name":"Anthropic: Claude Sonnet Latest","pricing_tier_label":"Standard","context_length":1000000},{"id":"x-ai/grok-4.3","owned_by":"x-ai","name":"SpaceXAI: Grok 4.3","pricing_tier_label":"Standard","context_length":1000000},{"id":"x-ai/grok-4.3","owned_by":"x-ai","name":"Grok 4.3 (again)"},{"id":"google/gemma-3-12b-it","owned_by":"google","name":"google/gemma-3-12b-it","pricing_tier_label":"Budget"},{"id":"anthropic/claude-sonnet-5","name":"Claude Sonnet 5"}],"has_more":false}')
-  same(m.map((x) => x.name), ['Claude Sonnet Latest', 'Grok 4.3', 'gemma-3-12b-it', 'Claude Sonnet 5'])
+  let m = parseModels(
+    '{"object":"list","data":[{"id":"~anthropic/claude-sonnet-latest","owned_by":"anthropic","name":"Anthropic: Claude Sonnet Latest","pricing_tier_label":"Standard","context_length":1000000},{"id":"x-ai/grok-4.3","owned_by":"x-ai","name":"SpaceXAI: Grok 4.3","pricing_tier_label":"Standard","context_length":1000000},{"id":"x-ai/grok-4.3","owned_by":"x-ai","name":"Grok 4.3 (again)"},{"id":"google/gemma-3-12b-it","owned_by":"google","name":"google/gemma-3-12b-it","pricing_tier_label":"Budget"},{"id":"anthropic/claude-sonnet-5","name":"Claude Sonnet 5"}],"has_more":false}'
+  )
+  same(m.map((x) => x.name), [
+    'Claude Sonnet Latest',
+    'Grok 4.3',
+    'gemma-3-12b-it',
+    'Claude Sonnet 5'
+  ])
   same([m[0].owner, m[0].context, m[0].tier], ['anthropic', 1000000, 'Standard'])
   assert.equal(m[3].owner, 'anthropic')
-  assert.equal(displayName('Ratio: 1:2 Mixer Deluxe Model Name Long', 'x/y'), '1:2 Mixer Deluxe Model Name Long')
-  assert.equal(displayName('A very long model name that is long: with colon', 'x/y'), 'A very long model name that is long: with colon')
+  assert.equal(
+    displayName('Ratio: 1:2 Mixer Deluxe Model Name Long', 'x/y'),
+    '1:2 Mixer Deluxe Model Name Long'
+  )
+  assert.equal(
+    displayName('A very long model name that is long: with colon', 'x/y'),
+    'A very long model name that is long: with colon'
+  )
 })
 
 test('organizations, balances and tokens', () => {
-  let orgs = parseOrgs('{"memberships":[{"team":{"id":"t2","name":"Acme","slug":"acme","image":"https://cdn.example/acme.png","isPersonal":false,"role":"admin"}},{"team":{"id":"t1","name":"Me","slug":"me","image":null,"isPersonal":true,"role":"owner"}}]}')
+  let orgs = parseOrgs(
+    '{"memberships":[{"team":{"id":"t2","name":"Acme","slug":"acme","image":"https://cdn.example/acme.png","isPersonal":false,"role":"admin"}},{"team":{"id":"t1","name":"Me","slug":"me","image":null,"isPersonal":true,"role":"owner"}}]}'
+  )
   same(orgs.map((o) => o.name), ['Me', 'Acme'])
   assert.equal(orgs[1].image, 'https://cdn.example/acme.png')
   assert.equal(activeOrg(orgs, 't2').slug, 'acme')

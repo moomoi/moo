@@ -33,6 +33,11 @@ test('history rows', () => {
   assert.equal(rows[0].icon, '')
   assert.equal(rows[1].icon, 'icon:/Applications/Notes.app')
   assert.equal(rows[1].ago, 'just now')
-  let fuzzy = (q, titles, limit) => titles.map((t, i) => ({ index: i, t: t })).filter((x) => x.t.indexOf(q) >= 0)
-  assert.equal(clipboardHistory('hello', 10, fuzzy, (p) => '').map((r) => r.text).join(), 'hello world')
+  let fuzzy = (q, titles, limit) => titles.map((t, i) => ({ index: i, t: t })).filter((x) => x.t.indexOf(
+    q
+  ) >= 0)
+  assert.equal(
+    clipboardHistory('hello', 10, fuzzy, (p) => '').map((r) => r.text).join(),
+    'hello world'
+  )
 })

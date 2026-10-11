@@ -12,4 +12,4 @@ export let DATA_DIR = HOME !== '' ? HOME + '/Library/Application Support/Moo' : 
 export let CACHE_DIR = HOME !== '' ? HOME + '/Library/Caches/Moo' : ''
 
 // shortcuts.json's folder: $XDG_CONFIG_HOME/moo, else ~/.config/moo.
-export let CONFIG_DIR = env.XDG_CONFIG_HOME ? env.XDG_CONFIG_HOME + '/moo' : (HOME !== '' ? HOME + '/.config/moo' : '')
+export let CONFIG_DIR = env.XDG_CONFIG_HOME ? env.XDG_CONFIG_HOME + '/moo' : HOME !== '' ? HOME + '/.config/moo' : ''

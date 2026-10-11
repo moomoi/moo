@@ -6,7 +6,25 @@ import { readFile, writeFile, mkdir, rename, fileExists } from 'tish:fs'
 import { env } from 'tish:process'
 import { keysError, localDateTime } from './natives.tish'
 import { clipboardText, selectedText } from './platform.tish'
-import { parse, toJson, emptyConfig, shortcut, needsQuery, expand, shellValues as argsOf, upsert, remove, bind, unbind, checkKeyword as keywordError, checkAlias as aliasError, setAlias as putAlias, setDisabled as putDisabled, setPanelKey as putPanelKey, setProvider } from './shortcuts.tish'
+import {
+  parse,
+  toJson,
+  emptyConfig,
+  shortcut,
+  needsQuery,
+  expand,
+  shellValues as argsOf,
+  upsert,
+  remove,
+  bind,
+  unbind,
+  checkKeyword as keywordError,
+  checkAlias as aliasError,
+  setAlias as putAlias,
+  setDisabled as putDisabled,
+  setPanelKey as putPanelKey,
+  setProvider
+} from './shortcuts.tish'
 import { HOME, CONFIG_DIR } from './paths.tish'
 
 export fn configPath() {
@@ -85,8 +103,14 @@ export fn loadShortcuts() {
     launcher: cfg.launcher,
     aiModel: cfg.ai.model,
     shortcuts: cfg.shortcuts.map((x) => ({
-      keyword: x.keyword, name: x.name, kind: x.kind, target: x.target, input: x.input, output: x.output,
-      hotkey: x.hotkey, expand: x.kind === 'text' && x.expand,
+      keyword: x.keyword,
+      name: x.name,
+      kind: x.kind,
+      target: x.target,
+      input: x.input,
+      output: x.output,
+      hotkey: x.hotkey,
+      expand: x.kind === 'text' && x.expand,
       needsQuery: needsQuery(x.kind === 'command' ? x.input : x.target)
     })),
     hotkeys: cfg.hotkeys,

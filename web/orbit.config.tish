@@ -19,9 +19,13 @@ export let site = {
     docs: { dir: 'content/docs', route: '/docs/:slug', sortBy: 'order', desc: false, html: true }
   },
   redirects: [
-    // Promoted releases are mirrored to the public repo under a fixed asset name (docs/release.md).
-    { from: '/download', to: 'https://github.com/moomoi/moo/releases/latest/download/Moo-macos-universal.dmg', status: 302 },
+    {
+      from: '/download',
+      to: 'https://github.com/moomoi/moo/releases/latest/download/Moo-macos-universal.dmg',
+      status: 302
+    },
     { from: '/index.html', to: '/', status: 301 }
   ],
   sitemapExclude: ['/callback']
 }
+// Promoted releases are mirrored to the public repo under a fixed asset name (docs/release.md).
