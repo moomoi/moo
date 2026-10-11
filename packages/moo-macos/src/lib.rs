@@ -87,6 +87,7 @@ pub(crate) fn obj(pairs: Vec<(&str, Value)>) -> Value {
     Value::object(m)
 }
 
+#[cfg(target_os = "macos")]
 fn field(v: Option<&Value>, key: &str) -> Option<Value> {
     match v {
         Some(Value::Object(o)) => o.borrow().strings.get(key).cloned(),
@@ -237,6 +238,97 @@ fn native_search(args: &[Value]) -> Value {
         })
         .collect();
     Value::Array(VmRef::new(rows))
+}
+
+/// Browser sign-in (OAuth with PKCE through a loopback redirect) and token refresh, on macOS and
+/// Windows alike: only opening the browser is the platform's.
+#[cfg(any(target_os = "macos", windows))]
+mod oauth_natives {
+    use super::*;
+
+    fn s(x: &str) -> Value {
+        Value::String(x.into())
+    }
+
+    fn field_text(v: Option<&Value>, key: &str) -> String {
+        match v {
+            Some(Value::Object(o)) => match o.borrow().strings.get(key) {
+                Some(Value::String(x)) => x.to_string(),
+                _ => String::new(),
+            },
+            _ => String::new(),
+        }
+    }
+
+    fn callback(args: &[Value], i: usize) -> Option<Value> {
+        args.get(i).filter(|v| matches!(v, Value::Function(_))).cloned()
+    }
+
+    fn endpoints_arg(v: Option<&Value>) -> oauth::Endpoints {
+        oauth::Endpoints {
+            authorize: field_text(v, "authorize"),
+            token: field_text(v, "token"),
+            client_id: field_text(v, "clientId"),
+            scope: field_text(v, "scope"),
+            relay: field_text(v, "relay"),
+            extra: Vec::new(),
+        }
+    }
+
+    fn tokens_value(r: Result<oauth::Tokens, String>) -> Value {
+        match r {
+            Ok(t) => obj(vec![("access", s(&t.access)), ("refresh", s(&t.refresh)), ("expires", Value::Number(t.expires_at)), ("error", s(""))]),
+            Err(e) => obj(vec![("error", s(&e))]),
+        }
+    }
+
+    fn open_browser(url: &str) {
+        #[cfg(target_os = "macos")]
+        crate::mac::launch(url);
+        #[cfg(windows)]
+        crate::win::launch(url);
+    }
+
+    static OAUTH_CANCEL: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+    /// `oauthSignIn({ authorize, token, clientId, scope, relay }, cb)`: browser sign-in through the
+    /// loopback redirect; `cb({ access, refresh, expires, error })` on the main thread.
+    pub fn oauth_sign_in(args: &[Value]) -> Value {
+        let ep = endpoints_arg(args.first());
+        let request = bridge::hold(callback(args, 1));
+        OAUTH_CANCEL.store(false, std::sync::atomic::Ordering::Relaxed);
+        std::thread::spawn(move || {
+            let r = oauth::login(
+                &ep,
+                |url| {
+                    let url = url.to_string();
+                    bridge::on_main(move || open_browser(&url));
+                },
+                &OAUTH_CANCEL,
+            );
+            bridge::post(request, r, tokens_value, true);
+        });
+        Value::Null
+    }
+
+    pub fn oauth_cancel(_a: &[Value]) -> Value {
+        OAUTH_CANCEL.store(true, std::sync::atomic::Ordering::Relaxed);
+        Value::Null
+    }
+
+    /// `oauthRefresh({ token, clientId }, refreshToken, cb)`: a new access token;
+    /// `cb({ access, refresh, expires, error })`. Native so the token request never follows a
+    /// redirect.
+    pub fn oauth_refresh(args: &[Value]) -> Value {
+        let ep = endpoints_arg(args.first());
+        let refresh = str_arg(args, 1);
+        let request = bridge::hold(callback(args, 2));
+        std::thread::spawn(move || {
+            let r = oauth::refresh(&ep, &refresh);
+            bridge::post(request, r, tokens_value, true);
+        });
+        Value::Null
+    }
 }
 
 #[cfg(target_os = "macos")]
@@ -585,16 +677,6 @@ mod natives {
     }
     // ── Keychain, OAuth and UI callbacks for the app's ai.tish ──
 
-    fn field_text(v: Option<&Value>, key: &str) -> String {
-        match v {
-            Some(Value::Object(o)) => match o.borrow().strings.get(key) {
-                Some(Value::String(x)) => x.to_string(),
-                _ => String::new(),
-            },
-            _ => String::new(),
-        }
-    }
-
     /// `keychainGet(account)` -> the saved secret, or null.
     pub fn keychain_get(args: &[Value]) -> Value {
         crate::keychain::get(&str_arg(args, 0)).map_or(Value::Null, |v| s(&v))
@@ -617,66 +699,7 @@ mod natives {
         Value::Bool(crate::keychain::has(&str_arg(args, 0)))
     }
 
-    fn endpoints_arg(v: Option<&Value>) -> oauth::Endpoints {
-        oauth::Endpoints {
-            authorize: field_text(v, "authorize"),
-            token: field_text(v, "token"),
-            client_id: field_text(v, "clientId"),
-            scope: field_text(v, "scope"),
-            relay: field_text(v, "relay"),
-            extra: Vec::new(),
-        }
-    }
-
-    fn tokens_value(r: Result<oauth::Tokens, String>) -> Value {
-        match r {
-            Ok(t) => obj(vec![("access", s(&t.access)), ("refresh", s(&t.refresh)), ("expires", Value::Number(t.expires_at)), ("error", s(""))]),
-            Err(e) => obj(vec![("error", s(&e))]),
-        }
-    }
-
-    static OAUTH_CANCEL: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
-
-    /// `oauthSignIn({ authorize, token, clientId, scope, relay }, cb)`: browser sign-in through the
-    /// loopback redirect; `cb({ access, refresh, expires, error })` on the main thread.
-    pub fn oauth_sign_in(args: &[Value]) -> Value {
-        let ep = endpoints_arg(args.first());
-        let request = bridge::hold(callback(args, 1));
-        OAUTH_CANCEL.store(false, std::sync::atomic::Ordering::Relaxed);
-        std::thread::spawn(move || {
-            let r = oauth::login(
-                &ep,
-                |url| {
-                    let url = url.to_string();
-                    bridge::on_main(move || {
-                        mac::launch(&url);
-                    });
-                },
-                &OAUTH_CANCEL,
-            );
-            bridge::post(request, r, tokens_value, true);
-        });
-        Value::Null
-    }
-
-    pub fn oauth_cancel(_a: &[Value]) -> Value {
-        OAUTH_CANCEL.store(true, std::sync::atomic::Ordering::Relaxed);
-        Value::Null
-    }
-
-    /// `oauthRefresh({ token, clientId }, refreshToken, cb)`: a new access token;
-    /// `cb({ access, refresh, expires, error })`. Native so the token request never follows a
-    /// redirect.
-    pub fn oauth_refresh(args: &[Value]) -> Value {
-        let ep = endpoints_arg(args.first());
-        let refresh = str_arg(args, 1);
-        let request = bridge::hold(callback(args, 2));
-        std::thread::spawn(move || {
-            let r = oauth::refresh(&ep, &refresh);
-            bridge::post(request, r, tokens_value, true);
-        });
-        Value::Null
-    }
+    pub use super::oauth_natives::{oauth_cancel, oauth_refresh, oauth_sign_in};
 
     /// `withUi(fn)`: run `fn` against the launcher's UI root and give focus back after, as native
     /// callbacks do (for callbacks from `macos.whenSettled`).
@@ -852,8 +875,13 @@ mod natives {
     pub fn keychain_set(_a: &[Value]) -> Value { Value::String("macOS only".into()) }
     pub fn keychain_delete(_a: &[Value]) -> Value { Value::Bool(false) }
     pub fn keychain_has(_a: &[Value]) -> Value { Value::Bool(false) }
+    #[cfg(windows)]
+    pub use super::oauth_natives::{oauth_cancel, oauth_refresh, oauth_sign_in};
+    #[cfg(not(windows))]
     pub fn oauth_sign_in(_a: &[Value]) -> Value { Value::Null }
+    #[cfg(not(windows))]
     pub fn oauth_cancel(_a: &[Value]) -> Value { Value::Null }
+    #[cfg(not(windows))]
     pub fn oauth_refresh(_a: &[Value]) -> Value { Value::Null }
     pub fn with_ui(args: &[Value]) -> Value {
         match args.first() {

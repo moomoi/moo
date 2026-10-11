@@ -41,6 +41,8 @@ pub fn delete(account: &str) -> bool {
     unsafe { CredDeleteW(PCWSTR(t.as_ptr()), CRED_TYPE_GENERIC, None) }.is_ok()
 }
 
+// keychain.rs's API; Windows asks through tish-windows (natives.windows.tish) instead.
+#[allow(dead_code)]
 pub fn has(account: &str) -> bool {
     get(account).is_some()
 }
