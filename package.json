@@ -14,9 +14,9 @@
     "format:check": "find app/src web/pages web/lib web/orbit.config.tish -name '*.tish' -print0 | xargs -0 -n1 tish-format --check"
   },
   "devDependencies": {
-    "@tishlang/tish": "4.1.4",
-    "@tishlang/tish-format": "4.1.4",
-    "@tishlang/tish-lint": "4.1.4",
+    "@tishlang/tish": "4.1.5",
+    "@tishlang/tish-format": "4.1.5",
+    "@tishlang/tish-lint": "4.1.5",
     "lattish": "4.0.4"
   },
   "allowScripts": {
