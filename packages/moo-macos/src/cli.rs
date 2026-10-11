@@ -284,7 +284,9 @@ pub fn serve(dispatch: impl Fn(Request) + Send + Sync + 'static) -> Result<PathB
     Ok(path)
 }
 
-/// Remove the socket this process serves, so clients see "not running" right away on quit.
+/// Remove the socket this process serves, so clients see "not running" right away on quit. (A Windows
+/// named pipe goes away with the process.)
+#[cfg(target_os = "macos")]
 pub fn stop_serving() {
     if let Some(path) = SERVING.lock().unwrap_or_else(|e| e.into_inner()).take() {
         let _ = std::fs::remove_file(path);

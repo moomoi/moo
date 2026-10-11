@@ -7,7 +7,7 @@
 // stands in for Cmd, so Ctrl+K is "cmd+k".
 
 import { windows } from 'tish:windows'
-import { about as n_about, appCount as n_appCount, appFolders as n_appFolders, appPaths as n_appPaths, bundleResources as n_bundleResources, exeDir as n_exeDir, frecency as n_frecency, fuzzy as n_fuzzy, loadBytecodePlugin as n_loadBytecodePlugin, localDateTime as n_localDateTime, onPluginRefresh as n_onPluginRefresh, pluginPaths as n_pluginPaths, recordUse as n_recordUse, reindex as n_reindex, search as n_search, fileIndexStart as n_fileIndexStart, findFiles as n_findFiles, recentFiles as n_recentFiles, fileIndexStatus as n_fileIndexStatus, cliMain as n_cliMain, cliServe as n_cliServe, cliWrite as n_cliWrite, cliEnd as n_cliEnd, watchTyped as n_watchTyped, quickLook as n_quickLook, quickLookVisible as n_quickLookVisible } from 'tish:moo'
+import { oauthCancel as n_oauthCancel, oauthRefresh as n_oauthRefresh, oauthSignIn as n_oauthSignIn, about as n_about, appCount as n_appCount, appFolders as n_appFolders, appPaths as n_appPaths, bundleResources as n_bundleResources, exeDir as n_exeDir, frecency as n_frecency, fuzzy as n_fuzzy, loadBytecodePlugin as n_loadBytecodePlugin, localDateTime as n_localDateTime, onPluginRefresh as n_onPluginRefresh, pluginPaths as n_pluginPaths, recordUse as n_recordUse, reindex as n_reindex, search as n_search, fileIndexStart as n_fileIndexStart, findFiles as n_findFiles, recentFiles as n_recentFiles, fileIndexStatus as n_fileIndexStatus, cliMain as n_cliMain, cliServe as n_cliServe, cliWrite as n_cliWrite, cliEnd as n_cliEnd, watchTyped as n_watchTyped, quickLook as n_quickLook, quickLookVisible as n_quickLookVisible } from 'tish:moo'
 
 export let about = n_about
 export let quickLook = n_quickLook
@@ -35,7 +35,6 @@ export let recordUse = n_recordUse
 export let reindex = n_reindex
 export let search = n_search
 
-let NOT_YET = 'not on Windows yet'
 
 // No on-device model: Ask AI defaults to Hypery and doesn't list Apple's.
 export let HAS_ON_DEVICE_AI = false
@@ -54,6 +53,8 @@ let shapeHeight = 0
 let arrows = false
 let recording = false
 let panelKeys = []
+// Whether the panel is up: hiding it and then losing focus both say so, but onShow("hide") is once.
+let shown = false
 
 // `setup({ width, height, onKey, onShow, onHotkey, hidden })`, before `macos.run`.
 export fn setup(opts) {
@@ -63,6 +64,8 @@ export fn setup(opts) {
 
 // The window options for host.windows.tish's `run`: the panel is the window.
 export let panelRunOptions = (opts) => {
+  // The panel opens with the window unless Moo starts hidden.
+  shown = !panel.hidden
   let dark = windows.system.darkMode()
   let vib = panelTheme === null ? null : panelTheme.vibrancy
   let glass = panelTheme === null ? null : panelTheme.glass
@@ -85,7 +88,8 @@ export let panelRunOptions = (opts) => {
     edgeLight: vib === null ? '' : vib.edge.light,
     radius: panelTheme === null ? 0 : panelTheme.panel.radius,
     autoShow: !panel.hidden,
-    onKey: onWindowKey
+    onKey: onWindowKey,
+    onBlur: () => hidden()
   }
 }
 
@@ -120,14 +124,30 @@ export fn recordHotkey(on) {
 
 export fn show() {
   windows.window.show()
+  shown = true
   if (panel.onShow !== null) {
-    panel.onShow()
+    panel.onShow('show')
   }
   return null
 }
 
 export fn hide() {
   windows.window.hide()
+  hidden()
+  return null
+}
+
+// As on macOS: onShow("hide") once the panel is hidden, by Moo or by losing focus, after the handler
+// that hid it has finished (not in the middle of it).
+fn hidden() {
+  if (!shown) {
+    return null
+  }
+  shown = false
+  if (panel.onShow !== null) {
+    let cb = panel.onShow
+    setTimeout(() => cb('hide'), 0)
+  }
   return null
 }
 
@@ -245,8 +265,11 @@ fn winSpec(spec) {
 export fn registerHotkey(spec, action) {
   let w = winSpec(spec)
   let r = windows.hotkeys.register(w, () => {
-    if (panel.onHotkey !== null) {
-      panel.onHotkey(action ?? '')
+    // No action: the launcher's own hotkey, which shows and hides the panel (as moo-macos does).
+    if ((action ?? '') === '') {
+      toggle()
+    } else if (panel.onHotkey !== null) {
+      panel.onHotkey(action)
     }
   })
   if (typeof r !== 'number') {
@@ -349,19 +372,10 @@ export let aiAsk = (session, prompt, onEvent) => 0
 
 export let aiCancel = (id) => null
 
-export let oauthSignIn = (endpoints, cb) => {
-  cb({ error: 'browser sign-in is ' + NOT_YET + '; paste an API key instead' })
-  return null
-}
-
-export fn oauthCancel() {
-  return null
-}
-
-export let oauthRefresh = (endpoints, refreshToken, cb) => {
-  cb({ error: NOT_YET })
-  return null
-}
+// Browser sign-in through the loopback redirect, and token refresh: moo's own, as on macOS.
+export let oauthSignIn = n_oauthSignIn
+export let oauthCancel = n_oauthCancel
+export let oauthRefresh = n_oauthRefresh
 
 
 

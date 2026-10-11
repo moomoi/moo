@@ -9,15 +9,19 @@
     "bundle": "bash scripts/bundle-macos.sh",
     "test": "cd packages/moo-macos && cargo test --lib",
     "clean": "rm -rf app/dist web/dist dist target packages/moo-macos/target app/node_modules",
-    "lint": "tish-lint --deny-warnings app/src web/pages web/lib web/orbit.config.tish"
+    "lint": "tish-lint --deny-warnings app/src web/pages web/lib web/orbit.config.tish",
+    "format": "find app/src web/pages web/lib web/orbit.config.tish -name '*.tish' -print0 | xargs -0 -n1 tish-format",
+    "format:check": "find app/src web/pages web/lib web/orbit.config.tish -name '*.tish' -print0 | xargs -0 -n1 tish-format --check"
   },
   "devDependencies": {
-    "@tishlang/tish": "4.1.1",
-    "@tishlang/tish-lint": "^4.0.1",
+    "@tishlang/tish": "4.1.4",
+    "@tishlang/tish-format": "4.1.4",
+    "@tishlang/tish-lint": "4.1.4",
     "lattish": "4.0.4"
   },
   "allowScripts": {
     "@tishlang/tish": true,
-    "@tishlang/tish-lint": true
+    "@tishlang/tish-lint": true,
+    "@tishlang/tish-format": true
   }
 }
