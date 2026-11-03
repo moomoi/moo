@@ -10,7 +10,10 @@ param(
   [Parameter(Mandatory = $true)][string]$Version,
   [string]$Name = "Moo.Moo",
   [string]$Publisher = "CN=Moo",
-  [string]$PublisherName = "Moo"
+  [string]$PublisherName = "Moo",
+  # The package's display name must be a name reserved in Partner Center ("Moo.moi"); the Start
+  # menu entry stays "Moo".
+  [string]$DisplayName = "Moo"
 )
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
@@ -26,7 +29,7 @@ Copy-Item -Recurse (Join-Path $src "*") $layout
 Move-Item (Join-Path $layout "moo.com") (Join-Path $layout "moo-cli.exe")
 Copy-Item (Join-Path $root "packaging\windows\*.png") (Join-Path $layout "Assets")
 $v = (($Version -split '[-+]')[0] -split '\.') + @('0', '0', '0') | Select-Object -First 3
-$manifest = (Get-Content -Raw (Join-Path $root "packaging\windows\AppxManifest.xml")).Replace('$VERSION$', ($v -join '.') + '.0').Replace('$NAME$', $Name).Replace('$PUBLISHER_NAME$', $PublisherName).Replace('$PUBLISHER$', $Publisher)
+$manifest = (Get-Content -Raw (Join-Path $root "packaging\windows\AppxManifest.xml")).Replace('$VERSION$', ($v -join '.') + '.0').Replace('$DISPLAY_NAME$', $DisplayName).Replace('$NAME$', $Name).Replace('$PUBLISHER_NAME$', $PublisherName).Replace('$PUBLISHER$', $Publisher)
 Set-Content -Encoding utf8 (Join-Path $layout "AppxManifest.xml") $manifest
 
 # The newest Windows SDK that has makeappx (some installed versions' folders don't).
