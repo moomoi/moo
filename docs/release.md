@@ -68,16 +68,14 @@ Assets, under fixed names so `releases/latest/download/…` links never change:
 3. **Test the prerelease DMG.** `bash scripts/verify-release.sh ~/Downloads/Moo-macos-universal.dmg`
    checks the signature, entitlements, both architectures and the notarization tickets.
 4. **Promote:** Releases → vX.Y.Z → Edit → uncheck **Set as a pre-release** → Update release.
-   `release-promoted.yml` rewrites its notes to cover everything since the last full release,
-   bumps the cask and submits the MSIX to the Microsoft Store (certification takes hours to days).
+   `release-promoted.yml` rewrites its notes to cover everything since the last full release and
+   bumps the cask.
 5. **Check:** `brew update && brew upgrade moomoi/moo/moo`, and `https://moo.moi/download`.
 
 ## Re-running
 
 - **Rebuild a prerelease:** re-run the failed Release jobs. sem replaces same-named assets.
 - **Redo a promoted release's notes and cask bump:** run **Release promoted** with the tag (`v0.4.0`).
-- **Resubmit to the Store:** run **Release promoted** with the tag; it re-runs the notes, cask
-  bump and Store submission.
 - **Re-bump Homebrew:** run **Update formulas** in `moomoi/homebrew-moo` with the version.
 - **Release without a feat or fix commit:** run **Release** with `force` set to `patch`, `minor`,
   `major` or an exact version.

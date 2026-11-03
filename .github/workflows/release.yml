@@ -11,7 +11,7 @@
 # ("Developer ID Application: …"), APPLE_ID, APPLE_PASSWORD (app-specific), APPLE_TEAM_ID.
 # Variables (Partner Center -> Product identity): WINDOWS_STORE_NAME, WINDOWS_STORE_PUBLISHER,
 # WINDOWS_STORE_PUBLISHER_NAME, WINDOWS_STORE_DISPLAY_NAME (a reserved name). The MSIX is unsigned (Partner Center signs it) and is attached to
-# the release; release-promoted.yml submits it to the Store on promotion. The zip is the direct
+# the release; the store-upload job uploads it to Partner Center as a draft. The zip is the direct
 # download.
 
 name: Release
@@ -220,6 +220,52 @@ jobs:
           name: moo-windows-store
           path: dist/release/Moo-windows-x64.msix
           if-no-files-found: error
+
+  # ── Microsoft Store: upload the MSIX to Partner Center as a draft submission (like PopCraft's
+  # TestFlight upload). Same gate as the prerelease: main push or manual dispatch with a version
+  # bump. Nothing goes to certification automatically; submit the draft in Partner Center.
+  # Secrets (scripts/setup-windows-store.sh): PARTNER_CENTER_TENANT_ID, PARTNER_CENTER_CLIENT_ID,
+  # PARTNER_CENTER_CLIENT_SECRET, PARTNER_CENTER_SELLER_ID; variable WINDOWS_STORE_PRODUCT_ID.
+  # Without them the job warns and skips instead of failing.
+  store-upload:
+    name: Microsoft Store upload
+    needs: [version, build-msix]
+    if: >-
+      ${{ (github.event_name == 'workflow_dispatch'
+           || (github.event_name == 'push' && github.ref == 'refs/heads/main'))
+          && needs.version.outputs.publish == 'true' }}
+    runs-on: windows-latest
+    timeout-minutes: 30
+    env:
+      HAS_STORE_CREDS: ${{ secrets.PARTNER_CENTER_CLIENT_SECRET != '' && secrets.PARTNER_CENTER_CLIENT_ID != '' && secrets.PARTNER_CENTER_TENANT_ID != '' && secrets.PARTNER_CENTER_SELLER_ID != '' && vars.WINDOWS_STORE_PRODUCT_ID != '' }}
+    steps:
+      - name: Store credentials present?
+        if: env.HAS_STORE_CREDS != 'true'
+        run: echo "::warning::Partner Center secrets or WINDOWS_STORE_PRODUCT_ID not set, skipping the Store upload (run scripts/setup-windows-store.sh)."
+
+      - uses: actions/download-artifact@v8
+        if: env.HAS_STORE_CREDS == 'true'
+        with:
+          name: moo-windows-store
+          path: dist/release
+
+      - uses: microsoft/setup-msstore-cli@v1
+        if: env.HAS_STORE_CREDS == 'true'
+
+      - name: Upload to Partner Center (draft, not committed)
+        if: env.HAS_STORE_CREDS == 'true'
+        shell: pwsh
+        env:
+          TENANT_ID: ${{ secrets.PARTNER_CENTER_TENANT_ID }}
+          CLIENT_ID: ${{ secrets.PARTNER_CENTER_CLIENT_ID }}
+          CLIENT_SECRET: ${{ secrets.PARTNER_CENTER_CLIENT_SECRET }}
+          SELLER_ID: ${{ secrets.PARTNER_CENTER_SELLER_ID }}
+          PRODUCT_ID: ${{ vars.WINDOWS_STORE_PRODUCT_ID }}
+        run: |
+          msstore reconfigure --tenantId $env:TENANT_ID --sellerId $env:SELLER_ID --clientId $env:CLIENT_ID --clientSecret $env:CLIENT_SECRET
+          if ($LASTEXITCODE -ne 0) { throw "msstore reconfigure failed" }
+          msstore publish dist/release/Moo-windows-x64.msix -id $env:PRODUCT_ID --noCommit
+          if ($LASTEXITCODE -ne 0) { throw "msstore publish failed" }
 
   release:
     name: Prerelease
