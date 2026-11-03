@@ -47,7 +47,14 @@ Assets, under fixed names so `releases/latest/download/…` links never change:
 3. **The tap.** `moomoi/homebrew-moo` must be public, with its tap workflow on `main`.
 4. **Merges.** On `moomoi/moo`, allow squash merging only, and require the `Build and test` and
    `Release check` checks on `main`.
-5. **First release.** There are no tags yet, and the history before CI isn't conventional, so sem
+5. **Microsoft Store.** The Partner Center product is **Moo.moi**, Store ID `9NQNCW0R1LFQ`. Its
+   identity (Name, Publisher, PublisherName from Partner Center → Product identity) is in the repo
+   variables `WINDOWS_STORE_NAME`, `WINDOWS_STORE_PUBLISHER` and `WINDOWS_STORE_PUBLISHER_NAME`.
+   The first submission (listing, pricing, age rating, package) is made by hand in Partner Center.
+   After that, run `bash scripts/setup-windows-store.sh`: it explains how to create the Partner
+   Center API login and sets the `PARTNER_CENTER_*` secrets and `WINDOWS_STORE_PRODUCT_ID`. The
+   same login works for every app in the account; pass `REPO=` and `PRODUCT_ID=` for the others.
+6. **First release.** There are no tags yet, and the history before CI isn't conventional, so sem
    would propose 1.0.0. Run **Release** from the Actions tab (workflow_dispatch) with `force` set
    to `0.1.0`. From then on every `feat`, `fix` or `perf` merge releases on its own.
 
@@ -60,14 +67,16 @@ Assets, under fixed names so `releases/latest/download/…` links never change:
 3. **Test the prerelease DMG.** `bash scripts/verify-release.sh ~/Downloads/Moo-macos-universal.dmg`
    checks the signature, entitlements, both architectures and the notarization tickets.
 4. **Promote:** Releases → vX.Y.Z → Edit → uncheck **Set as a pre-release** → Update release.
-   `release-promoted.yml` rewrites its notes to cover everything since the last full release and
-   bumps the cask.
+   `release-promoted.yml` rewrites its notes to cover everything since the last full release,
+   bumps the cask and submits the MSIX to the Microsoft Store (certification takes hours to days).
 5. **Check:** `brew update && brew upgrade moomoi/moo/moo`, and `https://moo.moi/download`.
 
 ## Re-running
 
 - **Rebuild a prerelease:** re-run the failed Release jobs. sem replaces same-named assets.
 - **Redo a promoted release's notes and cask bump:** run **Release promoted** with the tag (`v0.4.0`).
+- **Resubmit to the Store:** run **Release promoted** with the tag; it re-runs the notes, cask
+  bump and Store submission.
 - **Re-bump Homebrew:** run **Update formulas** in `moomoi/homebrew-moo` with the version.
 - **Release without a feat or fix commit:** run **Release** with `force` set to `patch`, `minor`,
   `major` or an exact version.

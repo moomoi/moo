@@ -2,6 +2,11 @@
 #   - rewrite the release notes to cover everything since the last full release (a promoted
 #     prerelease's own notes only cover the commits since the previous prerelease)
 #   - trigger the Homebrew tap (moomoi/homebrew-moo) to regenerate Casks/moo.rb
+#   - submit the release's MSIX to the Microsoft Store (Partner Center signs and certifies it)
+#
+# Store secrets (scripts/setup-windows-store.sh sets them): PARTNER_CENTER_TENANT_ID,
+# PARTNER_CENTER_CLIENT_ID, PARTNER_CENTER_CLIENT_SECRET, PARTNER_CENTER_SELLER_ID; variable
+# WINDOWS_STORE_PRODUCT_ID. Without them the Store job warns and skips.
 #
 # The tap lives in another repo, so the dispatch uses a GitHub App token (secrets:
 # MOO_RELEASE_APP_ID + MOO_RELEASE_APP_PRIVATE_KEY) installed on moomoi/homebrew-moo with
@@ -115,3 +120,45 @@ jobs:
             -d "$(jq -n --arg v "${{ steps.ver.outputs.version }}" --arg r "$GITHUB_REPOSITORY" \
               '{event_type:"release", client_payload:{version:$v, source_repo:$r}}')"
           echo "Dispatched the tap bump for ${{ steps.ver.outputs.version }}"
+
+  store:
+    name: Submit to the Microsoft Store
+    needs: publish
+    # Once per promotion: editing a full release's notes fires `edited` and must not resubmit.
+    if: github.event_name == 'workflow_dispatch' || github.event.action == 'released'
+    runs-on: windows-latest
+    timeout-minutes: 30
+    env:
+      TENANT_ID: ${{ secrets.PARTNER_CENTER_TENANT_ID }}
+      CLIENT_ID: ${{ secrets.PARTNER_CENTER_CLIENT_ID }}
+      CLIENT_SECRET: ${{ secrets.PARTNER_CENTER_CLIENT_SECRET }}
+      SELLER_ID: ${{ secrets.PARTNER_CENTER_SELLER_ID }}
+      PRODUCT_ID: ${{ vars.WINDOWS_STORE_PRODUCT_ID }}
+      TAG: ${{ inputs.tag || github.event.release.tag_name }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Check Store credentials
+        id: creds
+        shell: bash
+        run: |
+          if [ -n "$TENANT_ID" ] && [ -n "$CLIENT_ID" ] && [ -n "$CLIENT_SECRET" ] && [ -n "$SELLER_ID" ] && [ -n "$PRODUCT_ID" ]; then
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::Partner Center secrets or WINDOWS_STORE_PRODUCT_ID unset: not submitting to the Store (run scripts/setup-windows-store.sh)"
+          fi
+
+      - name: Download the MSIX from the release
+        if: steps.creds.outputs.ok == 'true'
+        shell: bash
+        run: gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern 'Moo-windows-x64.msix' --dir dist
+
+      - uses: microsoft/setup-msstore-cli@v1
+        if: steps.creds.outputs.ok == 'true'
+
+      - name: Submit
+        if: steps.creds.outputs.ok == 'true'
+        shell: pwsh
+        run: |
+          msstore reconfigure --tenantId $env:TENANT_ID --sellerId $env:SELLER_ID --clientId $env:CLIENT_ID --clientSecret $env:CLIENT_SECRET
+          msstore publish dist/Moo-windows-x64.msix -id $env:PRODUCT_ID
+          if ($LASTEXITCODE -ne 0) { throw "msstore publish failed" }

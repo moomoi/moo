@@ -10,8 +10,9 @@
 # Secrets: APPLE_CERTIFICATE (base64 .p12), APPLE_CERTIFICATE_PASSWORD, APPLE_SIGNING_IDENTITY
 # ("Developer ID Application: …"), APPLE_ID, APPLE_PASSWORD (app-specific), APPLE_TEAM_ID.
 # Variables (Partner Center -> Product identity): WINDOWS_STORE_NAME, WINDOWS_STORE_PUBLISHER,
-# WINDOWS_STORE_PUBLISHER_NAME. The MSIX is unsigned: upload the moo-windows-store artifact to
-# Partner Center, which signs it. The zip is the direct download.
+# WINDOWS_STORE_PUBLISHER_NAME. The MSIX is unsigned (Partner Center signs it) and is attached to
+# the release; release-promoted.yml submits it to the Store on promotion. The zip is the direct
+# download.
 
 name: Release
 
@@ -242,6 +243,11 @@ jobs:
       - uses: actions/download-artifact@v8
         with:
           name: moo-windows-x64
+          path: dist/release
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: moo-windows-store
           path: dist/release
 
       - name: Checksums for every asset
