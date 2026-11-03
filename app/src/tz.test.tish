@@ -51,7 +51,11 @@ test('answers', () => {
   let d = timeAnswer('3pm utc to jst', db, NOW)
   assert.equal(d.copy, '12:00 AM')
   assert.ok(d.display.length > 8, d.display)
-  assert.equal(timeAnswer('9am pst in cet', db, NOW).detail, '9:00 AM PST = 6:00 PM CET CET')
+  assert.equal(timeAnswer('9am pst in cet', db, NOW).detail, '9:00 AM PST = 6:00 PM CET')
+  assert.ok(
+    timeAnswer('9am pst in tokyo', db, NOW).detail.endsWith(' JST Tokyo'),
+    timeAnswer('9am pst in tokyo', db, NOW).detail
+  )
   let none = ['screen time', 'notes to self', '5 km in mi', 'safari']
   for (let i = 0; i < none.length; i = i + 1) {
     assert.equal(timeAnswer(none[i], db, NOW), null, none[i])
