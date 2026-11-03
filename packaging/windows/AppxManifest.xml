@@ -14,7 +14,7 @@
   <Identity Name="$NAME$" Publisher="$PUBLISHER$" Version="$VERSION$" ProcessorArchitecture="x64" />
 
   <Properties>
-    <DisplayName>Moo</DisplayName>
+    <DisplayName>$DISPLAY_NAME$</DisplayName>
     <PublisherDisplayName>$PUBLISHER_NAME$</PublisherDisplayName>
     <Logo>Assets\StoreLogo.png</Logo>
   </Properties>

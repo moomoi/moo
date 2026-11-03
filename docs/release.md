@@ -49,7 +49,8 @@ Assets, under fixed names so `releases/latest/download/…` links never change:
    `Release check` checks on `main`.
 5. **Microsoft Store.** The Partner Center product is **Moo.moi**, Store ID `9NQNCW0R1LFQ`. Its
    identity (Name, Publisher, PublisherName from Partner Center → Product identity) is in the repo
-   variables `WINDOWS_STORE_NAME`, `WINDOWS_STORE_PUBLISHER` and `WINDOWS_STORE_PUBLISHER_NAME`.
+   variables `WINDOWS_STORE_NAME`, `WINDOWS_STORE_PUBLISHER` and `WINDOWS_STORE_PUBLISHER_NAME`, and
+   `WINDOWS_STORE_DISPLAY_NAME` is the reserved name `Moo.moi` ("Moo" is taken in the Store).
    The first submission (listing, pricing, age rating, package) is made by hand in Partner Center.
    After that, run `bash scripts/setup-windows-store.sh`: it explains how to create the Partner
    Center API login and sets the `PARTNER_CENTER_*` secrets and `WINDOWS_STORE_PRODUCT_ID`. The
