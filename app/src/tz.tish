@@ -231,6 +231,13 @@ fn nowIn(db, z, now) {
   }
 }
 
+// "CET" for a zone typed as "cet", "JST Tokyo" for one typed as a city: the label only when it
+// adds something, so "9am pst in cet" doesn't read "CET CET".
+fn zoneTag(db, z, unix) {
+  let abbr = abbreviationAt(db, z.id, unix)
+  return z.label === abbr ? abbr : abbr + ' ' + z.label
+}
+
 // `minutes` today in `from` (local when null), shown in `to`.
 fn convert(db, minutes, from, to, now) {
   let src = from !== null ? from : { id: db.local(), label: 'Local' }
@@ -248,11 +255,11 @@ fn convert(db, minutes, from, to, now) {
   return {
     display: shown,
     copy: clock(b),
-    detail: clock(a) + ' ' + abbreviationAt(db, src.id, utc) + ' = ' + clock(b) + ' ' + abbreviationAt(
+    detail: clock(a) + ' ' + abbreviationAt(db, src.id, utc) + ' = ' + clock(b) + ' ' + zoneTag(
       db,
-      to.id,
+      to,
       utc
-    ) + ' ' + to.label
+    )
   }
 }
 
